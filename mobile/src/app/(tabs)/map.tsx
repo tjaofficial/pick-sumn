@@ -1,19 +1,1893 @@
-import { Map } from "lucide-react-native";
+import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { router, useFocusEffect } from "expo-router";
+import {
+  ChevronDown,
+  Clock3,
+  ExternalLink,
+  Filter,
+  Globe2,
+  Heart,
+  List,
+  LocateFixed,
+  MapPin,
+  Menu,
+  Navigation,
+  Phone,
+  RefreshCw,
+  Sparkles,
+  Star,
+  Store,
+  Truck,
+  Utensils,
+  X,
+} from "lucide-react-native";
+import {
+  ActionSheetIOS,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
 
-import { PlaceholderScreen } from "@/components/PlaceholderScreen";
+import {
+  RestaurantMap,
+  type RestaurantMapHandle,
+} from "@/components/RestaurantMap";
+import {
+  getActivePickSessions,
+  getPickSessionMatches,
+} from "@/features/pickSessions/pickSessionsService";
+import type {
+  NearbyRestaurantMatch,
+  PickSession,
+  PickSessionMatchesResponse,
+} from "@/features/pickSessions/types";
+import {
+  getSavedRestaurantStatus,
+  removeSavedRestaurantByExternalId,
+  saveRestaurant,
+} from "@/features/savedRestaurants/savedRestaurantsService";
+import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 
-export default function MapScreen() {
+const pickSumnLogo = require("../../../assets/images/pick-sumn-logo.png");
+
+function getPriceText(restaurant: NearbyRestaurantMatch): string {
+  if (typeof restaurant.price_number === "number") {
+    if (restaurant.price_number === 0) {
+      return "Free";
+    }
+
+    return "$".repeat(restaurant.price_number);
+  }
+
+  switch (restaurant.price_level) {
+    case "PRICE_LEVEL_FREE":
+      return "Free";
+
+    case "PRICE_LEVEL_INEXPENSIVE":
+      return "$";
+
+    case "PRICE_LEVEL_MODERATE":
+      return "$$";
+
+    case "PRICE_LEVEL_EXPENSIVE":
+      return "$$$";
+
+    case "PRICE_LEVEL_VERY_EXPENSIVE":
+      return "$$$$";
+
+    default:
+      return "Price unavailable";
+  }
+}
+
+function getRestaurantType(restaurant: NearbyRestaurantMatch): string {
+  if (restaurant.primary_type_display_name) {
+    return restaurant.primary_type_display_name;
+  }
+
+  if (!restaurant.primary_type) {
+    return "Restaurant";
+  }
+
+  return restaurant.primary_type
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function getHoursText(restaurant: NearbyRestaurantMatch): string {
+  if (restaurant.open_now === true) {
+    return "Open now";
+  }
+
+  if (restaurant.open_now === false) {
+    return "Closed";
+  }
+
+  return "Hours unavailable";
+}
+
+function getServiceText(restaurant: NearbyRestaurantMatch): string {
+  const services: string[] = [];
+
+  if (restaurant.dine_in === true) {
+    services.push("Dine-in");
+  }
+
+  if (restaurant.takeout === true) {
+    services.push("Takeout");
+  }
+
+  if (restaurant.delivery === true) {
+    services.push("Delivery");
+  }
+
+  if (services.length === 0) {
+    return "Service details unavailable";
+  }
+
+  return services.join(" · ");
+}
+
+async function openExternalUrl(url: string): Promise<void> {
+  if (!url) {
+    return;
+  }
+
+  try {
+    const supported = await Linking.canOpenURL(url);
+
+    if (!supported) {
+      Alert.alert(
+        "Unable to open link",
+        "This link is not supported on this device.",
+      );
+
+      return;
+    }
+
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert(
+      "Unable to open link",
+      "Something went wrong while opening this link.",
+    );
+  }
+}
+
+async function callRestaurant(phoneNumber: string): Promise<void> {
+  if (!phoneNumber) {
+    Alert.alert(
+      "Phone number unavailable",
+      "This restaurant does not have a phone number listed.",
+    );
+
+    return;
+  }
+
+  const cleanPhoneNumber = phoneNumber.replace(/[^0-9+]/g, "");
+
+  await openExternalUrl(`tel:${cleanPhoneNumber}`);
+}
+
+function getAppleMapsUrl(restaurant: NearbyRestaurantMatch): string {
+  if (restaurant.latitude !== null && restaurant.longitude !== null) {
+    const label = encodeURIComponent(restaurant.name);
+
+    return (
+      `http://maps.apple.com/?daddr=` +
+      `${restaurant.latitude},` +
+      `${restaurant.longitude}` +
+      `&q=${label}`
+    );
+  }
+
   return (
-    <PlaceholderScreen
-      title="Map"
-      description="Nearby restaurant matches will be displayed on an interactive map."
-      icon={
-        <Map
-          size={64}
-          color="#F3344A"
-          strokeWidth={2}
-        />
-      }
-    />
+    "http://maps.apple.com/?daddr=" +
+    encodeURIComponent(restaurant.formatted_address)
   );
 }
+
+function getGoogleMapsDirectionsUrl(restaurant: NearbyRestaurantMatch): string {
+  if (restaurant.latitude !== null && restaurant.longitude !== null) {
+    return (
+      "https://www.google.com/maps/dir/?api=1" +
+      "&destination=" +
+      encodeURIComponent(`${restaurant.latitude},${restaurant.longitude}`) +
+      "&destination_place_id=" +
+      encodeURIComponent(restaurant.external_id)
+    );
+  }
+
+  return (
+    "https://www.google.com/maps/dir/?api=1" +
+    "&destination=" +
+    encodeURIComponent(restaurant.formatted_address)
+  );
+}
+
+function openDirections(restaurant: NearbyRestaurantMatch): void {
+  const appleMapsUrl = getAppleMapsUrl(restaurant);
+
+  const googleMapsUrl =
+    restaurant.google_maps_uri || getGoogleMapsDirectionsUrl(restaurant);
+
+  if (Platform.OS === "ios") {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: `Directions to ${restaurant.name}`,
+        options: ["Cancel", "Apple Maps", "Google Maps"],
+        cancelButtonIndex: 0,
+      },
+      (selectedIndex) => {
+        if (selectedIndex === 1) {
+          void openExternalUrl(appleMapsUrl);
+        }
+
+        if (selectedIndex === 2) {
+          void openExternalUrl(googleMapsUrl);
+        }
+      },
+    );
+
+    return;
+  }
+
+  Alert.alert(`Directions to ${restaurant.name}`, "Choose a directions app.", [
+    {
+      text: "Cancel",
+      style: "cancel",
+    },
+    {
+      text: "Google Maps",
+      onPress: () => {
+        void openExternalUrl(googleMapsUrl);
+      },
+    },
+  ]);
+}
+
+type MatchListCardProps = {
+  restaurant: NearbyRestaurantMatch;
+  index: number;
+  isSelected: boolean;
+  onPress: () => void;
+};
+
+function MatchListCard({
+  restaurant,
+  index,
+  isSelected,
+  onPress,
+}: MatchListCardProps) {
+  const photoUrl = restaurant.photo_url || "";
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.matchCard,
+        isSelected && styles.matchCardSelected,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.imageBox}>
+        {photoUrl ? (
+          <Image
+            source={{
+              uri: photoUrl,
+            }}
+            style={styles.restaurantImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.imageFallback}>
+            <Store size={30} color="#F3344A" />
+          </View>
+        )}
+
+        <View style={styles.rankBadge}>
+          <Text style={styles.rankText}>{index + 1}</Text>
+        </View>
+      </View>
+
+      <View style={styles.cardBody}>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.restaurantName} numberOfLines={1}>
+            {restaurant.name}
+          </Text>
+
+          <Text style={styles.matchScore}>{restaurant.match_score}%</Text>
+        </View>
+
+        <Text style={styles.restaurantMeta} numberOfLines={1}>
+          {getRestaurantType(restaurant)} · {getPriceText(restaurant)} ·{" "}
+          {restaurant.distance_miles !== null
+            ? `${restaurant.distance_miles.toFixed(1)} mi`
+            : "Distance unavailable"}
+        </Text>
+
+        <View style={styles.statsRow}>
+          <View style={styles.stat}>
+            <Star size={14} color="#E3A008" fill="#E3A008" />
+
+            <Text style={styles.statText}>
+              {restaurant.rating !== null
+                ? restaurant.rating.toFixed(1)
+                : "No rating"}
+            </Text>
+          </View>
+
+          <View style={styles.stat}>
+            <Navigation size={14} color="#168B4F" />
+
+            <Text style={styles.statText}>
+              {restaurant.distance_miles !== null
+                ? `${restaurant.distance_miles.toFixed(1)} mi`
+                : "--"}
+            </Text>
+          </View>
+
+          <View style={styles.stat}>
+            <Heart size={14} color="#F3344A" />
+
+            <Text style={styles.statText}>Group fit</Text>
+          </View>
+        </View>
+
+        <View style={styles.pillRow}>
+          {restaurant.match_reasons.slice(0, 2).map((reason) => (
+            <View key={reason} style={styles.reasonPill}>
+              <Text style={styles.reasonPillText} numberOfLines={1}>
+                {reason}
+              </Text>
+            </View>
+          ))}
+
+          {restaurant.open_now === true && (
+            <View style={styles.openPill}>
+              <Text style={styles.openPillText}>Open now</Text>
+            </View>
+          )}
+
+          {restaurant.delivery === true && (
+            <View style={styles.deliveryPill}>
+              <Text style={styles.deliveryPillText}>Delivery</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+type DetailActionProps = {
+  label: string;
+  icon: React.ReactNode;
+  disabled?: boolean;
+  onPress: () => void;
+};
+
+function DetailAction({
+  label,
+  icon,
+  disabled = false,
+  onPress,
+}: DetailActionProps) {
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.detailAction,
+        disabled && styles.detailActionDisabled,
+        pressed && !disabled && styles.pressed,
+      ]}
+    >
+      <View style={styles.detailActionIcon}>{icon}</View>
+
+      <Text
+        style={[
+          styles.detailActionText,
+          disabled && styles.detailActionTextDisabled,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+type RestaurantDetailProps = {
+  restaurant: NearbyRestaurantMatch;
+  rank: number;
+  onClose: () => void;
+};
+
+function RestaurantDetail({
+  restaurant,
+  rank,
+  onClose,
+}: RestaurantDetailProps) {
+  const photoUrl = restaurant.photo_url || "";
+
+  const [isSaved, setIsSaved] = useState(false);
+
+  const [isCheckingSaved, setIsCheckingSaved] = useState(true);
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSavedStatus() {
+      try {
+        setIsCheckingSaved(true);
+
+        const status = await getSavedRestaurantStatus(restaurant.external_id);
+
+        if (isMounted) {
+          setIsSaved(status.is_saved);
+        }
+      } catch {
+        if (isMounted) {
+          setIsSaved(false);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingSaved(false);
+        }
+      }
+    }
+
+    void loadSavedStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [restaurant.external_id]);
+
+  async function toggleSavedRestaurant() {
+    if (isSaving || isCheckingSaved) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      if (isSaved) {
+        await removeSavedRestaurantByExternalId(restaurant.external_id);
+
+        setIsSaved(false);
+
+        return;
+      }
+
+      await saveRestaurant({
+        external_id: restaurant.external_id,
+
+        name: restaurant.name,
+
+        formatted_address: restaurant.formatted_address || "",
+
+        latitude: restaurant.latitude,
+
+        longitude: restaurant.longitude,
+
+        primary_type: restaurant.primary_type || "",
+
+        primary_type_display_name: restaurant.primary_type_display_name || "",
+
+        rating: restaurant.rating,
+
+        user_rating_count: restaurant.user_rating_count,
+
+        price_level: restaurant.price_level || "",
+
+        phone_number: restaurant.phone_number || "",
+
+        website_uri: restaurant.website_uri || "",
+
+        google_maps_uri: restaurant.google_maps_uri || "",
+
+        menu_uri: restaurant.menu_uri || "",
+
+        photo_url: restaurant.photo_url || "",
+
+        delivery: restaurant.delivery,
+
+        dine_in: restaurant.dine_in,
+
+        takeout: restaurant.takeout,
+      });
+
+      setIsSaved(true);
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to update favorites",
+        getApiErrorMessage(
+          requestError,
+          isSaved
+            ? "Unable to remove this restaurant from your saved restaurants."
+            : "Unable to save this restaurant.",
+        ),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <BottomSheetScrollView
+      contentContainerStyle={styles.detailContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.detailTopRow}>
+        <View style={styles.detailRank}>
+          <Text style={styles.detailRankText}>#{rank}</Text>
+        </View>
+
+        <View style={styles.detailHeading}>
+          <Text style={styles.detailName} numberOfLines={2}>
+            {restaurant.name}
+          </Text>
+
+          <Text style={styles.detailType}>{getRestaurantType(restaurant)}</Text>
+        </View>
+
+        <View style={styles.detailHeaderActions}>
+          <Pressable
+            disabled={isSaving || isCheckingSaved}
+            onPress={() => {
+              void toggleSavedRestaurant();
+            }}
+            style={({ pressed }) => [
+              styles.favoriteButton,
+              isSaved && styles.favoriteButtonSaved,
+              pressed && styles.pressed,
+            ]}
+          >
+            {isSaving || isCheckingSaved ? (
+              <ActivityIndicator size="small" color="#F3344A" />
+            ) : (
+              <Heart
+                size={21}
+                color="#F3344A"
+                fill={isSaved ? "#F3344A" : "transparent"}
+              />
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => [
+              styles.closeButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <X size={21} color="#07111F" />
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.detailScoreRow}>
+        <View style={styles.detailScoreBadge}>
+          <Text style={styles.detailScoreNumber}>
+            {restaurant.match_score}%
+          </Text>
+
+          <Text style={styles.detailScoreLabel}>MATCH</Text>
+        </View>
+
+        <View style={styles.detailSummary}>
+          <Text style={styles.detailSummaryTitle}>
+            Great match for your group
+          </Text>
+
+          <Text style={styles.detailSummaryText}>
+            Ranked using cuisine preferences, distance, and customer ratings.
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.actionGrid}>
+        <DetailAction
+          label="Directions"
+          icon={<Navigation size={21} color="#F3344A" />}
+          onPress={() => openDirections(restaurant)}
+        />
+
+        <DetailAction
+          label="Call"
+          disabled={!restaurant.phone_number}
+          icon={
+            <Phone
+              size={21}
+              color={restaurant.phone_number ? "#F3344A" : "#A7ADB6"}
+            />
+          }
+          onPress={() => {
+            void callRestaurant(restaurant.phone_number);
+          }}
+        />
+
+        <DetailAction
+          label="Website"
+          disabled={!restaurant.website_uri}
+          icon={
+            <Globe2
+              size={21}
+              color={restaurant.website_uri ? "#F3344A" : "#A7ADB6"}
+            />
+          }
+          onPress={() => {
+            void openExternalUrl(restaurant.website_uri);
+          }}
+        />
+
+        {!!restaurant.menu_uri && (
+          <DetailAction
+            label="Menu"
+            icon={<Menu size={21} color="#F3344A" />}
+            onPress={() => {
+              void openExternalUrl(restaurant.menu_uri);
+            }}
+          />
+        )}
+      </View>
+
+      <View style={styles.detailStats}>
+        <View style={styles.detailStat}>
+          <Clock3
+            size={18}
+            color={restaurant.open_now === false ? "#C62828" : "#168B4F"}
+          />
+
+          <Text style={styles.detailStatLabel}>Hours</Text>
+
+          <Text
+            style={[
+              styles.detailStatValue,
+              restaurant.open_now === false && styles.closedText,
+            ]}
+          >
+            {getHoursText(restaurant)}
+          </Text>
+        </View>
+
+        <View style={styles.detailDivider} />
+
+        <View style={styles.detailStat}>
+          <Star size={18} color="#E3A008" fill="#E3A008" />
+
+          <Text style={styles.detailStatLabel}>Ratings</Text>
+
+          <Text style={styles.detailStatValue}>
+            {restaurant.rating !== null
+              ? `${restaurant.rating.toFixed(
+                  1,
+                )} (${restaurant.user_rating_count})`
+              : "Unavailable"}
+          </Text>
+        </View>
+
+        <View style={styles.detailDivider} />
+
+        <View style={styles.detailStat}>
+          <Navigation size={18} color="#168B4F" />
+
+          <Text style={styles.detailStatLabel}>Distance</Text>
+
+          <Text style={styles.detailStatValue}>
+            {restaurant.distance_miles !== null
+              ? `${restaurant.distance_miles.toFixed(1)} mi`
+              : "Unavailable"}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.detailAddress}>
+        <MapPin size={18} color="#69707C" />
+
+        <Text style={styles.detailAddressText}>
+          {restaurant.formatted_address || "Address unavailable"}
+        </Text>
+      </View>
+
+      <View style={styles.detailPhotoBox}>
+        {photoUrl ? (
+          <Image
+            source={{
+              uri: photoUrl,
+            }}
+            style={styles.detailPhoto}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.detailPhotoFallback}>
+            <Store size={42} color="#F3344A" />
+
+            <Text style={styles.detailPhotoFallbackText}>
+              Photo unavailable
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.detailSection}>
+        <Text style={styles.detailSectionTitle}>Why it matched</Text>
+
+        <View style={styles.detailReasonList}>
+          {restaurant.match_reasons.map((reason) => (
+            <View key={reason} style={styles.detailReasonRow}>
+              <View style={styles.detailCheckCircle}>
+                <Text style={styles.detailCheckText}>✓</Text>
+              </View>
+
+              <Text style={styles.detailReasonText}>{reason}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.detailPillRow}>
+        <View style={styles.servicePill}>
+          <Utensils size={14} color="#4F5662" />
+
+          <Text style={styles.servicePillText}>
+            {getServiceText(restaurant)}
+          </Text>
+        </View>
+
+        {restaurant.delivery === true && (
+          <View style={styles.detailDeliveryPill}>
+            <Truck size={14} color="#7C4DCC" />
+
+            <Text style={styles.detailDeliveryText}>Delivery</Text>
+          </View>
+        )}
+
+        {restaurant.dietary_tags.map((tag) => (
+          <View
+            key={tag.slug}
+            style={[
+              styles.dietaryPill,
+              !tag.confirmed && styles.unverifiedPill,
+            ]}
+          >
+            <Text
+              style={[
+                styles.dietaryPillText,
+                !tag.confirmed && styles.unverifiedPillText,
+              ]}
+            >
+              {tag.confirmed ? tag.label : `${tag.label}: Verify`}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {!!restaurant.website_uri && (
+        <Pressable
+          onPress={() => {
+            void openExternalUrl(restaurant.website_uri);
+          }}
+          style={({ pressed }) => [
+            styles.fullWebsiteButton,
+            pressed && styles.pressed,
+          ]}
+        >
+          <ExternalLink size={18} color="#FFFFFF" />
+
+          <Text style={styles.fullWebsiteButtonText}>
+            Visit Restaurant Website
+          </Text>
+        </Pressable>
+      )}
+    </BottomSheetScrollView>
+  );
+}
+
+export default function MapScreen() {
+  const mapRef = useRef<RestaurantMapHandle | null>(null);
+
+  const bottomSheetRef = useRef<BottomSheet | null>(null);
+
+  const sheetPosition = useSharedValue(0);
+
+  const floatingMapButtonsStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateY: Math.min(Math.max(sheetPosition.value - 135, 210), 390),
+      },
+    ],
+  }));
+
+  const snapPoints = useMemo(() => ["12%", "46%", "88%"], []);
+
+  const [activeSession, setActiveSession] = useState<PickSession | null>(null);
+
+  const [response, setResponse] = useState<PickSessionMatchesResponse | null>(
+    null,
+  );
+
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState<
+    string | null
+  >(null);
+
+  const [detailRestaurantId, setDetailRestaurantId] = useState<string | null>(
+    null,
+  );
+
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMatches = useCallback(async () => {
+    try {
+      setError(null);
+
+      const activeSessions = await getActivePickSessions();
+
+      const newestSession = activeSessions[0] ?? null;
+
+      setActiveSession(newestSession);
+
+      if (!newestSession) {
+        setResponse(null);
+        setSelectedRestaurantId(null);
+        setDetailRestaurantId(null);
+
+        return;
+      }
+
+      const matchesResponse = await getPickSessionMatches(newestSession.id);
+
+      setResponse(matchesResponse);
+
+      setSelectedRestaurantId(matchesResponse.matches[0]?.external_id ?? null);
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, "Unable to load map matches."));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadMatches();
+    }, [loadMatches]),
+  );
+
+  const matches = response?.matches ?? [];
+
+  const selectedRestaurant =
+    matches.find(
+      (restaurant) => restaurant.external_id === selectedRestaurantId,
+    ) ??
+    matches[0] ??
+    null;
+
+  const detailRestaurant =
+    matches.find(
+      (restaurant) => restaurant.external_id === detailRestaurantId,
+    ) ?? null;
+
+  const fallbackLatitude =
+    selectedRestaurant?.latitude ??
+    matches.find((restaurant) => restaurant.latitude !== null)?.latitude ??
+    42.3314;
+
+  const fallbackLongitude =
+    selectedRestaurant?.longitude ??
+    matches.find((restaurant) => restaurant.longitude !== null)?.longitude ??
+    -83.0458;
+
+  const selectMapRestaurant = useCallback(
+  (restaurantId: string) => {
+    setSelectedRestaurantId(restaurantId);
+    setDetailRestaurantId(restaurantId);
+
+    const restaurant = matches.find(
+      (item) => item.external_id === restaurantId,
+    );
+
+    if (restaurant) {
+      mapRef.current?.focusRestaurant(restaurant);
+    }
+
+    bottomSheetRef.current?.snapToIndex(1);
+  },
+  [matches],
+);
+
+  const openRestaurantDetails = useCallback(
+    (restaurant: NearbyRestaurantMatch) => {
+      setSelectedRestaurantId(restaurant.external_id);
+
+      setDetailRestaurantId(restaurant.external_id);
+
+      mapRef.current?.focusRestaurant(restaurant);
+
+      bottomSheetRef.current?.snapToIndex(2);
+    },
+    [],
+  );
+
+  function closeRestaurantDetails() {
+    setDetailRestaurantId(null);
+
+    bottomSheetRef.current?.snapToIndex(1);
+  }
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#F3344A" />
+
+        <Text style={styles.loadingText}>Loading your map...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <RestaurantMap
+        ref={mapRef}
+        restaurants={matches}
+        selectedRestaurantId={selectedRestaurantId}
+        fallbackLatitude={fallbackLatitude}
+        fallbackLongitude={fallbackLongitude}
+        onSelectRestaurant={selectMapRestaurant}
+      />
+
+      <View pointerEvents="none" style={styles.topHeader}>
+        <Image source={pickSumnLogo} style={styles.logo} resizeMode="contain" />
+      </View>
+
+      <Animated.View style={[styles.mapButtons, floatingMapButtonsStyle]}>
+        <Pressable
+          onPress={() => {
+            if (selectedRestaurant) {
+              mapRef.current?.focusRestaurant(selectedRestaurant);
+            }
+          }}
+          style={({ pressed }) => [styles.mapButton, pressed && styles.pressed]}
+        >
+          <LocateFixed size={20} color="#F3344A" />
+        </Pressable>
+
+        <Pressable
+          onPress={() => {
+            setDetailRestaurantId(null);
+
+            mapRef.current?.focusAllRestaurants();
+
+            bottomSheetRef.current?.snapToIndex(0);
+          }}
+          style={({ pressed }) => [styles.mapButton, pressed && styles.pressed]}
+        >
+          <List size={20} color="#F3344A" />
+        </Pressable>
+      </Animated.View>
+
+      <BottomSheet
+        ref={bottomSheetRef}
+        animatedPosition={sheetPosition}
+        index={1}
+        snapPoints={snapPoints}
+        enablePanDownToClose={false}
+        enableContentPanningGesture
+        enableHandlePanningGesture
+        animateOnMount
+        handleIndicatorStyle={styles.handleIndicator}
+        backgroundStyle={styles.sheetBackground}
+        style={styles.sheetShadow}
+      >
+        {detailRestaurant ? (
+          <RestaurantDetail
+            restaurant={detailRestaurant}
+            rank={
+              matches.findIndex(
+                (restaurant) =>
+                  restaurant.external_id === detailRestaurant.external_id,
+              ) + 1
+            }
+            onClose={closeRestaurantDetails}
+          />
+        ) : (
+          <>
+            <View style={styles.sheetHeader}>
+              <View style={styles.sheetHeading}>
+                <Text style={styles.sheetTitle}>
+                  {matches.length} Great Match
+                  {matches.length === 1 ? "" : "es"} ✨
+                </Text>
+
+                <Text style={styles.sheetSubtitle}>
+                  Ranked by how well everyone will love it
+                </Text>
+              </View>
+
+              <View style={styles.headerActions}>
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(tabs)/matches",
+                      params: {
+                        sessionId: activeSession?.id,
+                        decisionMode: activeSession?.decision_mode,
+                      },
+                    })
+                  }
+                  style={styles.bestMatchButton}
+                >
+                  <Text style={styles.bestMatchText}>Best Match</Text>
+
+                  <ChevronDown size={12} color="#F3344A" />
+                </Pressable>
+
+                <Pressable
+                  onPress={() => router.push("/pick/setup")}
+                  style={styles.roundFilterButton}
+                >
+                  <Filter size={16} color="#07111F" />
+                </Pressable>
+              </View>
+            </View>
+
+            {error && (
+              <View style={styles.errorCard}>
+                <Text style={styles.errorTitle}>Map unavailable</Text>
+
+                <Text style={styles.errorText}>{error}</Text>
+
+                <Pressable
+                  onPress={() => void loadMatches()}
+                  style={styles.retryButton}
+                >
+                  <RefreshCw size={16} color="#FFFFFF" />
+
+                  <Text style={styles.retryText}>Try Again</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!error && !activeSession && (
+              <View style={styles.emptyCard}>
+                <Sparkles size={32} color="#F3344A" />
+
+                <Text style={styles.emptyTitle}>Start a Pick Sum’N first</Text>
+
+                <Text style={styles.emptyText}>
+                  The map displays restaurants from your active session.
+                </Text>
+
+                <Pressable
+                  onPress={() => router.replace("/(tabs)/pick")}
+                  style={styles.startButton}
+                >
+                  <Text style={styles.startText}>Go to Pick Sum’N</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!error && activeSession && matches.length === 0 && (
+              <View style={styles.emptyCard}>
+                <Store size={32} color="#F3344A" />
+
+                <Text style={styles.emptyTitle}>No matches found</Text>
+
+                <Text style={styles.emptyText}>
+                  Change your filters and try again.
+                </Text>
+              </View>
+            )}
+
+            {!error && matches.length > 0 && (
+              <BottomSheetScrollView
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {matches.map((restaurant, index) => (
+                  <MatchListCard
+                    key={restaurant.external_id}
+                    restaurant={restaurant}
+                    index={index}
+                    isSelected={restaurant.external_id === selectedRestaurantId}
+                    onPress={() => openRestaurantDetails(restaurant)}
+                  />
+                ))}
+              </BottomSheetScrollView>
+            )}
+          </>
+        )}
+      </BottomSheet>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: "#E9EEF5",
+  },
+
+  loadingScreen: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "#FFF9F2",
+  },
+
+  loadingText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  topHeader: {
+    position: "absolute",
+    top: 38,
+    left: 0,
+    right: 0,
+    height: 118,
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
+
+  logo: {
+    width: 218,
+    height: 132,
+  },
+
+  mapButtons: {
+    position: "absolute",
+    top: 0,
+    right: 15,
+    zIndex: 5,
+    gap: 10,
+  },
+
+  mapButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 9,
+    elevation: 4,
+  },
+
+  sheetBackground: {
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
+    backgroundColor: "#FFFFFF",
+  },
+
+  sheetShadow: {
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: -3,
+    },
+    shadowOpacity: 0.11,
+    shadowRadius: 11,
+    elevation: 9,
+  },
+
+  handleIndicator: {
+    width: 52,
+    height: 4,
+    backgroundColor: "#D8DCE2",
+  },
+
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 7,
+    paddingHorizontal: 15,
+    paddingTop: 10,
+    paddingBottom: 9,
+  },
+
+  sheetHeading: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  sheetTitle: {
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  sheetSubtitle: {
+    marginTop: 1,
+    fontSize: 8,
+    lineHeight: 11,
+    color: "#69707C",
+  },
+
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  bestMatchButton: {
+    minHeight: 31,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 9,
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+  },
+
+  bestMatchText: {
+    fontSize: 8,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+
+  roundFilterButton: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    backgroundColor: "#F1F2F4",
+  },
+
+  listContent: {
+    gap: 8,
+    paddingHorizontal: 15,
+    paddingTop: 1,
+    paddingBottom: 24,
+  },
+
+  matchCard: {
+    minHeight: 112,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 17,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.045,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+
+  matchCardSelected: {
+    borderColor: "#F3344A",
+    backgroundColor: "#FFF9FA",
+  },
+
+  imageBox: {
+    position: "relative",
+    width: 96,
+    height: 96,
+    flexShrink: 0,
+    overflow: "hidden",
+    borderRadius: 14,
+    backgroundColor: "#FFF0F2",
+  },
+
+  restaurantImage: {
+    width: 96,
+    height: 96,
+  },
+
+  imageFallback: {
+    width: 96,
+    height: 96,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFF0F2",
+  },
+
+  rankBadge: {
+    position: "absolute",
+    top: 7,
+    left: 7,
+    zIndex: 2,
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: "#F3344A",
+  },
+
+  rankText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  cardBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 5,
+  },
+
+  restaurantName: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  matchScore: {
+    flexShrink: 0,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+
+  restaurantMeta: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+    color: "#343B46",
+  },
+
+  statsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+    marginTop: 6,
+  },
+
+  stat: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+
+  statText: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: "#343B46",
+  },
+
+  pillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginTop: 6,
+  },
+
+  reasonPill: {
+    maxWidth: 105,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#FFF5DD",
+  },
+
+  reasonPillText: {
+    fontSize: 8,
+    fontWeight: "800",
+    color: "#805A00",
+  },
+
+  openPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#E8F7EF",
+  },
+
+  openPillText: {
+    fontSize: 8,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  deliveryPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#F2ECFF",
+  },
+
+  deliveryPillText: {
+    fontSize: 8,
+    fontWeight: "900",
+    color: "#7C4DCC",
+  },
+
+  detailContent: {
+    paddingHorizontal: 18,
+    paddingTop: 6,
+    paddingBottom: 45,
+  },
+
+  detailTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 11,
+  },
+
+  detailRank: {
+    minWidth: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: "#FFF0F2",
+  },
+
+  detailRankText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+
+  detailHeading: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  detailName: {
+    fontSize: 21,
+    lineHeight: 25,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  detailType: {
+    marginTop: 3,
+    fontSize: 12,
+    color: "#69707C",
+  },
+
+  detailHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  favoriteButton: {
+    width: 39,
+    height: 39,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#F7C8CE",
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+  },
+
+  favoriteButtonSaved: {
+    borderColor: "#F3344A",
+    backgroundColor: "#FFF0F2",
+  },
+
+  closeButton: {
+    width: 39,
+    height: 39,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: "#F1F2F4",
+  },
+
+  detailScoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 15,
+    padding: 13,
+    borderRadius: 18,
+    backgroundColor: "#F2FAF5",
+  },
+
+  detailScoreBadge: {
+    minWidth: 66,
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 15,
+    backgroundColor: "#E0F5E9",
+  },
+
+  detailScoreNumber: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  detailScoreLabel: {
+    marginTop: 1,
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    color: "#168B4F",
+  },
+
+  detailSummary: {
+    flex: 1,
+  },
+
+  detailSummaryTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  detailSummaryText: {
+    marginTop: 3,
+    fontSize: 10,
+    lineHeight: 15,
+    color: "#4C6156",
+  },
+
+  actionGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 15,
+  },
+
+  detailAction: {
+    flex: 1,
+    minHeight: 70,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+  },
+
+  detailActionDisabled: {
+    backgroundColor: "#F5F6F7",
+  },
+
+  detailActionIcon: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 11,
+    backgroundColor: "#FFF0F2",
+  },
+
+  detailActionText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  detailActionTextDisabled: {
+    color: "#A7ADB6",
+  },
+
+  detailStats: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    marginTop: 15,
+    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+  },
+
+  detailStat: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 5,
+  },
+
+  detailStatLabel: {
+    marginTop: 5,
+    fontSize: 9,
+    color: "#69707C",
+  },
+
+  detailStatValue: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#168B4F",
+    textAlign: "center",
+  },
+
+  closedText: {
+    color: "#C62828",
+  },
+
+  detailDivider: {
+    width: 1,
+    backgroundColor: "#ECEDEF",
+  },
+
+  detailAddress: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 14,
+    padding: 12,
+    borderRadius: 15,
+    backgroundColor: "#F7F8FA",
+  },
+
+  detailAddressText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#4F5662",
+  },
+
+  detailPhotoBox: {
+    height: 210,
+    overflow: "hidden",
+    marginTop: 14,
+    borderRadius: 20,
+    backgroundColor: "#FFF0F2",
+  },
+
+  detailPhoto: {
+    width: "100%",
+    height: "100%",
+  },
+
+  detailPhotoFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  detailPhotoFallbackText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#69707C",
+  },
+
+  detailSection: {
+    marginTop: 15,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: "#F2FAF5",
+  },
+
+  detailSectionTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  detailReasonList: {
+    gap: 9,
+    marginTop: 10,
+  },
+
+  detailReasonRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+
+  detailCheckCircle: {
+    width: 18,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#168B4F",
+    borderRadius: 9,
+  },
+
+  detailCheckText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  detailReasonText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#3C5146",
+  },
+
+  detailPillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 7,
+    marginTop: 14,
+  },
+
+  servicePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "#F1F2F4",
+  },
+
+  servicePillText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#4F5662",
+  },
+
+  detailDeliveryPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "#F2ECFF",
+  },
+
+  detailDeliveryText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#7C4DCC",
+  },
+
+  dietaryPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "#E8F7EF",
+  },
+
+  dietaryPillText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  unverifiedPill: {
+    backgroundColor: "#FFF5DD",
+  },
+
+  unverifiedPillText: {
+    color: "#805A00",
+  },
+
+  fullWebsiteButton: {
+    minHeight: 47,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginTop: 17,
+    borderRadius: 15,
+    backgroundColor: "#F3344A",
+  },
+
+  fullWebsiteButtonText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  errorCard: {
+    alignItems: "center",
+    marginHorizontal: 15,
+    padding: 18,
+    borderRadius: 18,
+    backgroundColor: "#FFF1F1",
+  },
+
+  errorTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#9F2424",
+  },
+
+  errorText: {
+    marginTop: 6,
+    fontSize: 11,
+    color: "#9F2424",
+    textAlign: "center",
+  },
+
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 11,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 11,
+    backgroundColor: "#F3344A",
+  },
+
+  retryText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  emptyCard: {
+    alignItems: "center",
+    marginHorizontal: 15,
+    padding: 22,
+  },
+
+  emptyTitle: {
+    marginTop: 10,
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  emptyText: {
+    marginTop: 6,
+    fontSize: 11,
+    color: "#69707C",
+    textAlign: "center",
+  },
+
+  startButton: {
+    marginTop: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+    borderRadius: 11,
+    backgroundColor: "#F3344A",
+  },
+
+  startText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  pressed: {
+    opacity: 0.75,
+    transform: [
+      {
+        scale: 0.98,
+      },
+    ],
+  },
+});

@@ -47,6 +47,22 @@ class Profile(models.Model):
         default=False,
     )
 
+    dietary_section_completed = models.BooleanField(
+        default=False,
+        help_text=(
+            "The user has reviewed the dietary section, "
+            "including confirming that none apply."
+        ),
+    )
+
+    dislikes_section_completed = models.BooleanField(
+        default=False,
+        help_text=(
+            "The user has reviewed the dislikes section, "
+            "including confirming that none apply."
+        ),
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )

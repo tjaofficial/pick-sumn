@@ -1,12 +1,22 @@
 from pathlib import Path
 import environ
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+from datetime import timedelta
+import os
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-env = environ.Env(
-    DJANGO_DEBUG=(bool, False),
-)
+env = environ.Env(DJANGO_DEBUG=(bool, False))
 
 environ.Env.read_env(BASE_DIR / ".env")
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -34,10 +44,14 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     "rest_framework",
     "corsheaders",
+    "rest_framework_simplejwt.token_blacklist",
     "accounts",
     "profiles.apps.ProfilesConfig",
     "preferences",
+    "dining_groups",
+    "pick_sessions",
     "api",
+    "saved_restaurants",
 ]
 
 MIDDLEWARE = [
@@ -132,3 +146,17 @@ CORS_ALLOWED_ORIGINS = env.list(
 )
 
 AUTH_USER_MODEL = "accounts.User"
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+}
+
+GOOGLE_PLACES_API_KEY = os.environ.get(
+    "GOOGLE_PLACES_API_KEY",
+    "",
+)
