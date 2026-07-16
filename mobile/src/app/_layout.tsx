@@ -115,6 +115,20 @@ function RootNavigator() {
         />
 
         <Stack.Screen
+          name="photo-crop/index"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="photo-crop/preview"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
           name="notifications/index"
           options={{
             headerShown: false,

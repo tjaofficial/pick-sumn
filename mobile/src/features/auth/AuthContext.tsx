@@ -27,6 +27,7 @@ type AuthContextValue = {
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(
@@ -80,6 +81,13 @@ export function AuthProvider({
     setUser(null);
   }
 
+  async function refreshUser() {
+    const currentUser =
+      await getCurrentUser();
+
+    setUser(currentUser);
+  }
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -88,6 +96,7 @@ export function AuthProvider({
       login,
       register,
       logout,
+      refreshUser,
     }),
     [user, isLoading],
   );

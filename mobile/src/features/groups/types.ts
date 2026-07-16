@@ -26,6 +26,7 @@ export type DiningGroup = {
   id: string;
   name: string;
   description: string;
+  image: string | null;
   group_type: GroupType;
   join_code: string;
   member_count: number;

@@ -57,6 +57,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
+    "cloudinary_storage",
+    "cloudinary",
+
     "rest_framework",
     "corsheaders",
     "rest_framework_simplejwt.token_blacklist",
@@ -182,10 +185,11 @@ STATIC_ROOT = (
 STORAGES = {
     "default": {
         "BACKEND": (
-            "django.core.files.storage"
-            ".FileSystemStorage"
+            "cloudinary_storage.storage"
+            ".MediaCloudinaryStorage"
         ),
     },
+
     "staticfiles": {
         "BACKEND": (
             "whitenoise.storage"
@@ -243,3 +247,6 @@ if not DEBUG:
 
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"

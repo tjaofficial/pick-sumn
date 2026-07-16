@@ -1,7 +1,8 @@
+from django.core.files.images import get_image_dimensions
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
-from rest_framework import status, viewsets
+from rest_framework import parsers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -80,6 +81,7 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             "update",
             "partial_update",
             "destroy",
+            "image",
         ):
             permission_classes = (
                 IsAuthenticated,
@@ -283,6 +285,158 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                 if created
                 else status.HTTP_200_OK
             ),
+        )
+
+    @action(
+        detail=True,
+        methods=("post", "delete"),
+        url_path="image",
+        parser_classes=(
+            parsers.MultiPartParser,
+            parsers.FormParser,
+        ),
+    )
+    def image(
+        self,
+        request,
+        id=None,
+    ):
+        group = self.get_object()
+
+        if request.method == "DELETE":
+            if group.image:
+                group.image.delete(
+                    save=False,
+                )
+
+                group.image = None
+
+                group.save(
+                    update_fields=(
+                        "image",
+                        "updated_at",
+                    ),
+                )
+
+            serializer = (
+                DiningGroupDetailSerializer(
+                    group,
+                    context={
+                        "request": request,
+                    },
+                )
+            )
+
+            return Response(
+                serializer.data,
+            )
+
+        image = request.FILES.get(
+            "image",
+        )
+
+        if not image:
+            return Response(
+                {
+                    "image": (
+                        "Choose an image to upload."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        if image.size > 8 * 1024 * 1024:
+            return Response(
+                {
+                    "image": (
+                        "The image must be "
+                        "8 MB or smaller."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        if not image.content_type.startswith(
+            "image/",
+        ):
+            return Response(
+                {
+                    "image": (
+                        "The selected file must "
+                        "be an image."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        try:
+            width, height = (
+                get_image_dimensions(
+                    image
+                )
+            )
+        except Exception:
+            return Response(
+                {
+                    "image": (
+                        "The selected image "
+                        "could not be read."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        if (
+            not width
+            or not height
+            or width < 128
+            or height < 128
+        ):
+            return Response(
+                {
+                    "image": (
+                        "The image must be at least "
+                        "128 by 128 pixels."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        if group.image:
+            group.image.delete(
+                save=False,
+            )
+
+        group.image = image
+
+        group.save(
+            update_fields=(
+                "image",
+                "updated_at",
+            ),
+        )
+
+        serializer = (
+            DiningGroupDetailSerializer(
+                group,
+                context={
+                    "request": request,
+                },
+            )
+        )
+
+        return Response(
+            serializer.data,
         )
 
     @action(

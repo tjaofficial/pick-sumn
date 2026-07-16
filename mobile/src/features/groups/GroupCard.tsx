@@ -5,6 +5,7 @@ import {
   Users,
 } from "lucide-react-native";
 import {
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -46,13 +47,22 @@ export function GroupCard({
       accessibilityRole="button"
       accessibilityLabel={`Open ${group.name}`}
     >
-      <View style={styles.iconContainer}>
-        <Users
-          size={25}
-          color="#F3344A"
-          strokeWidth={2.2}
+      {group.image ? (
+        <Image
+          source={{
+            uri: group.image,
+          }}
+          style={styles.groupImage}
         />
-      </View>
+      ) : (
+        <View style={styles.iconContainer}>
+          <Users
+            size={25}
+            color="#F3344A"
+            strokeWidth={2.2}
+          />
+        </View>
+      )}
 
       <View style={styles.content}>
         <View style={styles.titleRow}>
@@ -144,6 +154,13 @@ const styles = StyleSheet.create({
   cardPressed: {
     opacity: 0.8,
     transform: [{ scale: 0.99 }],
+  },
+
+  groupImage: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#FFF0F2",
   },
 
   iconContainer: {

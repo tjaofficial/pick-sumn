@@ -3,6 +3,7 @@ import {
   useFocusEffect,
 } from "expo-router";
 import {
+  Camera,
   ChevronRight,
   Heart,
   LogOut,
@@ -31,9 +32,13 @@ import {
   useAuth,
 } from "@/features/auth/AuthContext";
 import {
+  Avatar,
+} from "@/components/ui/Avatar";
+import {
   ProfileCompletionCard,
 } from "@/features/profile/ProfileCompletionCard";
 import {
+  deleteProfileAvatar,
   getProfile,
 } from "@/features/profile/profileService";
 import type {
@@ -42,6 +47,9 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  choosePhotoForCrop,
+} from "@/services/photoPicker";
 
 
 type ProfileRowProps = {
@@ -107,6 +115,7 @@ export default function ProfileScreen() {
   const {
     user,
     logout,
+    refreshUser,
   } = useAuth();
 
   const [
@@ -184,6 +193,80 @@ export default function ProfileScreen() {
     );
   }
 
+  function chooseProfilePhoto() {
+    Alert.alert(
+      profile?.avatar
+        ? "Profile Photo"
+        : "Add Profile Photo",
+      "Choose what you would like to do.",
+      [
+        {
+          text: "Choose Photo",
+          onPress: () => {
+            void choosePhotoForCrop({
+              type: "profile",
+            });
+          },
+        },
+        ...(profile?.avatar
+          ? [
+              {
+                text: "Remove Photo",
+                style:
+                  "destructive" as const,
+                onPress: () => {
+                  Alert.alert(
+                    "Remove profile photo?",
+                    (
+                      "Your initial will appear "
+                      + "instead."
+                    ),
+                    [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                      {
+                        text: "Remove",
+                        style: "destructive",
+                        onPress: async () => {
+                          try {
+                            const result =
+                              await deleteProfileAvatar();
+
+                            setProfile(result);
+
+                            await refreshUser();
+                          } catch (
+                            requestError
+                          ) {
+                            setError(
+                              getApiErrorMessage(
+                                requestError,
+                                (
+                                  "Unable to remove "
+                                  + "your photo."
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      },
+                    ],
+                  );
+                },
+              },
+            ]
+          : []),
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ],
+    );
+  }
+
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.screen}>
@@ -249,15 +332,39 @@ export default function ProfileScreen() {
         }
       >
         <View style={styles.header}>
-          <View style={styles.avatar}>
-            <Text
-              style={styles.avatarText}
-            >
-              {displayName
-                .charAt(0)
-                .toUpperCase()}
+          <Pressable
+            onPress={chooseProfilePhoto}
+            style={styles.avatarButton}
+            accessibilityLabel="Change profile photo"
+          >
+            <Avatar
+              imageUrl={profile.avatar}
+              name={displayName}
+              size={104}
+              shape="circle"
+              backgroundColor="#F3344A"
+              textColor="#FFFFFF"
+              borderColor="#FFD158"
+              borderWidth={4}
+            />
+
+            <View style={styles.cameraBadge}>
+              <Camera
+                size={17}
+                color="#FFFFFF"
+              />
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={chooseProfilePhoto}
+          >
+            <Text style={styles.photoActionText}>
+              {profile.avatar
+                ? "Change Photo"
+                : "Add Photo"}
             </Text>
-          </View>
+          </Pressable>
 
           <Text style={styles.name}>
             {displayName}
@@ -449,21 +556,29 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-  avatar: {
-    width: 92,
-    height: 92,
+  avatarButton: {
+    position: "relative",
+  },
+
+  cameraBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: 2,
+    width: 34,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 4,
-    borderColor: "#FFD158",
-    borderRadius: 31,
+    borderWidth: 3,
+    borderColor: "#FFF9F2",
+    borderRadius: 17,
     backgroundColor: "#F3344A",
   },
 
-  avatarText: {
-    fontSize: 38,
+  photoActionText: {
+    marginTop: 8,
+    fontSize: 12,
     fontWeight: "900",
-    color: "#FFFFFF",
+    color: "#F3344A",
   },
 
   name: {

@@ -9,6 +9,8 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     """Safe public representation of the authenticated user."""
 
+    avatar = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
@@ -25,6 +27,18 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "date_joined",
         )
+
+    def get_avatar(self, obj):
+        if not obj.avatar:
+            return None
+
+        request = self.context.get("request")
+        url = obj.avatar.url
+
+        if request:
+            return request.build_absolute_uri(url)
+
+        return url
 
 
 class RegisterSerializer(serializers.ModelSerializer):

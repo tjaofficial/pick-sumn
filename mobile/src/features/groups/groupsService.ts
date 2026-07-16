@@ -50,3 +50,54 @@ export async function leaveGroup(
     },
   );
 }
+
+
+type LocalImageFile = {
+  uri: string;
+  name: string;
+  type: string;
+};
+
+
+export async function uploadGroupImage(
+  groupId: string,
+  localFile: LocalImageFile,
+): Promise<DiningGroupDetail> {
+  const {
+    File,
+  } = await import(
+    "expo-file-system"
+  );
+
+  const file =
+    new File(localFile.uri);
+
+  const formData =
+    new FormData();
+
+  formData.append(
+    "image",
+    file,
+    localFile.name,
+  );
+
+  return apiRequest<DiningGroupDetail>(
+    `/api/groups/${groupId}/image/`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+}
+
+
+export async function deleteGroupImage(
+  groupId: string,
+): Promise<DiningGroupDetail> {
+  return apiRequest<DiningGroupDetail>(
+    `/api/groups/${groupId}/image/`,
+    {
+      method: "DELETE",
+    },
+  );
+}

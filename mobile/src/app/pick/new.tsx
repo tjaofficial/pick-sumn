@@ -8,6 +8,7 @@ import {
 } from "lucide-react-native";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -21,6 +22,9 @@ import {
 } from "react";
 
 import { useAuth } from "@/features/auth/AuthContext";
+import {
+  Avatar,
+} from "@/components/ui/Avatar";
 import {
   getGroup,
   getGroups,
@@ -416,22 +420,31 @@ export default function PickPeopleScreen() {
                       styles.optionCardSelected,
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.optionIcon,
-                      selected &&
-                        styles.optionIconSelected,
-                    ]}
-                  >
-                    <Users
-                      size={25}
-                      color={
-                        selected
-                          ? "#FFFFFF"
-                          : "#F3344A"
-                      }
+                  {group.image ? (
+                    <Image
+                      source={{
+                        uri: group.image,
+                      }}
+                      style={styles.groupImage}
                     />
-                  </View>
+                  ) : (
+                    <View
+                      style={[
+                        styles.optionIcon,
+                        selected &&
+                          styles.optionIconSelected,
+                      ]}
+                    >
+                      <Users
+                        size={25}
+                        color={
+                          selected
+                            ? "#FFFFFF"
+                            : "#F3344A"
+                        }
+                      />
+                    </View>
+                  )}
 
                   <View
                     style={
@@ -519,21 +532,16 @@ export default function PickPeopleScreen() {
             </Text>
 
             <View style={styles.memberCard}>
-              <View
-                style={styles.memberAvatar}
-              >
-                <Text
-                  style={
-                    styles.memberAvatarText
-                  }
-                >
-                  {(user?.display_name ||
-                    user?.email ||
-                    "Y")
-                    .charAt(0)
-                    .toUpperCase()}
-                </Text>
-              </View>
+              <Avatar
+                imageUrl={user?.avatar}
+                name={
+                  user?.display_name
+                  || user?.email
+                  || "You"
+                }
+                size={45}
+                shape="circle"
+              />
 
               <View
                 style={styles.memberContent}
@@ -588,23 +596,18 @@ export default function PickPeopleScreen() {
                       styles.memberCard
                     }
                   >
-                    <View
-                      style={
-                        styles.memberAvatar
+                    <Avatar
+                      imageUrl={
+                        member.user.avatar
                       }
-                    >
-                      <Text
-                        style={
-                          styles.memberAvatarText
-                        }
-                      >
-                        {getMemberName(
+                      name={
+                        getMemberName(
                           member,
                         )
-                          .charAt(0)
-                          .toUpperCase()}
-                      </Text>
-                    </View>
+                      }
+                      size={45}
+                      shape="circle"
+                    />
 
                     <View
                       style={
@@ -804,6 +807,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF0F2",
   },
 
+  groupImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+
   optionIconSelected: {
     backgroundColor:
       "rgba(255,255,255,0.18)",
@@ -875,21 +884,6 @@ const styles = StyleSheet.create({
     borderColor: "#ECEDEF",
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
-  },
-
-  memberAvatar: {
-    width: 45,
-    height: 45,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 15,
-    backgroundColor: "#FFF0F2",
-  },
-
-  memberAvatarText: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#F3344A",
   },
 
   memberContent: {

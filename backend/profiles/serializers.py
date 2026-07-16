@@ -31,10 +31,7 @@ class ProfileSerializer(serializers.ModelSerializer):
         max_length=150,
     )
 
-    avatar = serializers.ImageField(
-        source="user.avatar",
-        read_only=True,
-    )
+    avatar = serializers.SerializerMethodField()
 
     completion_percentage = serializers.SerializerMethodField()
     missing_sections = serializers.SerializerMethodField()
@@ -74,6 +71,18 @@ class ProfileSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def get_avatar(self, obj):
+        if not obj.user.avatar:
+            return None
+
+        request = self.context.get("request")
+        url = obj.user.avatar.url
+
+        if request:
+            return request.build_absolute_uri(url)
+
+        return url
 
     def validate(self, attrs):
         price_min = attrs.get(

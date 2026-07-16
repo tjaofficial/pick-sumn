@@ -55,6 +55,12 @@ class DiningGroup(models.Model):
         blank=True,
     )
 
+    image = models.ImageField(
+        upload_to="groups/images/",
+        blank=True,
+        null=True,
+    )
+
     group_type = models.CharField(
         max_length=20,
         choices=GroupType.choices,

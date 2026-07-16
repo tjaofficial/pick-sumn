@@ -40,6 +40,7 @@ class DiningGroupMemberSerializer(serializers.ModelSerializer):
 class DiningGroupListSerializer(serializers.ModelSerializer):
     member_count = serializers.IntegerField(read_only=True)
     current_user_role = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = DiningGroup
@@ -47,6 +48,7 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "description",
+            "image",
             "group_type",
             "join_code",
             "member_count",
@@ -59,12 +61,25 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
 
         read_only_fields = (
             "id",
+            "image",
             "join_code",
             "member_count",
             "current_user_role",
             "created_at",
             "updated_at",
         )
+
+    def get_image(self, obj):
+        if not obj.image:
+            return None
+
+        request = self.context.get("request")
+        url = obj.image.url
+
+        if request:
+            return request.build_absolute_uri(url)
+
+        return url
 
     def get_current_user_role(self, obj):
         request = self.context.get("request")
@@ -89,13 +104,19 @@ class DiningGroupDetailSerializer(DiningGroupListSerializer):
         )
 
     def get_members(self, obj):
-        memberships = obj.memberships.filter(
-            is_active=True,
-        ).select_related("user")
+        memberships = (
+            obj.memberships.filter(
+                is_active=True,
+            )
+            .select_related(
+                "user",
+            )
+        )
 
         return DiningGroupMemberSerializer(
             memberships,
             many=True,
+            context=self.context,
         ).data
 
 

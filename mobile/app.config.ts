@@ -90,6 +90,18 @@ export default ({
       "expo-secure-store",
 
       [
+        "expo-image-picker",
+        {
+          photosPermission:
+            (
+              "Allow Pick Sum’N to access "
+              + "your photos so you can add "
+              + "profile and group pictures."
+            ),
+        },
+      ],
+
+      [
         "react-native-maps",
         {
           androidGoogleMapsApiKey:

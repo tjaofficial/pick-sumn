@@ -7,6 +7,7 @@ import {
 import {
   ArrowLeft,
   CalendarClock,
+  Camera,
   Check,
   Copy,
   Crown,
@@ -20,6 +21,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Pressable,
   SafeAreaView,
   Share,
@@ -34,14 +36,21 @@ import {
 } from "react";
 
 import {
+  deleteGroupImage,
   getGroup,
   leaveGroup,
 } from "@/features/groups/groupsService";
+import {
+  Avatar,
+} from "@/components/ui/Avatar";
 import type {
   DiningGroupDetail,
   DiningGroupMember,
 } from "@/features/groups/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  choosePhotoForCrop,
+} from "@/services/photoPicker";
 
 function getRoleIcon(role: DiningGroupMember["role"]) {
   if (role === "owner") {
@@ -155,6 +164,76 @@ export default function GroupDetailScreen() {
       `Or enter join code: ${group.join_code}`,
   });
 }
+
+  function manageGroupPhoto() {
+    if (
+      !group
+      || !groupId
+      || !(
+        group.current_user_role
+        === "owner"
+        || group.current_user_role
+        === "admin"
+      )
+    ) {
+      return;
+    }
+
+    Alert.alert(
+      group.image
+        ? "Group Photo"
+        : "Add Group Photo",
+      "Choose what you would like to do.",
+      [
+        {
+          text: "Choose Photo",
+          onPress: () => {
+            void choosePhotoForCrop({
+              type: "group",
+              groupId,
+            });
+          },
+        },
+        ...(group.image
+          ? [
+              {
+                text: "Remove Photo",
+                style:
+                  "destructive" as const,
+                onPress: async () => {
+                  try {
+                    const result =
+                      await deleteGroupImage(
+                        groupId,
+                      );
+
+                    setGroup(result);
+                  } catch (
+                    requestError
+                  ) {
+                    Alert.alert(
+                      "Unable to remove photo",
+                      getApiErrorMessage(
+                        requestError,
+                        (
+                          "The group photo "
+                          + "could not be removed."
+                        ),
+                      ),
+                    );
+                  }
+                },
+              },
+            ]
+          : []),
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ],
+    );
+  }
+
 
   async function performLeave() {
     if (!groupId) {
@@ -276,13 +355,76 @@ export default function GroupDetailScreen() {
         ListHeaderComponent={
           <>
             <View style={styles.heroCard}>
-              <View style={styles.heroIcon}>
-                <Users
-                  size={34}
-                  color="#F3344A"
-                  strokeWidth={2.2}
-                />
-              </View>
+              <Pressable
+                onPress={manageGroupPhoto}
+                disabled={
+                  !(
+                    group.current_user_role
+                    === "owner"
+                    || group.current_user_role
+                    === "admin"
+                  )
+                }
+                style={
+                  styles.heroImageButton
+                }
+              >
+                {group.image ? (
+                  <Image
+                    source={{
+                      uri: group.image,
+                    }}
+                    style={styles.heroImage}
+                  />
+                ) : (
+                  <View style={styles.heroIcon}>
+                    <Users
+                      size={34}
+                      color="#F3344A"
+                      strokeWidth={2.2}
+                    />
+                  </View>
+                )}
+
+                {(
+                  group.current_user_role
+                  === "owner"
+                  || group.current_user_role
+                  === "admin"
+                ) && (
+                  <View
+                    style={
+                      styles.heroCameraBadge
+                    }
+                  >
+                    <Camera
+                      size={15}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                )}
+              </Pressable>
+
+              {(
+                group.current_user_role
+                === "owner"
+                || group.current_user_role
+                === "admin"
+              ) && (
+                <Pressable
+                  onPress={manageGroupPhoto}
+                >
+                  <Text
+                    style={
+                      styles.groupPhotoAction
+                    }
+                  >
+                    {group.image
+                      ? "Change Group Photo"
+                      : "Add Group Photo"}
+                  </Text>
+                </Pressable>
+              )}
 
               <Text style={styles.groupName}>
                 {group.name}
@@ -432,13 +574,12 @@ export default function GroupDetailScreen() {
         }
         renderItem={({ item }) => (
           <View style={styles.memberCard}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {getMemberName(item)
-                  .charAt(0)
-                  .toUpperCase()}
-              </Text>
-            </View>
+            <Avatar
+              imageUrl={item.user.avatar}
+              name={getMemberName(item)}
+              size={47}
+              shape="circle"
+            />
 
             <View style={styles.memberContent}>
               <Text style={styles.memberName}>
@@ -538,12 +679,43 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
 
-  heroIcon: {
-    width: 72,
-    height: 72,
+  heroImageButton: {
+    position: "relative",
+  },
+
+  heroImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+  },
+
+  heroCameraBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -2,
+    width: 30,
+    height: 30,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 24,
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    borderRadius: 15,
+    backgroundColor: "#F3344A",
+  },
+
+  groupPhotoAction: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+
+  heroIcon: {
+    width: 88,
+    height: 88,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 44,
     backgroundColor: "#FFF0F2",
   },
 
@@ -751,21 +923,6 @@ const styles = StyleSheet.create({
     borderColor: "#ECEDEF",
     borderRadius: 19,
     backgroundColor: "#FFFFFF",
-  },
-
-  avatar: {
-    width: 47,
-    height: 47,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 16,
-    backgroundColor: "#FFF0F2",
-  },
-
-  avatarText: {
-    fontSize: 19,
-    fontWeight: "900",
-    color: "#F3344A",
   },
 
   memberContent: {

@@ -105,7 +105,15 @@ export async function apiRequest<T>(
 
   const requestHeaders = new Headers(headers);
 
-  requestHeaders.set("Content-Type", "application/json");
+  const isFormData =
+    requestOptions.body instanceof FormData;
+
+  if (!isFormData) {
+    requestHeaders.set(
+      "Content-Type",
+      "application/json",
+    );
+  }
 
   if (requiresAuth) {
     const accessToken = await getAccessToken();
