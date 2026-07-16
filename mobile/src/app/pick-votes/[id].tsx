@@ -5,6 +5,7 @@ import {
 import {
   ArrowLeft,
   Check,
+  ChevronRight,
   Crown,
   MapPin,
   RefreshCw,
@@ -29,6 +30,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -110,8 +112,17 @@ export default function GroupVoteScreen() {
   );
 
 
+  const requestSequence =
+    useRef(0);
+
+  const isMounted =
+    useRef(true);
+
+
   const loadVote = useCallback(
-    async () => {
+    async (
+      showRefreshState = false,
+    ) => {
       if (!sessionId) {
         setError(
           "The Group Vote ID is missing.",
@@ -123,19 +134,44 @@ export default function GroupVoteScreen() {
         return;
       }
 
-      try {
-        setError(null);
+      const requestId =
+        ++requestSequence.current;
 
+      if (showRefreshState) {
+        setIsRefreshing(true);
+      }
+
+      try {
         const result =
           await getGroupVote(
             sessionId,
           );
 
+        if (
+          !isMounted.current
+          || requestId
+          !== requestSequence.current
+        ) {
+          return;
+        }
+
+        setError(null);
         setState(result);
+
         setSelectedOptionId(
-          result.my_vote_option_id,
+          (currentSelection) =>
+            currentSelection
+            ?? result.my_vote_option_id,
         );
       } catch (requestError) {
+        if (
+          !isMounted.current
+          || requestId
+          !== requestSequence.current
+        ) {
+          return;
+        }
+
         setError(
           getApiErrorMessage(
             requestError,
@@ -143,8 +179,14 @@ export default function GroupVoteScreen() {
           ),
         );
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
+        if (
+          isMounted.current
+          && requestId
+          === requestSequence.current
+        ) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
       }
     },
     [sessionId],
@@ -152,19 +194,32 @@ export default function GroupVoteScreen() {
 
 
   useEffect(() => {
+    isMounted.current = true;
+
     void loadVote();
 
     const interval = setInterval(
       () => {
-        void loadVote();
+        if (
+          state?.session.status
+          !== "completed"
+          && !isSubmitting
+        ) {
+          void loadVote();
+        }
       },
-      5000,
+      2000,
     );
 
     return () => {
+      isMounted.current = false;
       clearInterval(interval);
     };
-  }, [loadVote]);
+  }, [
+    isSubmitting,
+    loadVote,
+    state?.session.status,
+  ]);
 
 
   const winner = useMemo(
@@ -197,6 +252,8 @@ export default function GroupVoteScreen() {
       setIsSubmitting(true);
       setError(null);
 
+      ++requestSequence.current;
+
       const result =
         await submitGroupVote(
           sessionId,
@@ -228,6 +285,8 @@ export default function GroupVoteScreen() {
     try {
       setIsSubmitting(true);
       setError(null);
+
+      ++requestSequence.current;
 
       const result =
         await finishGroupVote(
@@ -381,8 +440,7 @@ export default function GroupVoteScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={() => {
-              setIsRefreshing(true);
-              void loadVote();
+              void loadVote(true);
             }}
             tintColor="#F3344A"
           />
@@ -643,21 +701,58 @@ export default function GroupVoteScreen() {
                       {isWinner ? (
                         <View
                           style={
-                            styles.winnerBadge
+                            styles.winnerActions
                           }
                         >
-                          <Crown
-                            size={14}
-                            color="#9A6C00"
-                          />
-
-                          <Text
+                          <View
                             style={
-                              styles.winnerText
+                              styles.winnerBadge
                             }
                           >
-                            Winner
-                          </Text>
+                            <Crown
+                              size={14}
+                              color="#9A6C00"
+                            />
+
+                            <Text
+                              style={
+                                styles.winnerText
+                              }
+                            >
+                              Winner
+                            </Text>
+                          </View>
+
+                          <Pressable
+                            onPress={() =>
+                              router.push({
+                                pathname:
+                                  "/restaurants/[sessionId]/[optionId]",
+                                params: {
+                                  sessionId:
+                                    state.session.id,
+                                  optionId:
+                                    option.id,
+                                },
+                              })
+                            }
+                            style={
+                              styles.viewButton
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.viewButtonText
+                              }
+                            >
+                              View
+                            </Text>
+
+                            <ChevronRight
+                              size={14}
+                              color="#FFFFFF"
+                            />
+                          </Pressable>
                         </View>
                       ) : (
                         <View
@@ -1000,6 +1095,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3344A",
   },
 
+  winnerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+
   winnerBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1014,6 +1115,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
     color: "#9A6C00",
+  },
+
+  viewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "#F3344A",
+  },
+
+  viewButtonText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
 
   submitButton: {

@@ -6,10 +6,7 @@ import {
   useRef,
 } from "react";
 import {
-  Platform,
   StyleSheet,
-  Text,
-  View,
 } from "react-native";
 import MapView, {
   Marker,
@@ -56,10 +53,12 @@ type CoordinateRestaurant = {
 const MAX_VISIBLE_MARKERS = 15;
 
 
+
 function getCoordinateRestaurants(
   restaurants: NearbyRestaurantMatch[],
 ): CoordinateRestaurant[] {
-  const coordinateRestaurants: CoordinateRestaurant[] = [];
+  const coordinateRestaurants:
+    CoordinateRestaurant[] = [];
 
   restaurants
     .slice(0, MAX_VISIBLE_MARKERS)
@@ -68,25 +67,29 @@ function getCoordinateRestaurants(
         restaurant,
         index,
       ) => {
+        const latitude =
+          restaurant.latitude;
+
+        const longitude =
+          restaurant.longitude;
+
         if (
-          typeof restaurant.latitude
-            !== "number"
-          || typeof restaurant.longitude
-            !== "number"
-          || !Number.isFinite(
-            restaurant.latitude,
-          )
-          || !Number.isFinite(
-            restaurant.longitude,
-          )
+          typeof latitude !== "number"
+          || typeof longitude !== "number"
+          || !Number.isFinite(latitude)
+          || !Number.isFinite(longitude)
+          || latitude < -90
+          || latitude > 90
+          || longitude < -180
+          || longitude > 180
         ) {
           return;
         }
 
         coordinateRestaurants.push({
           restaurant,
-          latitude: restaurant.latitude,
-          longitude: restaurant.longitude,
+          latitude,
+          longitude,
           index,
         });
       },
@@ -103,8 +106,16 @@ function calculateRegion(
 ): Region {
   if (restaurants.length === 0) {
     return {
-      latitude: fallbackLatitude,
-      longitude: fallbackLongitude,
+      latitude:
+        Number.isFinite(fallbackLatitude)
+          ? fallbackLatitude
+          : 42.3314,
+
+      longitude:
+        Number.isFinite(fallbackLongitude)
+          ? fallbackLongitude
+          : -83.0458,
+
       latitudeDelta: 0.08,
       longitudeDelta: 0.08,
     };
@@ -112,66 +123,69 @@ function calculateRegion(
 
   if (restaurants.length === 1) {
     return {
-      latitude: restaurants[0].latitude,
-      longitude: restaurants[0].longitude,
+      latitude:
+        restaurants[0].latitude,
+
+      longitude:
+        restaurants[0].longitude,
+
       latitudeDelta: 0.045,
       longitudeDelta: 0.045,
     };
   }
 
-  const latitudes = restaurants.map(
-    (item) => item.latitude,
-  );
+  const latitudes =
+    restaurants.map(
+      (item) => item.latitude,
+    );
 
-  const longitudes = restaurants.map(
-    (item) => item.longitude,
-  );
+  const longitudes =
+    restaurants.map(
+      (item) => item.longitude,
+    );
 
-  const minimumLatitude = Math.min(
-    ...latitudes,
-  );
+  const minimumLatitude =
+    Math.min(...latitudes);
 
-  const maximumLatitude = Math.max(
-    ...latitudes,
-  );
+  const maximumLatitude =
+    Math.max(...latitudes);
 
-  const minimumLongitude = Math.min(
-    ...longitudes,
-  );
+  const minimumLongitude =
+    Math.min(...longitudes);
 
-  const maximumLongitude = Math.max(
-    ...longitudes,
-  );
-
-  const latitude =
-    (
-      minimumLatitude
-      + maximumLatitude
-    ) / 2;
-
-  const longitude =
-    (
-      minimumLongitude
-      + maximumLongitude
-    ) / 2;
+  const maximumLongitude =
+    Math.max(...longitudes);
 
   return {
-    latitude,
-    longitude,
-    latitudeDelta: Math.max(
+    latitude:
       (
-        maximumLatitude
-        - minimumLatitude
-      ) * 1.35,
-      0.045,
-    ),
-    longitudeDelta: Math.max(
+        minimumLatitude
+        + maximumLatitude
+      ) / 2,
+
+    longitude:
       (
-        maximumLongitude
-        - minimumLongitude
-      ) * 1.35,
-      0.045,
-    ),
+        minimumLongitude
+        + maximumLongitude
+      ) / 2,
+
+    latitudeDelta:
+      Math.max(
+        (
+          maximumLatitude
+          - minimumLatitude
+        ) * 1.35,
+        0.045,
+      ),
+
+    longitudeDelta:
+      Math.max(
+        (
+          maximumLongitude
+          - minimumLongitude
+        ) * 1.35,
+        0.045,
+      ),
   };
 }
 
@@ -203,78 +217,84 @@ export const RestaurantMap =
           [restaurants],
         );
 
-      const initialRegion = useMemo(
-        () =>
-          calculateRegion(
+      const initialRegion =
+        useMemo(
+          () =>
+            calculateRegion(
+              coordinateRestaurants,
+              fallbackLatitude,
+              fallbackLongitude,
+            ),
+          [
             coordinateRestaurants,
             fallbackLatitude,
             fallbackLongitude,
-          ),
-        [
-          coordinateRestaurants,
-          fallbackLatitude,
-          fallbackLongitude,
-        ],
-      );
+          ],
+        );
 
-      const focusAllRestaurants =
-        () => {
-          if (
-            coordinateRestaurants.length
-            === 0
-          ) {
-            mapRef.current
-              ?.animateToRegion(
-                initialRegion,
-                400,
-              );
 
-            return;
-          }
-
-          if (
-            coordinateRestaurants.length
-            === 1
-          ) {
-            mapRef.current
-              ?.animateToRegion(
-                {
-                  latitude:
-                    coordinateRestaurants[0]
-                      .latitude,
-                  longitude:
-                    coordinateRestaurants[0]
-                      .longitude,
-                  latitudeDelta: 0.045,
-                  longitudeDelta: 0.045,
-                },
-                400,
-              );
-
-            return;
-          }
-
+      function focusAllRestaurants() {
+        if (
+          coordinateRestaurants.length
+          === 0
+        ) {
           mapRef.current
-            ?.fitToCoordinates(
-              coordinateRestaurants.map(
-                (item) => ({
-                  latitude:
-                    item.latitude,
-                  longitude:
-                    item.longitude,
-                }),
-              ),
-              {
-                edgePadding: {
-                  top: 215,
-                  right: 42,
-                  bottom: 185,
-                  left: 42,
-                },
-                animated: true,
-              },
+            ?.animateToRegion(
+              initialRegion,
+              300,
             );
-        };
+
+          return;
+        }
+
+        if (
+          coordinateRestaurants.length
+          === 1
+        ) {
+          mapRef.current
+            ?.animateToRegion(
+              {
+                latitude:
+                  coordinateRestaurants[0]
+                    .latitude,
+
+                longitude:
+                  coordinateRestaurants[0]
+                    .longitude,
+
+                latitudeDelta: 0.045,
+                longitudeDelta: 0.045,
+              },
+              300,
+            );
+
+          return;
+        }
+
+        mapRef.current
+          ?.fitToCoordinates(
+            coordinateRestaurants.map(
+              (item) => ({
+                latitude:
+                  item.latitude,
+
+                longitude:
+                  item.longitude,
+              }),
+            ),
+            {
+              edgePadding: {
+                top: 215,
+                right: 42,
+                bottom: 185,
+                left: 42,
+              },
+
+              animated: true,
+            },
+          );
+      }
+
 
       useEffect(() => {
         if (
@@ -284,10 +304,13 @@ export const RestaurantMap =
           return;
         }
 
-        const timer = setTimeout(
-          focusAllRestaurants,
-          500,
-        );
+        const timer =
+          setTimeout(
+            () => {
+              focusAllRestaurants();
+            },
+            500,
+          );
 
         return () => {
           clearTimeout(timer);
@@ -296,17 +319,24 @@ export const RestaurantMap =
         coordinateRestaurants,
       ]);
 
+
       useImperativeHandle(
         forwardedRef,
         () => ({
           focusRestaurant(
             restaurant,
           ) {
+            const latitude =
+              restaurant.latitude;
+
+            const longitude =
+              restaurant.longitude;
+
             if (
-              typeof restaurant.latitude
-                !== "number"
-              || typeof restaurant.longitude
-                !== "number"
+              typeof latitude !== "number"
+              || typeof longitude !== "number"
+              || !Number.isFinite(latitude)
+              || !Number.isFinite(longitude)
             ) {
               return;
             }
@@ -314,14 +344,12 @@ export const RestaurantMap =
             mapRef.current
               ?.animateToRegion(
                 {
-                  latitude:
-                    restaurant.latitude,
-                  longitude:
-                    restaurant.longitude,
+                  latitude,
+                  longitude,
                   latitudeDelta: 0.032,
                   longitudeDelta: 0.032,
                 },
-                400,
+                300,
               );
           },
 
@@ -333,12 +361,12 @@ export const RestaurantMap =
         ],
       );
 
+
       return (
         <MapView
           ref={mapRef}
           style={styles.map}
           initialRegion={initialRegion}
-          showsUserLocation
           showsMyLocationButton={false}
           showsCompass={false}
           showsScale={false}
@@ -355,16 +383,6 @@ export const RestaurantMap =
             right: 10,
             bottom: 160,
             left: 10,
-          }}
-          onMapReady={() => {
-            const timer = setTimeout(
-              focusAllRestaurants,
-              250,
-            );
-
-            return () => {
-              clearTimeout(timer);
-            };
           }}
         >
           {coordinateRestaurants.map(
@@ -383,6 +401,9 @@ export const RestaurantMap =
                   key={
                     restaurant.external_id
                   }
+                  identifier={
+                    restaurant.external_id
+                  }
                   coordinate={{
                     latitude,
                     longitude,
@@ -391,10 +412,12 @@ export const RestaurantMap =
                   description={
                     `${restaurant.match_score}% match`
                   }
-                  anchor={{
-                    x: 0.5,
-                    y: 1,
-                  }}
+                  pinColor={
+                    isSelected
+                      ? "#F3344A"
+                      : "#26313E"
+                  }
+                  tracksViewChanges={false}
                   onPress={() =>
                     onSelectRestaurant(
                       restaurant.external_id,
@@ -405,45 +428,7 @@ export const RestaurantMap =
                       ? 1000
                       : 100 - index
                   }
-                  tracksViewChanges={
-                    Platform.OS
-                    === "android"
-                  }
-                >
-                  <View
-                    style={[
-                      styles.markerContainer,
-                      isSelected
-                        && styles.markerContainerSelected,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.markerCircle,
-                        isSelected
-                          && styles.markerCircleSelected,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.markerText,
-                          isSelected
-                            && styles.markerTextSelected,
-                        ]}
-                      >
-                        {index + 1}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={[
-                        styles.markerPoint,
-                        isSelected
-                          && styles.markerPointSelected,
-                      ]}
-                    />
-                  </View>
-                </Marker>
+                />
               );
             },
           )}
@@ -456,73 +441,5 @@ export const RestaurantMap =
 const styles = StyleSheet.create({
   map: {
     ...StyleSheet.absoluteFill,
-  },
-
-  markerContainer: {
-    alignItems: "center",
-  },
-
-  markerContainerSelected: {
-    transform: [
-      {
-        scale: 1.06,
-      },
-    ],
-  },
-
-  markerCircle: {
-    minWidth: 29,
-    height: 29,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 6,
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-    borderRadius: 15,
-    backgroundColor: "#26313E",
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.22,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-
-  markerCircleSelected: {
-    minWidth: 34,
-    height: 34,
-    borderRadius: 18,
-    backgroundColor: "#F3344A",
-  },
-
-  markerText: {
-    fontSize: 11,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-
-  markerTextSelected: {
-    fontSize: 13,
-  },
-
-  markerPoint: {
-    width: 9,
-    height: 9,
-    marginTop: -5,
-    borderRightWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: "#FFFFFF",
-    backgroundColor: "#26313E",
-    transform: [
-      {
-        rotate: "45deg",
-      },
-    ],
-  },
-
-  markerPointSelected: {
-    backgroundColor: "#F3344A",
   },
 });

@@ -4,6 +4,7 @@ import {
 } from "expo-router";
 import {
   Ban,
+  Bell,
   ChevronRight,
   Clock3,
   Dices,
@@ -20,6 +21,7 @@ import {
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -41,12 +43,16 @@ import {
 import {
   createPickSession,
   getActivePickSessions,
+  getPickSessionNotifications,
   getRecentPickSessions,
+  markPickSessionNotificationRead,
+  prepareGroupVote,
   startPickSessionMatching,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
   DecisionMode,
   PickSession,
+  PickSessionNotification,
 } from "@/features/pickSessions/types";
 import {
   getApiErrorMessage,
@@ -104,6 +110,19 @@ export default function PickScreen() {
     null,
   );
 
+
+  const [
+    unreadCount,
+    setUnreadCount,
+  ] = useState(0);
+
+  const [
+    invitation,
+    setInvitation,
+  ] = useState<
+    PickSessionNotification | null
+  >(null);
+
   const loadSessions = useCallback(
     async () => {
       try {
@@ -112,13 +131,31 @@ export default function PickScreen() {
         const [
           active,
           recent,
+          notificationResponse,
         ] = await Promise.all([
           getActivePickSessions(),
           getRecentPickSessions(),
+          getPickSessionNotifications(),
         ]);
 
         setActiveSessions(active);
         setRecentSessions(recent);
+
+        setUnreadCount(
+          notificationResponse.unread_count,
+        );
+
+        const nextInvitation =
+          notificationResponse.notifications.find(
+            (notification) =>
+              !notification.is_read
+              && notification.kind
+                === "group_vote_invite",
+          ) ?? null;
+
+        setInvitation(
+          nextInvitation,
+        );
       } catch (requestError) {
         setError(
           getApiErrorMessage(
@@ -347,9 +384,13 @@ export default function PickScreen() {
         decisionMode
         === "group_vote"
       ) {
+        await prepareGroupVote(
+          session.id,
+        );
+
         router.replace({
           pathname:
-            "/pick-sessions/[id]",
+            "/pick-votes/[id]",
           params: {
             id: session.id,
           },
@@ -384,6 +425,42 @@ export default function PickScreen() {
     }
   }
 
+  async function openInvitation() {
+    if (!invitation) {
+      return;
+    }
+
+    try {
+      await markPickSessionNotificationRead(
+        invitation.id,
+      );
+    } catch {
+      // Opening the vote remains the priority.
+    }
+
+    setUnreadCount(
+      (count) => Math.max(
+        0,
+        count - 1,
+      ),
+    );
+
+    setInvitation(null);
+
+    router.push({
+      pathname: "/pick-votes/[id]",
+      params: {
+        id: invitation.session_id,
+      },
+    });
+  }
+
+
+  function dismissInvitation() {
+    setInvitation(null);
+  }
+
+
   if (isLoading) {
     return (
       <SafeAreaView
@@ -409,6 +486,56 @@ export default function PickScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
+      <Modal
+        visible={invitation !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={dismissInvitation}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.invitationModal}>
+            <View style={styles.invitationIcon}>
+              <Vote
+                size={32}
+                color="#F3344A"
+              />
+            </View>
+
+            <Text style={styles.invitationTitle}>
+              Group Vote Invitation
+            </Text>
+
+            <Text style={styles.invitationMessage}>
+              {invitation?.message}
+            </Text>
+
+            <Pressable
+              onPress={() =>
+                void openInvitation()
+              }
+              style={styles.openVoteButton}
+            >
+              <Text
+                style={
+                  styles.openVoteButtonText
+                }
+              >
+                Open Vote
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={dismissInvitation}
+              style={styles.laterButton}
+            >
+              <Text style={styles.laterText}>
+                Later
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <ScrollView
         contentContainerStyle={
           styles.content
@@ -424,13 +551,49 @@ export default function PickScreen() {
           />
         }
       >
-        <Image
-          source={require(
-            "../../../assets/images/pick-sumn-logo.png"
-          )}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <View style={styles.logoRow}>
+          <View style={styles.logoSpacer} />
+
+          <Image
+            source={require(
+              "../../../assets/images/pick-sumn-logo.png"
+            )}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+
+          <Pressable
+            onPress={() =>
+              router.push(
+                "/notifications",
+              )
+            }
+            style={styles.notificationButton}
+          >
+            <Bell
+              size={23}
+              color="#07111F"
+            />
+
+            {unreadCount > 0 && (
+              <View
+                style={
+                  styles.notificationBadge
+                }
+              >
+                <Text
+                  style={
+                    styles.notificationBadgeText
+                  }
+                >
+                  {unreadCount > 9
+                    ? "9+"
+                    : unreadCount}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </View>
 
         <Pressable
           onPress={() =>
@@ -683,22 +846,6 @@ export default function PickScreen() {
             styles.confidenceSection
           }
         >
-          <Text
-            style={
-              styles.confidenceLabel
-            }
-          >
-            Match Confidence
-          </Text>
-
-          <Text
-            style={
-              styles.confidenceNumber
-            }
-          >
-            {confidence}%
-          </Text>
-
           <Text
             style={
               styles.confidenceMessage
@@ -1032,6 +1179,119 @@ const styles = StyleSheet.create({
     paddingBottom: 38,
   },
 
+  logoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  logoSpacer: {
+    width: 45,
+  },
+
+  notificationButton: {
+    position: "relative",
+    width: 45,
+    height: 45,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+  },
+
+  notificationBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: "#FFFDFB",
+    borderRadius: 10,
+    backgroundColor: "#F3344A",
+  },
+
+  notificationBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(7, 17, 31, 0.58)",
+  },
+
+  invitationModal: {
+    width: "100%",
+    maxWidth: 380,
+    alignItems: "center",
+    padding: 25,
+    borderRadius: 25,
+    backgroundColor: "#FFFFFF",
+  },
+
+  invitationIcon: {
+    width: 65,
+    height: 65,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    backgroundColor: "#FFF0F2",
+  },
+
+  invitationTitle: {
+    marginTop: 17,
+    fontSize: 23,
+    fontWeight: "900",
+    color: "#07111F",
+    textAlign: "center",
+  },
+
+  invitationMessage: {
+    marginTop: 9,
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#69707C",
+    textAlign: "center",
+  },
+
+  openVoteButton: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 54,
+    marginTop: 22,
+    borderRadius: 17,
+    backgroundColor: "#F3344A",
+  },
+
+  openVoteButtonText: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  laterButton: {
+    marginTop: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+  },
+
+  laterText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#69707C",
+  },
+
   logo: {
     width: 236,
     height: 142,
@@ -1168,19 +1428,6 @@ const styles = StyleSheet.create({
   confidenceSection: {
     alignItems: "center",
     marginTop: 4,
-  },
-
-  confidenceLabel: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#07111F",
-  },
-
-  confidenceNumber: {
-    marginTop: 3,
-    fontSize: 42,
-    fontWeight: "900",
-    color: "#239B45",
   },
 
   confidenceMessage: {

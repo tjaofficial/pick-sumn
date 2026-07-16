@@ -125,10 +125,7 @@ export default function ActiveSessionsScreen() {
       ) {
         router.replace({
           pathname:
-            session.status === "voting"
-            || session.status === "completed"
-              ? "/pick-votes/[id]"
-              : "/pick-sessions/[id]",
+            "/pick-votes/[id]",
           params: {
             id: session.id,
           },
@@ -373,10 +370,7 @@ export default function ActiveSessionsScreen() {
                       {session.decision_mode
                         === "group_vote"
                         ? (
-                            session.status
-                            === "voting"
-                            ? "Open Vote"
-                            : "Open Waiting Room"
+"Open Vote"
                           )
                         : session.is_current
                           ? "Open Current Session"

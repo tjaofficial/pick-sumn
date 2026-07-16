@@ -8,6 +8,8 @@ import type {
   ParticipantStatus,
   PickSession,
   PickSessionDetail,
+  PickSessionNotification,
+  PickSessionNotificationList,
   GroupVoteState,
   PickSessionMatchesResponse,
   PickSessionStatus,
@@ -186,6 +188,50 @@ export async function finishGroupVote(
 ): Promise<GroupVoteState> {
   return apiRequest<GroupVoteState>(
     `/api/pick-sessions/${sessionId}/finish-vote/`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+
+export async function getPickSessionNotifications(): Promise<
+  PickSessionNotificationList
+> {
+  return apiRequest<PickSessionNotificationList>(
+    "/api/pick-sessions/notifications/",
+  );
+}
+
+
+export async function getUnreadPickSessionNotifications(): Promise<
+  PickSessionNotificationList
+> {
+  return apiRequest<PickSessionNotificationList>(
+    "/api/pick-sessions/notifications/unread/",
+  );
+}
+
+
+export async function markPickSessionNotificationRead(
+  notificationId: string,
+): Promise<PickSessionNotification> {
+  return apiRequest<PickSessionNotification>(
+    (
+      "/api/pick-sessions/notifications/"
+      + `${notificationId}/read/`
+    ),
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+export async function markAllPickSessionNotificationsRead(): Promise<void> {
+  return apiRequest<void>(
+    "/api/pick-sessions/notifications/read-all/",
     {
       method: "POST",
     },

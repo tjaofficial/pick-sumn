@@ -244,40 +244,24 @@ def refresh_pick_session_status(
     ):
         return session
 
-    # Only Group Vote waits for invitees. Ranked and Pick For Us can
-    # immediately proceed using the selected users' saved preferences.
-    if session.decision_mode != DecisionMode.GROUP_VOTE:
-        session.status = PickSessionStatus.READY
+    # Group Vote begins immediately after its restaurant options
+    # are prepared. Invitees do not need to join or mark ready first.
+    if session.decision_mode == DecisionMode.GROUP_VOTE:
+        if session.vote_options.exists():
+            session.status = PickSessionStatus.VOTING
+        else:
+            session.status = PickSessionStatus.READY
+
         session.save(
             update_fields=(
                 "status",
                 "updated_at",
             )
         )
+
         return session
 
-    participants = session.participants.exclude(
-        status__in=(
-            ParticipantStatus.DECLINED,
-            ParticipantStatus.LEFT,
-        )
-    )
-
-    if not participants.exists():
-        session.status = PickSessionStatus.CANCELLED
-
-    elif participants.filter(
-        status=ParticipantStatus.INVITED,
-    ).exists():
-        session.status = PickSessionStatus.WAITING
-
-    elif participants.exclude(
-        status=ParticipantStatus.READY,
-    ).exists():
-        session.status = PickSessionStatus.WAITING
-
-    else:
-        session.status = PickSessionStatus.READY
+    session.status = PickSessionStatus.READY
 
     session.save(
         update_fields=(
@@ -288,23 +272,3 @@ def refresh_pick_session_status(
 
     return session
 
-
-
-def all_group_vote_participants_ready(
-    session: PickSession,
-) -> bool:
-    active_participants = (
-        session.participants.exclude(
-            status__in=(
-                ParticipantStatus.DECLINED,
-                ParticipantStatus.LEFT,
-            ),
-        )
-    )
-
-    return (
-        active_participants.exists()
-        and not active_participants.exclude(
-            status=ParticipantStatus.READY,
-        ).exists()
-    )

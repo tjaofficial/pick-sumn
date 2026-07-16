@@ -375,3 +375,88 @@ class PickSessionVote(models.Model):
             f"{self.participant.user} voted for "
             f"{self.option.name}"
         )
+
+
+
+class PickSessionNotificationKind(models.TextChoices):
+    GROUP_VOTE_INVITE = (
+        "group_vote_invite",
+        "Group Vote Invitation",
+    )
+
+    GROUP_VOTE_COMPLETED = (
+        "group_vote_completed",
+        "Group Vote Completed",
+    )
+
+
+class PickSessionNotification(models.Model):
+    """An in-app notification tied to a Pick Session."""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="pick_session_notifications",
+    )
+
+    session = models.ForeignKey(
+        PickSession,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+
+    kind = models.CharField(
+        max_length=40,
+        choices=PickSessionNotificationKind.choices,
+    )
+
+    title = models.CharField(
+        max_length=120,
+    )
+
+    message = models.CharField(
+        max_length=255,
+    )
+
+    is_read = models.BooleanField(
+        default=False,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    read_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+
+    class Meta:
+        ordering = (
+            "-created_at",
+        )
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "user",
+                    "session",
+                    "kind",
+                ),
+                name=(
+                    "unique_pick_session_notification"
+                ),
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user}: "
+            f"{self.get_kind_display()}"
+        )

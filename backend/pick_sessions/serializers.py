@@ -8,6 +8,7 @@ from .models import (
     DecisionMode,
     ParticipantStatus,
     PickSession,
+    PickSessionNotification,
     PickSessionParticipant,
     PickSessionRestaurantOption,
 )
@@ -451,3 +452,39 @@ class SubmitGroupVoteSerializer(
     serializers.Serializer
 ):
     option_id = serializers.UUIDField()
+
+
+
+class PickSessionNotificationSerializer(
+    serializers.ModelSerializer
+):
+    session_id = serializers.UUIDField(
+        source="session.id",
+        read_only=True,
+    )
+
+    session_status = serializers.CharField(
+        source="session.status",
+        read_only=True,
+    )
+
+    decision_mode = serializers.CharField(
+        source="session.decision_mode",
+        read_only=True,
+    )
+
+    class Meta:
+        model = PickSessionNotification
+
+        fields = (
+            "id",
+            "kind",
+            "title",
+            "message",
+            "is_read",
+            "created_at",
+            "read_at",
+            "session_id",
+            "session_status",
+            "decision_mode",
+        )

@@ -896,22 +896,24 @@ export default function MapScreen() {
     -83.0458;
 
   const selectMapRestaurant = useCallback(
-  (restaurantId: string) => {
-    setSelectedRestaurantId(restaurantId);
-    setDetailRestaurantId(restaurantId);
+    (restaurantId: string) => {
+      setSelectedRestaurantId(
+        restaurantId,
+      );
 
-    const restaurant = matches.find(
-      (item) => item.external_id === restaurantId,
-    );
+      setDetailRestaurantId(
+        restaurantId,
+      );
 
-    if (restaurant) {
-      mapRef.current?.focusRestaurant(restaurant);
-    }
-
-    bottomSheetRef.current?.snapToIndex(1);
-  },
-  [matches],
-);
+      requestAnimationFrame(
+        () => {
+          bottomSheetRef.current
+            ?.snapToIndex(1);
+        },
+      );
+    },
+    [],
+  );
 
   const openRestaurantDetails = useCallback(
     (restaurant: NearbyRestaurantMatch) => {

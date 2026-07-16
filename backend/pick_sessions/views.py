@@ -19,6 +19,8 @@ from .models import (
     DecisionMode,
     ParticipantStatus,
     PickSession,
+    PickSessionNotification,
+    PickSessionNotificationKind,
     PickSessionParticipant,
     PickSessionRestaurantOption,
     PickSessionStatus,
@@ -30,11 +32,11 @@ from .serializers import (
     PickSessionParticipantSerializer,
     GroupVoteOptionSerializer,
     PickSessionListSerializer,
+    PickSessionNotificationSerializer,
     SubmitGroupVoteSerializer,
     UpdateParticipantStatusSerializer,
 )
 from .services import (
-    all_group_vote_participants_ready,
     refresh_pick_session_status,
     set_current_pick_session,
 )
@@ -97,6 +99,137 @@ def _get_group_vote_matches(
     )[:5]
 
 
+def _prepare_group_vote_options(
+    session,
+):
+    if session.vote_options.exists():
+        if (
+            session.status
+            != PickSessionStatus.VOTING
+        ):
+            session.status = (
+                PickSessionStatus.VOTING
+            )
+
+            if not session.started_at:
+                session.started_at = (
+                    timezone.now()
+                )
+
+            session.save(
+                update_fields=(
+                    "status",
+                    "started_at",
+                    "updated_at",
+                ),
+            )
+
+        return
+
+    scored_restaurants = (
+        _get_group_vote_matches(
+            session
+        )
+    )
+
+    if not scored_restaurants:
+        raise GooglePlacesError(
+            "No eligible restaurants were found "
+            "for this vote."
+        )
+
+    PickSessionRestaurantOption.objects.bulk_create(
+        [
+            PickSessionRestaurantOption(
+                session=session,
+                external_id=(
+                    scored.restaurant.external_id
+                ),
+                name=(
+                    scored.restaurant.name
+                ),
+                rank=index,
+                match_score=(
+                    scored.match_score
+                ),
+                restaurant_data=(
+                    scored.to_dict()
+                ),
+            )
+            for index, scored in enumerate(
+                scored_restaurants,
+                start=1,
+            )
+        ]
+    )
+
+    session.status = (
+        PickSessionStatus.VOTING
+    )
+
+    if not session.started_at:
+        session.started_at = (
+            timezone.now()
+        )
+
+    session.save(
+        update_fields=(
+            "status",
+            "started_at",
+            "updated_at",
+        ),
+    )
+
+
+def _create_group_vote_invites(
+    session,
+):
+    host_name = (
+        session.created_by.get_full_name()
+        or getattr(
+            session.created_by,
+            "display_name",
+            "",
+        )
+        or session.created_by.email
+    )
+
+    invitees = (
+        session.participants.exclude(
+            is_host=True,
+        )
+        .exclude(
+            status__in=(
+                ParticipantStatus.DECLINED,
+                ParticipantStatus.LEFT,
+            ),
+        )
+        .select_related(
+            "user",
+        )
+    )
+
+    PickSessionNotification.objects.bulk_create(
+        [
+            PickSessionNotification(
+                user=participant.user,
+                session=session,
+                kind=(
+                    PickSessionNotificationKind
+                    .GROUP_VOTE_INVITE
+                ),
+                title="Group Vote Invitation",
+                message=(
+                    f"{host_name} invited you to vote "
+                    "on where the group should eat."
+                ),
+            )
+            for participant in invitees
+        ],
+        ignore_conflicts=True,
+    )
+
+
 def _serialize_group_vote_state(
     *,
     session,
@@ -121,7 +254,7 @@ def _serialize_group_vote_state(
     options = (
         session.vote_options.annotate(
             vote_count=Count(
-                "votes",
+                "votes__participant",
                 distinct=True,
             ),
         )
@@ -159,7 +292,13 @@ def _serialize_group_vote_state(
         )
     ]
 
-    total_votes = session.votes.count()
+    total_votes = (
+        session.votes.values(
+            "participant_id",
+        )
+        .distinct()
+        .count()
+    )
 
     winner_option_id = None
 
@@ -332,6 +471,28 @@ class PickSessionViewSet(viewsets.ModelViewSet):
 
         session = serializer.save()
 
+        if (
+            session.decision_mode
+            == DecisionMode.GROUP_VOTE
+        ):
+            try:
+                _prepare_group_vote_options(
+                    session
+                )
+            except GooglePlacesError as error:
+                return Response(
+                    {
+                        "detail": str(error),
+                    },
+                    status=(
+                        status.HTTP_502_BAD_GATEWAY
+                    ),
+                )
+
+            _create_group_vote_invites(
+                session
+            )
+
         now = timezone.now()
 
         # First find the IDs through the participant table.
@@ -454,6 +615,37 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             is_current=True,
         ).update(
             is_current=False,
+        )
+
+        active_participants = (
+            session.participants.exclude(
+                status__in=(
+                    ParticipantStatus.DECLINED,
+                    ParticipantStatus.LEFT,
+                ),
+            )
+            .select_related(
+                "user",
+            )
+        )
+
+        PickSessionNotification.objects.bulk_create(
+            [
+                PickSessionNotification(
+                    user=participant.user,
+                    session=session,
+                    kind=(
+                        PickSessionNotificationKind
+                        .GROUP_VOTE_COMPLETED
+                    ),
+                    title="Group Vote Complete",
+                    message=(
+                        f"{winner.name} won the group vote."
+                    ),
+                )
+                for participant in active_participants
+            ],
+            ignore_conflicts=True,
         )
 
         return Response(
@@ -800,20 +992,6 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 ),
             )
 
-        if not all_group_vote_participants_ready(
-            session
-        ):
-            return Response(
-                {
-                    "detail": (
-                        "Every active participant "
-                        "must be ready before voting "
-                        "can begin."
-                    ),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         try:
             scored_restaurants = (
                 _get_group_vote_matches(
@@ -946,18 +1124,38 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             )
 
         if participant.status in (
-            ParticipantStatus.INVITED,
             ParticipantStatus.DECLINED,
             ParticipantStatus.LEFT,
         ):
             return Response(
                 {
                     "detail": (
-                        "Join and mark yourself ready "
-                        "before voting."
+                        "You are no longer participating "
+                        "in this vote."
                     ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            participant.status
+            == ParticipantStatus.INVITED
+        ):
+            participant.status = (
+                ParticipantStatus.JOINED
+            )
+
+            if not participant.joined_at:
+                participant.joined_at = (
+                    timezone.now()
+                )
+
+            participant.save(
+                update_fields=(
+                    "status",
+                    "joined_at",
+                    "updated_at",
+                ),
             )
 
         serializer = SubmitGroupVoteSerializer(
@@ -985,6 +1183,8 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 "option": option,
             },
         )
+
+        session.refresh_from_db()
 
         return Response(
             _serialize_group_vote_state(
@@ -1052,7 +1252,7 @@ class PickSessionViewSet(viewsets.ModelViewSet):
         winner = (
             session.vote_options.annotate(
                 vote_count=Count(
-                    "votes",
+                    "votes__participant",
                     distinct=True,
                 ),
             )
@@ -1115,6 +1315,161 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 session=session,
                 request=request,
             ),
+        )
+
+    @action(
+        detail=False,
+        methods=("get",),
+        url_path="notifications",
+    )
+    def notifications(
+        self,
+        request,
+    ):
+        notifications = (
+            PickSessionNotification.objects
+            .filter(
+                user=request.user,
+            )
+            .select_related(
+                "session",
+            )
+            .order_by(
+                "-created_at",
+            )[:100]
+        )
+
+        serializer = (
+            PickSessionNotificationSerializer(
+                notifications,
+                many=True,
+            )
+        )
+
+        return Response(
+            {
+                "unread_count": (
+                    PickSessionNotification.objects
+                    .filter(
+                        user=request.user,
+                        is_read=False,
+                    )
+                    .count()
+                ),
+                "notifications": (
+                    serializer.data
+                ),
+            },
+        )
+
+    @action(
+        detail=False,
+        methods=("get",),
+        url_path="notifications/unread",
+    )
+    def unread_notifications(
+        self,
+        request,
+    ):
+        notifications = (
+            PickSessionNotification.objects
+            .filter(
+                user=request.user,
+                is_read=False,
+            )
+            .select_related(
+                "session",
+            )
+            .order_by(
+                "-created_at",
+            )
+        )
+
+        serializer = (
+            PickSessionNotificationSerializer(
+                notifications,
+                many=True,
+            )
+        )
+
+        return Response(
+            {
+                "unread_count": (
+                    notifications.count()
+                ),
+                "notifications": (
+                    serializer.data
+                ),
+            },
+        )
+
+    @action(
+        detail=False,
+        methods=("post",),
+        url_path=(
+            r"notifications/"
+            r"(?P<notification_id>[^/.]+)/read"
+        ),
+    )
+    def mark_notification_read(
+        self,
+        request,
+        notification_id=None,
+    ):
+        notification = get_object_or_404(
+            PickSessionNotification,
+            id=notification_id,
+            user=request.user,
+        )
+
+        if not notification.is_read:
+            notification.is_read = True
+            notification.read_at = (
+                timezone.now()
+            )
+
+            notification.save(
+                update_fields=(
+                    "is_read",
+                    "read_at",
+                ),
+            )
+
+        serializer = (
+            PickSessionNotificationSerializer(
+                notification,
+            )
+        )
+
+        return Response(
+            serializer.data,
+        )
+
+    @action(
+        detail=False,
+        methods=("post",),
+        url_path="notifications/read-all",
+    )
+    def mark_all_notifications_read(
+        self,
+        request,
+    ):
+        now = timezone.now()
+
+        PickSessionNotification.objects.filter(
+            user=request.user,
+            is_read=False,
+        ).update(
+            is_read=True,
+            read_at=now,
+        )
+
+        return Response(
+            {
+                "detail": (
+                    "All notifications marked read."
+                ),
+            },
         )
 
     @action(

@@ -235,3 +235,29 @@ export type GroupVoteState = {
   all_votes_submitted: boolean;
   winner_option_id: string | null;
 };
+
+
+
+export type PickSessionNotificationKind =
+  | "group_vote_invite"
+  | "group_vote_completed";
+
+
+export type PickSessionNotification = {
+  id: string;
+  kind: PickSessionNotificationKind;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  read_at: string | null;
+  session_id: string;
+  session_status: PickSessionStatus;
+  decision_mode: DecisionMode;
+};
+
+
+export type PickSessionNotificationList = {
+  unread_count: number;
+  notifications: PickSessionNotification[];
+};

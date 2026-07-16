@@ -14,13 +14,15 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pick-sumn-api.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://pick-sumn-api.onrender.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY": "AIzaSyCQErUzcEcyryPSGFLQvMEdx5090jsPjb8"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://pick-sumn-api.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://pick-sumn-api.onrender.com",
+        "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY": "AIzaSyCQErUzcEcyryPSGFLQvMEdx5090jsPjb8"
       }
     }
   }
