@@ -1,14 +1,19 @@
-import { apiRequest } from "@/services/api";
+import {
+  ApiError,
+  apiRequest,
+} from "@/services/api";
 
 import type {
   CreatePickSessionInput,
   ParticipantStatus,
   PickSession,
   PickSessionDetail,
+  GroupVoteState,
   PickSessionMatchesResponse,
   PickSessionStatus,
   UpdateParticipantStatusResponse,
 } from "./types";
+
 
 export async function getActivePickSessions(): Promise<
   PickSession[]
@@ -18,6 +23,39 @@ export async function getActivePickSessions(): Promise<
   );
 }
 
+
+export async function getCurrentPickSession(): Promise<
+  PickSessionDetail | null
+> {
+  try {
+    return await apiRequest<PickSessionDetail>(
+      "/api/pick-sessions/current/",
+    );
+  } catch (error) {
+    if (
+      error instanceof ApiError
+      && error.status === 404
+    ) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+
+export async function makePickSessionCurrent(
+  sessionId: string,
+): Promise<PickSessionDetail> {
+  return apiRequest<PickSessionDetail>(
+    `/api/pick-sessions/${sessionId}/make-current/`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
 export async function getRecentPickSessions(): Promise<
   PickSession[]
 > {
@@ -25,6 +63,7 @@ export async function getRecentPickSessions(): Promise<
     "/api/pick-sessions/recent/",
   );
 }
+
 
 export async function cancelPickSession(
   sessionId: string,
@@ -36,6 +75,7 @@ export async function cancelPickSession(
     },
   );
 }
+
 
 export async function createPickSession(
   input: CreatePickSessionInput,
@@ -49,6 +89,7 @@ export async function createPickSession(
   );
 }
 
+
 export async function getPickSession(
   sessionId: string,
 ): Promise<PickSessionDetail> {
@@ -56,6 +97,7 @@ export async function getPickSession(
     `/api/pick-sessions/${sessionId}/`,
   );
 }
+
 
 export async function updateParticipantStatus(
   sessionId: string,
@@ -72,6 +114,7 @@ export async function updateParticipantStatus(
   );
 }
 
+
 export async function startPickSessionMatching(
   sessionId: string,
 ): Promise<{
@@ -87,11 +130,62 @@ export async function startPickSessionMatching(
   );
 }
 
+
 export async function getPickSessionMatches(
   sessionId: string,
 ): Promise<PickSessionMatchesResponse> {
   return apiRequest<PickSessionMatchesResponse>(
     `/api/pick-sessions/${sessionId}/matches/`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+
+export async function prepareGroupVote(
+  sessionId: string,
+): Promise<GroupVoteState> {
+  return apiRequest<GroupVoteState>(
+    `/api/pick-sessions/${sessionId}/prepare-vote/`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+
+export async function getGroupVote(
+  sessionId: string,
+): Promise<GroupVoteState> {
+  return apiRequest<GroupVoteState>(
+    `/api/pick-sessions/${sessionId}/vote/`,
+  );
+}
+
+
+export async function submitGroupVote(
+  sessionId: string,
+  optionId: string,
+): Promise<GroupVoteState> {
+  return apiRequest<GroupVoteState>(
+    `/api/pick-sessions/${sessionId}/vote/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        option_id: optionId,
+      }),
+    },
+  );
+}
+
+
+export async function finishGroupVote(
+  sessionId: string,
+): Promise<GroupVoteState> {
+  return apiRequest<GroupVoteState>(
+    `/api/pick-sessions/${sessionId}/finish-vote/`,
     {
       method: "POST",
     },

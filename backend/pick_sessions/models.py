@@ -6,6 +6,7 @@ from django.core.validators import (
     MinValueValidator,
 )
 from django.db import models
+from django.db.models import Q
 
 from dining_groups.models import DiningGroup
 
@@ -121,21 +122,10 @@ class PickSession(models.Model):
         ],
     )
 
-    open_now = models.BooleanField(
-        default=True,
-    )
-
-    include_delivery = models.BooleanField(
-        default=False,
-    )
-
-    include_drive_through = models.BooleanField(
-        default=False,
-    )
-
-    something_new = models.BooleanField(
-        default=False,
-    )
+    open_now = models.BooleanField(default=True)
+    include_delivery = models.BooleanField(default=False)
+    include_drive_through = models.BooleanField(default=False)
+    something_new = models.BooleanField(default=False)
 
     exclude_recent_days = models.PositiveSmallIntegerField(
         default=7,
@@ -163,28 +153,11 @@ class PickSession(models.Model):
         blank=True,
     )
 
-    expires_at = models.DateTimeField(
-        blank=True,
-        null=True,
-    )
-
-    started_at = models.DateTimeField(
-        blank=True,
-        null=True,
-    )
-
-    completed_at = models.DateTimeField(
-        blank=True,
-        null=True,
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True,
-    )
+    expires_at = models.DateTimeField(blank=True, null=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ("-created_at",)
@@ -223,31 +196,16 @@ class PickSessionParticipant(models.Model):
         default=ParticipantStatus.INVITED,
     )
 
-    is_host = models.BooleanField(
-        default=False,
-    )
+    is_host = models.BooleanField(default=False)
 
-    vetoes_used = models.PositiveSmallIntegerField(
-        default=0,
-    )
+    # The one session this user currently projects into Matches and Map.
+    is_current = models.BooleanField(default=False)
 
-    joined_at = models.DateTimeField(
-        blank=True,
-        null=True,
-    )
-
-    ready_at = models.DateTimeField(
-        blank=True,
-        null=True,
-    )
-
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-    )
-
-    updated_at = models.DateTimeField(
-        auto_now=True,
-    )
+    vetoes_used = models.PositiveSmallIntegerField(default=0)
+    joined_at = models.DateTimeField(blank=True, null=True)
+    ready_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = (
@@ -259,6 +217,11 @@ class PickSessionParticipant(models.Model):
             models.UniqueConstraint(
                 fields=("session", "user"),
                 name="unique_pick_session_participant",
+            ),
+            models.UniqueConstraint(
+                fields=("user",),
+                condition=Q(is_current=True),
+                name="unique_current_pick_session_per_user",
             ),
         ]
 
@@ -291,3 +254,124 @@ class PickSessionCuisineFilter(models.Model):
 
     def __str__(self):
         return f"{self.session} — {self.cuisine}"
+
+
+
+class PickSessionRestaurantOption(models.Model):
+    """A frozen restaurant option used by a Group Vote."""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    session = models.ForeignKey(
+        PickSession,
+        on_delete=models.CASCADE,
+        related_name="vote_options",
+    )
+
+    external_id = models.CharField(
+        max_length=255,
+    )
+
+    name = models.CharField(
+        max_length=255,
+    )
+
+    rank = models.PositiveSmallIntegerField()
+
+    match_score = models.PositiveSmallIntegerField(
+        default=0,
+    )
+
+    restaurant_data = models.JSONField(
+        default=dict,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = (
+            "rank",
+            "name",
+        )
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "session",
+                    "external_id",
+                ),
+                name=(
+                    "unique_group_vote_option_external_id"
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=(
+                    "session",
+                    "rank",
+                ),
+                name=(
+                    "unique_group_vote_option_rank"
+                ),
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.session}: "
+            f"#{self.rank} {self.name}"
+        )
+
+
+class PickSessionVote(models.Model):
+    """One participant's current vote in a Group Vote."""
+
+    session = models.ForeignKey(
+        PickSession,
+        on_delete=models.CASCADE,
+        related_name="votes",
+    )
+
+    participant = models.ForeignKey(
+        PickSessionParticipant,
+        on_delete=models.CASCADE,
+        related_name="votes",
+    )
+
+    option = models.ForeignKey(
+        PickSessionRestaurantOption,
+        on_delete=models.CASCADE,
+        related_name="votes",
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "session",
+                    "participant",
+                ),
+                name=(
+                    "one_group_vote_per_participant"
+                ),
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.participant.user} voted for "
+            f"{self.option.name}"
+        )

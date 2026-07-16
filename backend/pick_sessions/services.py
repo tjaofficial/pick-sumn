@@ -6,14 +6,74 @@ from dining_groups.models import DiningGroupMember
 from profiles.models import Profile
 
 from .models import (
+    DecisionMode,
     ParticipantStatus,
     PickSession,
     PickSessionCuisineFilter,
     PickSessionParticipant,
+    PickSessionStatus,
 )
 
 
 User = get_user_model()
+
+
+ACTIVE_SESSION_STATUSES = (
+    PickSessionStatus.DRAFT,
+    PickSessionStatus.WAITING,
+    PickSessionStatus.READY,
+    PickSessionStatus.MATCHING,
+    PickSessionStatus.VOTING,
+)
+
+
+@transaction.atomic
+def set_current_pick_session(
+    *,
+    user,
+    session,
+):
+    participation = (
+        PickSessionParticipant.objects
+        .select_for_update()
+        .get(
+            user=user,
+            session=session,
+        )
+    )
+
+    if participation.status in (
+        ParticipantStatus.DECLINED,
+        ParticipantStatus.LEFT,
+    ):
+        raise ValueError(
+            "A session you left or declined cannot be made current."
+        )
+
+    if session.status not in ACTIVE_SESSION_STATUSES:
+        raise ValueError(
+            "Only an active session can be made current."
+        )
+
+    PickSessionParticipant.objects.filter(
+        user=user,
+        is_current=True,
+    ).exclude(
+        pk=participation.pk,
+    ).update(
+        is_current=False,
+    )
+
+    if not participation.is_current:
+        participation.is_current = True
+        participation.save(
+            update_fields=(
+                "is_current",
+                "updated_at",
+            ),
+        )
+
+    return participation
 
 
 @transaction.atomic
@@ -85,11 +145,20 @@ def create_pick_session(
 
     now = timezone.now()
 
+    # A newly created session becomes current only for its host.
+    PickSessionParticipant.objects.filter(
+        user=created_by,
+        is_current=True,
+    ).update(
+        is_current=False,
+    )
+
     PickSessionParticipant.objects.create(
         session=session,
         user=created_by,
         status=ParticipantStatus.READY,
         is_host=True,
+        is_current=True,
         joined_at=now,
         ready_at=now,
     )
@@ -117,12 +186,31 @@ def create_pick_session(
             if user.id != created_by.id
         }
 
+        # Ranked and Surprise Me sessions use other members only as
+        # preference contributors. Group Vote creates true invitations.
+        participant_status = (
+            ParticipantStatus.INVITED
+            if decision_mode == DecisionMode.GROUP_VOTE
+            else ParticipantStatus.READY
+        )
+
         PickSessionParticipant.objects.bulk_create(
             [
                 PickSessionParticipant(
                     session=session,
                     user=user,
-                    status=ParticipantStatus.INVITED,
+                    status=participant_status,
+                    is_current=False,
+                    joined_at=(
+                        None
+                        if participant_status == ParticipantStatus.INVITED
+                        else now
+                    ),
+                    ready_at=(
+                        None
+                        if participant_status == ParticipantStatus.INVITED
+                        else now
+                    ),
                 )
                 for user in unique_participant_users.values()
             ]
@@ -140,30 +228,32 @@ def create_pick_session(
         )
 
     refresh_pick_session_status(session)
-    
+
     return session
 
-from django.db.models import Q
 
-from .models import (
-    ParticipantStatus,
-    PickSession,
-    PickSessionCuisineFilter,
-    PickSessionParticipant,
-    PickSessionStatus,
-)
-
-
-def refresh_pick_session_status(session: PickSession) -> PickSession:
-    """
-    Update a session based on its active participant statuses.
-    """
+def refresh_pick_session_status(
+    session: PickSession,
+) -> PickSession:
+    """Update a session based on relevant participant statuses."""
 
     if session.status in (
         PickSessionStatus.COMPLETED,
         PickSessionStatus.CANCELLED,
         PickSessionStatus.EXPIRED,
     ):
+        return session
+
+    # Only Group Vote waits for invitees. Ranked and Pick For Us can
+    # immediately proceed using the selected users' saved preferences.
+    if session.decision_mode != DecisionMode.GROUP_VOTE:
+        session.status = PickSessionStatus.READY
+        session.save(
+            update_fields=(
+                "status",
+                "updated_at",
+            )
+        )
         return session
 
     participants = session.participants.exclude(
@@ -197,3 +287,24 @@ def refresh_pick_session_status(session: PickSession) -> PickSession:
     )
 
     return session
+
+
+
+def all_group_vote_participants_ready(
+    session: PickSession,
+) -> bool:
+    active_participants = (
+        session.participants.exclude(
+            status__in=(
+                ParticipantStatus.DECLINED,
+                ParticipantStatus.LEFT,
+            ),
+        )
+    )
+
+    return (
+        active_participants.exists()
+        and not active_participants.exclude(
+            status=ParticipantStatus.READY,
+        ).exists()
+    )

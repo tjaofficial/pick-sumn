@@ -24,6 +24,7 @@ import {
 } from "react-native";
 import {
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -34,6 +35,11 @@ import {
   getProfile,
 } from "@/features/profile/profileService";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  getLocationDetails,
+  getLocationSuggestions,
+  type LocationSuggestion,
+} from "@/features/pickSessions/locationService";
 
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 const PRICE_OPTIONS = [1, 2, 3, 4];
@@ -114,6 +120,17 @@ export default function PickFiltersScreen() {
   const [error, setError] =
     useState<string | null>(null);
 
+  const [locationSuggestions, setLocationSuggestions] =
+    useState<LocationSuggestion[]>([]);
+
+  const [isSearchingLocations, setIsSearchingLocations] =
+    useState(false);
+
+  const [isSelectingLocation, setIsSelectingLocation] =
+    useState(false);
+
+  const locationSearchRequestId = useRef(0);
+
   useEffect(() => {
     async function loadDefaults() {
       try {
@@ -157,6 +174,86 @@ export default function PickFiltersScreen() {
     draft.locationLabel,
   ]);
 
+  useEffect(() => {
+    const normalizedLocation = locationLabel.trim();
+
+    if (
+      normalizedLocation.length < 2 ||
+      (latitude !== null && longitude !== null)
+    ) {
+      setLocationSuggestions([]);
+      setIsSearchingLocations(false);
+      return;
+    }
+
+    const requestId = locationSearchRequestId.current + 1;
+    locationSearchRequestId.current = requestId;
+
+    const timeout = setTimeout(() => {
+      async function searchLocations() {
+        try {
+          setIsSearchingLocations(true);
+          setError(null);
+
+          const suggestions = await getLocationSuggestions(
+            normalizedLocation,
+          );
+
+          if (locationSearchRequestId.current === requestId) {
+            setLocationSuggestions(suggestions);
+          }
+        } catch (requestError) {
+          if (locationSearchRequestId.current === requestId) {
+            setLocationSuggestions([]);
+            setError(
+              getApiErrorMessage(
+                requestError,
+                "Unable to search for locations.",
+              ),
+            );
+          }
+        } finally {
+          if (locationSearchRequestId.current === requestId) {
+            setIsSearchingLocations(false);
+          }
+        }
+      }
+
+      void searchLocations();
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [locationLabel, latitude, longitude]);
+
+  async function selectLocationSuggestion(
+    suggestion: LocationSuggestion,
+  ) {
+    try {
+      setIsSelectingLocation(true);
+      setError(null);
+      setLocationSuggestions([]);
+
+      const selectedLocation = await getLocationDetails(
+        suggestion.place_id,
+      );
+
+      setLocationLabel(selectedLocation.label);
+      setLatitude(selectedLocation.latitude);
+      setLongitude(selectedLocation.longitude);
+    } catch (requestError) {
+      setLatitude(null);
+      setLongitude(null);
+      setError(
+        getApiErrorMessage(
+          requestError,
+          "Unable to select that location.",
+        ),
+      );
+    } finally {
+      setIsSelectingLocation(false);
+    }
+  }
+
   async function useCurrentLocation() {
     try {
       setIsGettingLocation(true);
@@ -191,6 +288,7 @@ export default function PickFiltersScreen() {
 
       setLatitude(nextLatitude);
       setLongitude(nextLongitude);
+      setLocationSuggestions([]);
 
       try {
         const addresses =
@@ -263,6 +361,13 @@ export default function PickFiltersScreen() {
     if (!locationLabel.trim()) {
       setError(
         "Enter a location or use your current location.",
+      );
+      return;
+    }
+
+    if (latitude === null || longitude === null) {
+      setError(
+        "Select a location from the suggestions before saving.",
       );
       return;
     }
@@ -417,25 +522,77 @@ export default function PickFiltersScreen() {
           <View style={styles.orLine} />
         </View>
 
-        <View
-          style={styles.inputWrapper}
-        >
-          <Search
-            size={20}
-            color="#9298A2"
-          />
+        <View style={styles.locationSearchContainer}>
+          <View
+            style={[
+              styles.inputWrapper,
+              locationSuggestions.length > 0 &&
+                styles.inputWrapperWithSuggestions,
+            ]}
+          >
+            <Search
+              size={20}
+              color="#9298A2"
+            />
 
-          <TextInput
-            value={locationLabel}
-            onChangeText={(value) => {
-              setLocationLabel(value);
-              setLatitude(null);
-              setLongitude(null);
-            }}
-            placeholder="City, neighborhood, or address"
-            placeholderTextColor="#9298A2"
-            style={styles.locationInput}
-          />
+            <TextInput
+              value={locationLabel}
+              onChangeText={(value) => {
+                setLocationLabel(value);
+                setLatitude(null);
+                setLongitude(null);
+                setError(null);
+              }}
+              autoCorrect={false}
+              autoCapitalize="words"
+              placeholder="City, neighborhood, or address"
+              placeholderTextColor="#9298A2"
+              style={styles.locationInput}
+            />
+
+            {(isSearchingLocations || isSelectingLocation) && (
+              <ActivityIndicator
+                size="small"
+                color="#F3344A"
+              />
+            )}
+          </View>
+
+          {locationSuggestions.length > 0 && (
+            <View style={styles.suggestionsCard}>
+              {locationSuggestions.map((suggestion, index) => (
+                <Pressable
+                  key={suggestion.place_id}
+                  onPress={() =>
+                    void selectLocationSuggestion(suggestion)
+                  }
+                  disabled={isSelectingLocation}
+                  style={[
+                    styles.suggestionRow,
+                    index < locationSuggestions.length - 1 &&
+                      styles.suggestionRowBorder,
+                  ]}
+                >
+                  <MapPin
+                    size={19}
+                    color="#F3344A"
+                  />
+
+                  <View style={styles.suggestionTextContainer}>
+                    <Text style={styles.suggestionMainText}>
+                      {suggestion.main_text}
+                    </Text>
+
+                    {!!suggestion.secondary_text && (
+                      <Text style={styles.suggestionSecondaryText}>
+                        {suggestion.secondary_text}
+                      </Text>
+                    )}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
 
         {latitude !== null &&
@@ -917,6 +1074,11 @@ const styles = StyleSheet.create({
     color: "#9298A2",
   },
 
+  locationSearchContainer: {
+    position: "relative",
+    zIndex: 10,
+  },
+
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -929,10 +1091,56 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
 
+  inputWrapperWithSuggestions: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+
   locationInput: {
     flex: 1,
     fontSize: 16,
     color: "#07111F",
+  },
+
+  suggestionsCard: {
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: "#D9DDE3",
+    borderBottomLeftRadius: 17,
+    borderBottomRightRadius: 17,
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    minHeight: 62,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+
+  suggestionRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEDEF",
+  },
+
+  suggestionTextContainer: {
+    flex: 1,
+  },
+
+  suggestionMainText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#07111F",
+  },
+
+  suggestionSecondaryText: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#69707C",
   },
 
   locationSuccess: {

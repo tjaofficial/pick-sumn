@@ -256,18 +256,9 @@ export default function PickScreen() {
   }
 
   function openActiveSession() {
-    const session =
-      activeSessions[0];
-
-    if (!session) {
-      setError(
-        "You do not have an active session right now.",
-      );
-
-      return;
-    }
-
-    openSession(session);
+    router.push(
+      "/pick/active",
+    );
   }
 
   async function createSession(
@@ -351,6 +342,21 @@ export default function PickScreen() {
           cuisine_ids:
             draft.cuisineIds,
         });
+
+      if (
+        decisionMode
+        === "group_vote"
+      ) {
+        router.replace({
+          pathname:
+            "/pick-sessions/[id]",
+          params: {
+            id: session.id,
+          },
+        });
+
+        return;
+      }
 
       await startPickSessionMatching(
         session.id,

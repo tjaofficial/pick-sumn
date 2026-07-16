@@ -9,7 +9,7 @@ from .models import (
     ParticipantStatus,
     PickSession,
     PickSessionParticipant,
-    PickSessionStatus,
+    PickSessionRestaurantOption,
 )
 from .services import create_pick_session
 
@@ -18,6 +18,7 @@ class PickSessionParticipantSerializer(
     serializers.ModelSerializer
 ):
     user = UserSerializer(read_only=True)
+
     status_display = serializers.CharField(
         source="get_status_display",
         read_only=True,
@@ -25,12 +26,14 @@ class PickSessionParticipantSerializer(
 
     class Meta:
         model = PickSessionParticipant
+
         fields = (
             "id",
             "user",
             "status",
             "status_display",
             "is_host",
+            "is_current",
             "vetoes_used",
             "joined_at",
             "ready_at",
@@ -38,7 +41,9 @@ class PickSessionParticipantSerializer(
         )
 
 
-class PickSessionListSerializer(serializers.ModelSerializer):
+class PickSessionListSerializer(
+    serializers.ModelSerializer
+):
     group_name = serializers.CharField(
         source="group.name",
         read_only=True,
@@ -60,9 +65,11 @@ class PickSessionListSerializer(serializers.ModelSerializer):
     )
 
     is_host = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
 
     class Meta:
         model = PickSession
+
         fields = (
             "id",
             "title",
@@ -74,6 +81,7 @@ class PickSessionListSerializer(serializers.ModelSerializer):
             "decision_mode_display",
             "participant_count",
             "is_host",
+            "is_current",
             "location_label",
             "search_radius_miles",
             "price_min",
@@ -95,6 +103,17 @@ class PickSessionListSerializer(serializers.ModelSerializer):
         return obj.participants.filter(
             user=request.user,
             is_host=True,
+        ).exists()
+
+    def get_is_current(self, obj):
+        request = self.context.get("request")
+
+        if not request or not request.user.is_authenticated:
+            return False
+
+        return obj.participants.filter(
+            user=request.user,
+            is_current=True,
         ).exists()
 
 
@@ -399,3 +418,36 @@ class UpdateParticipantStatusSerializer(
             ParticipantStatus.LEFT,
         )
     )
+
+
+
+class GroupVoteOptionSerializer(
+    serializers.ModelSerializer
+):
+    vote_count = serializers.IntegerField(
+        read_only=True,
+    )
+
+    restaurant = serializers.JSONField(
+        source="restaurant_data",
+        read_only=True,
+    )
+
+    class Meta:
+        model = PickSessionRestaurantOption
+
+        fields = (
+            "id",
+            "external_id",
+            "name",
+            "rank",
+            "match_score",
+            "vote_count",
+            "restaurant",
+        )
+
+
+class SubmitGroupVoteSerializer(
+    serializers.Serializer
+):
+    option_id = serializers.UUIDField()

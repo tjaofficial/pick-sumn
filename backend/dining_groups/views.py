@@ -24,17 +24,33 @@ from .serializers import (
 
 
 class DiningGroupViewSet(viewsets.ModelViewSet):
-    permission_classes = (IsAuthenticated,)
+    permission_classes = (
+        IsAuthenticated,
+    )
+
     lookup_field = "id"
 
     def get_queryset(self):
+        user_group_ids = (
+            DiningGroupMember.objects.filter(
+                user=self.request.user,
+                is_active=True,
+                group__is_active=True,
+            )
+            .values_list(
+                "group_id",
+                flat=True,
+            )
+        )
+
         return (
             DiningGroup.objects.filter(
-                memberships__user=self.request.user,
-                memberships__is_active=True,
+                id__in=user_group_ids,
                 is_active=True,
             )
-            .select_related("created_by")
+            .select_related(
+                "created_by",
+            )
             .annotate(
                 member_count=Count(
                     "memberships",
@@ -42,7 +58,7 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                         memberships__is_active=True,
                     ),
                     distinct=True,
-                )
+                ),
             )
             .distinct()
         )
@@ -87,18 +103,34 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             for permission in permission_classes
         ]
 
-    def create(self, request, *args, **kwargs):
-        create_serializer = DiningGroupCreateSerializer(
-            data=request.data,
-            context={"request": request},
+    def create(
+        self,
+        request,
+        *args,
+        **kwargs,
+    ):
+        create_serializer = (
+            DiningGroupCreateSerializer(
+                data=request.data,
+                context={
+                    "request": request,
+                },
+            )
         )
-        create_serializer.is_valid(raise_exception=True)
+
+        create_serializer.is_valid(
+            raise_exception=True,
+        )
 
         group = create_serializer.save()
 
         group = (
-            DiningGroup.objects.filter(id=group.id)
-            .select_related("created_by")
+            DiningGroup.objects.filter(
+                id=group.id,
+            )
+            .select_related(
+                "created_by",
+            )
             .annotate(
                 member_count=Count(
                     "memberships",
@@ -106,14 +138,18 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                         memberships__is_active=True,
                     ),
                     distinct=True,
-                )
+                ),
             )
             .get()
         )
 
-        response_serializer = DiningGroupDetailSerializer(
-            group,
-            context={"request": request},
+        response_serializer = (
+            DiningGroupDetailSerializer(
+                group,
+                context={
+                    "request": request,
+                },
+            )
         )
 
         return Response(
@@ -121,13 +157,17 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-    def perform_destroy(self, instance):
+    def perform_destroy(
+        self,
+        instance,
+    ):
         instance.is_active = False
+
         instance.save(
             update_fields=(
                 "is_active",
                 "updated_at",
-            )
+            ),
         )
 
     @action(
@@ -136,13 +176,23 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
         url_path="join",
     )
     @transaction.atomic
-    def join(self, request):
+    def join(
+        self,
+        request,
+    ):
         serializer = self.get_serializer(
             data=request.data,
         )
-        serializer.is_valid(raise_exception=True)
 
-        join_code = serializer.validated_data["join_code"]
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        join_code = (
+            serializer.validated_data[
+                "join_code"
+            ]
+        )
 
         group = get_object_or_404(
             DiningGroup,
@@ -153,7 +203,9 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
         if group.is_expired:
             return Response(
                 {
-                    "detail": "This group has expired.",
+                    "detail": (
+                        "This group has expired."
+                    ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -169,29 +221,40 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             )
         )
 
-        if not created and membership.is_active:
+        if (
+            not created
+            and membership.is_active
+        ):
             return Response(
                 {
                     "detail": (
                         "You are already a member "
                         "of this group."
-                    )
+                    ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         if not created:
             membership.is_active = True
-            membership.role = GroupRole.MEMBER
+            membership.role = (
+                GroupRole.MEMBER
+            )
+
             membership.save(
                 update_fields=(
                     "is_active",
                     "role",
-                )
+                ),
             )
 
         group = (
-            DiningGroup.objects.filter(id=group.id)
+            DiningGroup.objects.filter(
+                id=group.id,
+            )
+            .select_related(
+                "created_by",
+            )
             .annotate(
                 member_count=Count(
                     "memberships",
@@ -199,7 +262,7 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                         memberships__is_active=True,
                     ),
                     distinct=True,
-                )
+                ),
             )
             .get()
         )
@@ -228,7 +291,11 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
         url_path="leave",
     )
     @transaction.atomic
-    def leave(self, request, id=None):
+    def leave(
+        self,
+        request,
+        id=None,
+    ):
         group = self.get_object()
 
         membership = get_object_or_404(
@@ -243,7 +310,9 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                 group.memberships.filter(
                     is_active=True,
                 )
-                .exclude(user=request.user)
+                .exclude(
+                    user=request.user,
+                )
                 .exists()
             )
 
@@ -251,24 +320,31 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         "detail": (
-                            "The owner must transfer ownership "
-                            "before leaving the group."
-                        )
+                            "The owner must transfer "
+                            "ownership before leaving "
+                            "the group."
+                        ),
                     },
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=(
+                        status.HTTP_400_BAD_REQUEST
+                    ),
                 )
 
             group.is_active = False
+
             group.save(
                 update_fields=(
                     "is_active",
                     "updated_at",
-                )
+                ),
             )
 
         membership.is_active = False
+
         membership.save(
-            update_fields=("is_active",)
+            update_fields=(
+                "is_active",
+            ),
         )
 
         return Response(

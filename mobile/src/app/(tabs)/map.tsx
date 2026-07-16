@@ -44,7 +44,7 @@ import {
   type RestaurantMapHandle,
 } from "@/components/RestaurantMap";
 import {
-  getActivePickSessions,
+  getCurrentPickSession,
   getPickSessionMatches,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
@@ -837,13 +837,12 @@ export default function MapScreen() {
     try {
       setError(null);
 
-      const activeSessions = await getActivePickSessions();
+      const currentSession =
+        await getCurrentPickSession();
 
-      const newestSession = activeSessions[0] ?? null;
+      setActiveSession(currentSession);
 
-      setActiveSession(newestSession);
-
-      if (!newestSession) {
+      if (!currentSession) {
         setResponse(null);
         setSelectedRestaurantId(null);
         setDetailRestaurantId(null);
@@ -851,7 +850,10 @@ export default function MapScreen() {
         return;
       }
 
-      const matchesResponse = await getPickSessionMatches(newestSession.id);
+      const matchesResponse =
+        await getPickSessionMatches(
+          currentSession.id,
+        );
 
       setResponse(matchesResponse);
 

@@ -8,6 +8,7 @@ export type PickSessionStatus =
   | "cancelled"
   | "expired";
 
+
 export type DecisionMode =
   | "ranked"
   | "pick_for_us"
@@ -15,6 +16,7 @@ export type DecisionMode =
   | "roulette"
   | "swipe"
   | "elimination";
+
 
 export type PickSession = {
   id: string;
@@ -27,6 +29,7 @@ export type PickSession = {
   decision_mode_display: string;
   participant_count: number;
   is_host: boolean;
+  is_current: boolean;
   location_label: string;
   search_radius_miles: number;
   price_min: number;
@@ -38,6 +41,7 @@ export type PickSession = {
   updated_at: string;
   completed_at: string | null;
 };
+
 
 export type NewPickSessionSetup = {
   title: string;
@@ -57,6 +61,7 @@ export type NewPickSessionSetup = {
   cuisineIds: number[];
 };
 
+
 export type CreatePickSessionInput = {
   title?: string;
   group_id?: string | null;
@@ -75,12 +80,14 @@ export type CreatePickSessionInput = {
   cuisine_ids?: number[];
 };
 
+
 export type ParticipantStatus =
   | "invited"
   | "joined"
   | "ready"
   | "declined"
   | "left";
+
 
 export type PickSessionParticipantUser = {
   id: number;
@@ -92,23 +99,27 @@ export type PickSessionParticipantUser = {
   date_joined: string;
 };
 
+
 export type PickSessionParticipant = {
   id: number;
   user: PickSessionParticipantUser;
   status: ParticipantStatus;
   status_display: string;
   is_host: boolean;
+  is_current: boolean;
   vetoes_used: number;
   joined_at: string | null;
   ready_at: string | null;
   created_at: string;
 };
 
+
 export type PickSessionCuisineFilter = {
   id: number;
   name: string;
   slug: string;
 };
+
 
 export type PickSessionDetail =
   PickSession & {
@@ -124,6 +135,7 @@ export type PickSessionDetail =
     cuisine_filters: PickSessionCuisineFilter[];
   };
 
+
 export type UpdateParticipantStatusResponse = {
   participant: {
     status: ParticipantStatus;
@@ -136,11 +148,13 @@ export type UpdateParticipantStatusResponse = {
   };
 };
 
+
 export type RestaurantDietaryTag = {
   slug: string;
   label: string;
   confirmed: boolean;
 };
+
 
 export type NearbyRestaurantMatch = {
   external_id: string;
@@ -180,6 +194,7 @@ export type NearbyRestaurantMatch = {
   match_warnings: string[];
 };
 
+
 export type PickSessionMatchSummary = {
   id: string;
   title: string;
@@ -190,8 +205,33 @@ export type PickSessionMatchSummary = {
   search_radius_miles: number;
 };
 
+
 export type PickSessionMatchesResponse = {
   session: PickSessionMatchSummary;
   match_count: number;
   matches: NearbyRestaurantMatch[];
+};
+
+
+
+export type GroupVoteOption = {
+  id: string;
+  external_id: string;
+  name: string;
+  rank: number;
+  match_score: number;
+  vote_count: number;
+  restaurant: NearbyRestaurantMatch;
+};
+
+
+export type GroupVoteState = {
+  session: PickSessionDetail;
+  participants: PickSessionParticipant[];
+  options: GroupVoteOption[];
+  my_vote_option_id: string | null;
+  total_votes: number;
+  eligible_voter_count: number;
+  all_votes_submitted: boolean;
+  winner_option_id: string | null;
 };

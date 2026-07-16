@@ -34,6 +34,7 @@ import { useAuth } from "@/features/auth/AuthContext";
 import {
   cancelPickSession,
   getPickSession,
+  prepareGroupVote,
   startPickSessionMatching,
   updateParticipantStatus,
 } from "@/features/pickSessions/pickSessionsService";
@@ -130,6 +131,22 @@ export default function PickSessionDetailScreen() {
       );
 
       setSession(result);
+
+      if (
+        result.decision_mode
+        === "group_vote"
+        && (
+          result.status === "voting"
+          || result.status === "completed"
+        )
+      ) {
+        router.replace({
+          pathname: "/pick-votes/[id]",
+          params: {
+            id: result.id,
+          },
+        });
+      }
     } catch (requestError) {
       setError(
         getApiErrorMessage(
@@ -226,6 +243,38 @@ export default function PickSessionDetailScreen() {
       setIsUpdating(false);
     }
   }
+
+  async function handlePrepareVote() {
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      setError(null);
+
+      await prepareGroupVote(
+        sessionId,
+      );
+
+      router.replace({
+        pathname: "/pick-votes/[id]",
+        params: {
+          id: sessionId,
+        },
+      });
+    } catch (requestError) {
+      setError(
+        getApiErrorMessage(
+          requestError,
+          "Unable to start the Group Vote.",
+        ),
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  }
+
 
   async function performCancel() {
     if (!sessionId) {
@@ -354,7 +403,10 @@ export default function PickSessionDetailScreen() {
         </Pressable>
 
         <Text style={styles.topBarTitle}>
-          Pick Session
+          {session?.decision_mode
+            === "group_vote"
+            ? "Group Vote"
+            : "Pick Session"}
         </Text>
 
         <Pressable
@@ -596,7 +648,12 @@ export default function PickSessionDetailScreen() {
         {session.is_host && (
           <>
             <Pressable
-              onPress={handleStartMatching}
+              onPress={
+                session.decision_mode
+                === "group_vote"
+                  ? handlePrepareVote
+                  : handleStartMatching
+              }
               disabled={
                 !allActiveParticipantsReady ||
                 isUpdating ||

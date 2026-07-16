@@ -106,6 +106,13 @@ function RootNavigator() {
             headerShown: false,
           }}
         />
+
+        <Stack.Screen
+          name="pick-votes/[id]"
+          options={{
+            headerShown: false,
+          }}
+        />
       </Stack.Protected>
     </Stack>
   );

@@ -134,8 +134,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logo: {
-    width: 230,
-    height: 150,
+    width: 380,
+    height: 300,
     alignSelf: "center",
   },
   title: {
