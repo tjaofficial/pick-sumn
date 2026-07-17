@@ -11,6 +11,7 @@ from .models import (
     PickSessionNotification,
     PickSessionParticipant,
     PickSessionRestaurantOption,
+    RestaurantDietaryReport,
 )
 from .services import create_pick_session
 
@@ -488,3 +489,86 @@ class PickSessionNotificationSerializer(
             "session_status",
             "decision_mode",
         )
+
+
+class RestaurantDietaryReportSerializer(
+    serializers.ModelSerializer
+):
+    user_display_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RestaurantDietaryReport
+        fields = (
+            "id",
+            "external_place_id",
+            "restaurant_name",
+            "dietary_slug",
+            "outcome",
+            "items_clearly_labeled",
+            "staff_understood",
+            "dedicated_fryer",
+            "separate_preparation_area",
+            "gloves_changed",
+            "cross_contact_concern",
+            "restaurant_could_not_accommodate",
+            "reaction_after_eating",
+            "notes",
+            "visited_at",
+            "user_display_name",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = (
+            "id",
+            "user_display_name",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_user_display_name(self, obj):
+        return (
+            getattr(
+                obj.user,
+                "display_name",
+                "",
+            )
+            or obj.user.get_full_name()
+            or "Pick Sum’N member"
+        )
+
+    def validate_dietary_slug(self, value):
+        return (
+            value.strip()
+            .lower()
+            .replace("_", "-")
+            .replace(" ", "-")
+        )
+
+    def validate(self, attrs):
+        outcome = attrs.get(
+            "outcome"
+        )
+
+        if outcome == "reaction":
+            attrs[
+                "reaction_after_eating"
+            ] = True
+
+        if outcome == "not_accommodated":
+            attrs[
+                "restaurant_could_not_accommodate"
+            ] = True
+
+        if (
+            attrs.get(
+                "reaction_after_eating"
+            )
+            and not attrs.get(
+                "cross_contact_concern"
+            )
+        ):
+            attrs[
+                "cross_contact_concern"
+            ] = True
+
+        return attrs

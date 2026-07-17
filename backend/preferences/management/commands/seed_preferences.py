@@ -44,6 +44,9 @@ DINING_STYLES = [
     "Fine Dining",
     "Food Truck",
     "Local Restaurant",
+    "Local Restaurant / Bar / Tavern",
+    "Bar / Tavern",
+    "Coffee Shop / Cafe",
     "Outdoor Dining",
 ]
 

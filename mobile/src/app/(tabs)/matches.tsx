@@ -5,10 +5,13 @@ import {
 } from "expo-router";
 import {
   AlertTriangle,
+  ShieldCheck,
+  ShieldQuestion,
   ArrowLeft,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   Clock3,
   ExternalLink,
   MapPin,
@@ -602,21 +605,89 @@ function SortSelect({
 }
 
 
+
+function getDietaryConfidenceLabel(
+  value: "high" | "moderate" | "low" | "unknown",
+): string {
+  switch (value) {
+    case "high":
+      return "High confidence";
+    case "moderate":
+      return "Moderate confidence";
+    case "low":
+      return "Limited evidence";
+    default:
+      return "Evidence not found";
+  }
+}
+
+
+function getDietaryConfidenceColor(
+  value: "high" | "moderate" | "low" | "unknown",
+): string {
+  switch (value) {
+    case "high":
+      return "#168B4F";
+    case "moderate":
+      return "#A66B00";
+    case "low":
+      return "#B05C00";
+    default:
+      return "#69707C";
+  }
+}
+
+
 type RestaurantCardProps = {
   restaurant: NearbyRestaurantMatch;
   rank: number;
+  requestedDietarySlugs: string[];
 };
 
 
 function RestaurantCard({
   restaurant,
   rank,
+  requestedDietarySlugs,
 }: RestaurantCardProps) {
   const placeType =
     restaurant.primary_type_display_name
     || formatPlaceType(
       restaurant.primary_type,
     );
+
+  const requestedDietarySet = new Set(
+    requestedDietarySlugs,
+  );
+
+  const dietaryEvidence = (
+    restaurant.dietary_evidence ?? []
+  ).filter(
+    (item) =>
+      requestedDietarySet.has(
+        item.slug,
+      ),
+  );
+
+  const dietaryTags = (
+    restaurant.dietary_tags ?? []
+  ).filter(
+    (item) =>
+      requestedDietarySet.has(
+        item.slug,
+      ),
+  );
+
+  const matchReasons =
+    restaurant.match_reasons ?? [];
+
+  const matchWarnings =
+    restaurant.match_warnings ?? [];
+
+  const [
+    dietaryExpanded,
+    setDietaryExpanded,
+  ] = useState(false);
 
   return (
     <View style={styles.restaurantCard}>
@@ -760,7 +831,7 @@ function RestaurantCard({
         </Text>
       </View>
 
-      {restaurant.match_reasons.length
+      {matchReasons.length
         > 0 && (
         <View
           style={styles.reasonSection}
@@ -774,7 +845,7 @@ function RestaurantCard({
           </Text>
 
           <View style={styles.reasonList}>
-            {restaurant.match_reasons.map(
+            {matchReasons.map(
               (reason) => (
                 <View
                   key={reason}
@@ -799,44 +870,517 @@ function RestaurantCard({
         </View>
       )}
 
-      {restaurant.match_warnings.length
+      {dietaryEvidence.length
         > 0 && (
-        <View
-          style={styles.warningSection}
-        >
-          <View
-            style={
-              styles.warningHeading
+        <View style={styles.dietarySection}>
+          <Pressable
+            onPress={() =>
+              setDietaryExpanded(
+                (currentValue) =>
+                  !currentValue,
+              )
+            }
+            style={({ pressed }) => [
+              styles.dietaryHeading,
+              pressed
+                && styles.dietaryHeadingPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{
+              expanded: dietaryExpanded,
+            }}
+            accessibilityLabel={
+              dietaryExpanded
+                ? "Collapse dietary details"
+                : "Expand dietary details"
             }
           >
-            <AlertTriangle
-              size={17}
-              color="#A66B00"
-            />
-
-            <Text
-              style={styles.warningTitle}
+            <View
+              style={
+                styles.dietaryHeadingContent
+              }
             >
-              Double-check before choosing
-            </Text>
-          </View>
+              <ShieldCheck
+                size={18}
+                color="#168B4F"
+              />
 
-          <View
-            style={styles.warningList}
-          >
-            {restaurant.match_warnings.map(
-              (warning) => (
+              <View
+                style={
+                  styles.dietaryHeadingText
+                }
+              >
                 <Text
-                  key={warning}
                   style={
-                    styles.warningText
+                    styles.dietaryTitle
                   }
                 >
-                  • {warning}
+                  Dietary details
                 </Text>
-              ),
+
+                <Text
+                  style={
+                    styles.dietarySummary
+                  }
+                >
+                  {dietaryEvidence.length}{" "}
+                  {dietaryEvidence.length
+                    === 1
+                    ? "dietary result"
+                    : "dietary results"}
+                </Text>
+              </View>
+            </View>
+
+            {dietaryExpanded ? (
+              <ChevronUp
+                size={20}
+                color="#168B4F"
+              />
+            ) : (
+              <ChevronDown
+                size={20}
+                color="#168B4F"
+              />
             )}
-          </View>
+          </Pressable>
+
+          {dietaryExpanded
+            && dietaryEvidence.map(
+            (dietaryItem) => {
+              const confidenceColor =
+                getDietaryConfidenceColor(
+                  dietaryItem.confidence_level,
+                );
+
+              return (
+                <View
+                  key={dietaryItem.slug}
+                  style={styles.dietaryItem}
+                >
+                  <View
+                    style={
+                      styles.dietaryItemHeader
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.dietaryItemLabel
+                      }
+                    >
+                      {dietaryItem.label}
+                    </Text>
+
+                    <View
+                      style={[
+                        styles.confidenceBadge,
+                        {
+                          borderColor:
+                            confidenceColor,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.confidenceBadgeText,
+                          {
+                            color:
+                              confidenceColor,
+                          },
+                        ]}
+                      >
+                        {getDietaryConfidenceLabel(
+                          dietaryItem.confidence_level,
+                        )}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {(dietaryItem.evidence ?? []).map(
+                    (evidence) => (
+                      <View
+                        key={evidence}
+                        style={
+                          styles.dietaryEvidenceRow
+                        }
+                      >
+                        <CheckCircle2
+                          size={15}
+                          color="#168B4F"
+                        />
+
+                        <Text
+                          style={
+                            styles.dietaryEvidenceText
+                          }
+                        >
+                          {evidence}
+                        </Text>
+                      </View>
+                    ),
+                  )}
+
+                  {(dietaryItem.contextual_review_snippets
+                    ?? []).length > 0 && (
+                    <View
+                      style={
+                        styles.contextualReviewSection
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.contextualReviewTitle
+                        }
+                      >
+                        Relevant Google review
+                      </Text>
+
+                      {(dietaryItem.contextual_review_snippets
+                        ?? [])
+                        .slice(0, 2)
+                        .map((snippet) => (
+                          <View
+                            key={snippet}
+                            style={
+                              styles.contextualReviewCard
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.contextualReviewText
+                              }
+                            >
+                              “{snippet}”
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  )}
+
+                  {(dietaryItem.concerns ?? []).map(
+                    (concern) => (
+                      <View
+                        key={concern}
+                        style={
+                          styles.dietaryConcernRow
+                        }
+                      >
+                        <AlertTriangle
+                          size={15}
+                          color="#A66B00"
+                        />
+
+                        <Text
+                          style={
+                            styles.dietaryConcernText
+                          }
+                        >
+                          {concern}
+                        </Text>
+                      </View>
+                    ),
+                  )}
+
+                  {(dietaryItem.evidence ?? []).length
+                    === 0
+                    && (dietaryItem.concerns ?? []).length
+                    === 0 && (
+                    <View
+                      style={
+                        styles.dietaryUnknownRow
+                      }
+                    >
+                      <ShieldQuestion
+                        size={15}
+                        color="#69707C"
+                      />
+
+                      <Text
+                        style={
+                          styles.dietaryUnknownText
+                        }
+                      >
+                        No specific menu or review
+                        evidence was found.
+                      </Text>
+                    </View>
+                  )}
+
+                  {(dietaryItem.official_menu_items ?? []).length
+                    > 0 && (
+                    <View
+                      style={
+                        styles.officialItemsSection
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.officialItemsTitle
+                        }
+                      >
+                        Official menu findings
+                      </Text>
+
+                      {(dietaryItem.official_menu_items ?? [])
+                        .slice(0, 5)
+                        .map((menuItem) => (
+                          <View
+                            key={menuItem}
+                            style={
+                              styles.officialItemRow
+                            }
+                          >
+                            <View
+                              style={
+                                styles.officialItemDot
+                              }
+                            />
+
+                            <Text
+                              style={
+                                styles.officialItemText
+                              }
+                            >
+                              {menuItem}
+                            </Text>
+                          </View>
+                        ))}
+
+                      {(dietaryItem.official_menu_items ?? []).length
+                        > 5 && (
+                        <Text
+                          style={
+                            styles.moreItemsText
+                          }
+                        >
+                          +
+                          {
+                            dietaryItem
+                              .official_menu_items
+                              .length - 5
+                          }{" "}
+                          more official menu findings
+                        </Text>
+                      )}
+                    </View>
+                  )}
+
+                  {!!(
+                    dietaryItem.official_source_url
+                    || dietaryItem.menu_uri
+                  ) && (
+                    <Pressable
+                      onPress={() =>
+                        void openExternalUrl(
+                          dietaryItem
+                            .official_source_url
+                          || dietaryItem.menu_uri,
+                        )
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.menuLinkText
+                        }
+                      >
+                        View official dietary source
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname:
+                          "/restaurants/[placeId]/dietary",
+                        params: {
+                          placeId:
+                            restaurant.external_id,
+                          dietarySlug:
+                            dietaryItem.slug,
+                          restaurantName:
+                            restaurant.name,
+                          sourceUrl:
+                            dietaryItem.official_source_url
+                            || dietaryItem.menu_uri,
+                        },
+                      })
+                    }
+                    style={styles.dietaryDetailsButton}
+                  >
+                    <Text
+                      style={
+                        styles.dietaryDetailsButtonText
+                      }
+                    >
+                      View Dietary Details
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            },
+          )}
+        </View>
+      )}
+
+      {dietaryEvidence.length === 0
+        && dietaryTags.length > 0 && (
+        <View style={styles.dietarySection}>
+          <Pressable
+            onPress={() =>
+              setDietaryExpanded(
+                (currentValue) =>
+                  !currentValue,
+              )
+            }
+            style={({ pressed }) => [
+              styles.dietaryHeading,
+              pressed
+                && styles.dietaryHeadingPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{
+              expanded: dietaryExpanded,
+            }}
+            accessibilityLabel={
+              dietaryExpanded
+                ? "Collapse dietary details"
+                : "Expand dietary details"
+            }
+          >
+            <View
+              style={
+                styles.dietaryHeadingContent
+              }
+            >
+              <ShieldQuestion
+                size={18}
+                color="#69707C"
+              />
+
+              <View
+                style={
+                  styles.dietaryHeadingText
+                }
+              >
+                <Text
+                  style={
+                    styles.dietaryTitle
+                  }
+                >
+                  Dietary details
+                </Text>
+
+                <Text
+                  style={
+                    styles.dietarySummary
+                  }
+                >
+                  {dietaryTags.length}{" "}
+                  {dietaryTags.length
+                    === 1
+                    ? "dietary tag"
+                    : "dietary tags"}
+                </Text>
+              </View>
+            </View>
+
+            {dietaryExpanded ? (
+              <ChevronUp
+                size={20}
+                color="#69707C"
+              />
+            ) : (
+              <ChevronDown
+                size={20}
+                color="#69707C"
+              />
+            )}
+          </Pressable>
+
+          {dietaryExpanded
+            && dietaryTags.map((dietaryTag) => (
+            <View
+              key={dietaryTag.slug}
+              style={styles.dietaryItem}
+            >
+              <View style={styles.dietaryItemHeader}>
+                <Text style={styles.dietaryItemLabel}>
+                  {dietaryTag.label}
+                </Text>
+
+                <View
+                  style={[
+                    styles.confidenceBadge,
+                    {
+                      borderColor: "#69707C",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.confidenceBadgeText,
+                      {
+                        color: "#69707C",
+                      },
+                    ]}
+                  >
+                    Details available
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.dietaryUnknownText}>
+                Open the full dietary page to review official
+                evidence and community reports.
+              </Text>
+
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname:
+                      "/restaurants/[placeId]/dietary",
+                    params: {
+                      placeId:
+                        restaurant.external_id,
+                      dietarySlug:
+                        dietaryTag.slug,
+                      restaurantName:
+                        restaurant.name,
+                      sourceUrl:
+                        restaurant.menu_uri
+                        || restaurant.website_uri,
+                    },
+                  })
+                }
+                style={styles.dietaryDetailsButton}
+              >
+                <Text
+                  style={
+                    styles.dietaryDetailsButtonText
+                  }
+                >
+                  View Dietary Details
+                </Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {matchWarnings.length
+        > 0 && (
+        <View style={styles.warningSection}>
+          {matchWarnings.map(
+            (warning) => (
+              <Text
+                key={warning}
+                style={styles.warningText}
+              >
+                • {warning}
+              </Text>
+            ),
+          )}
         </View>
       )}
 
@@ -1409,6 +1953,11 @@ export default function MatchesScreen() {
                       restaurant
                     }
                     rank={index + 1}
+                    requestedDietarySlugs={
+                      results?.session
+                        .requested_dietary_slugs
+                      ?? []
+                    }
                   />
                 ),
               )}
@@ -1813,6 +2362,219 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 17,
     color: "#3C5146",
+  },
+
+  dietarySection: {
+    marginTop: 12,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: "#BFE2CF",
+    borderRadius: 16,
+    backgroundColor: "#F2FAF5",
+  },
+
+  dietaryHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    minHeight: 42,
+  },
+
+  dietaryHeadingPressed: {
+    opacity: 0.7,
+  },
+
+  dietaryHeadingContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  dietaryHeadingText: {
+    flex: 1,
+  },
+
+  dietarySummary: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#69707C",
+  },
+
+  dietaryTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  dietaryItem: {
+    marginTop: 12,
+    paddingTop: 11,
+    borderTopWidth: 1,
+    borderTopColor: "#D7ECE0",
+  },
+
+  dietaryItemHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 8,
+  },
+
+  dietaryItemLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  confidenceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderRadius: 999,
+  },
+
+  confidenceBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  dietaryEvidenceRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 7,
+    marginTop: 6,
+  },
+
+  dietaryEvidenceText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#3C5146",
+  },
+
+  contextualReviewSection: {
+    marginTop: 10,
+  },
+
+  contextualReviewTitle: {
+    marginBottom: 6,
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  contextualReviewCard: {
+    marginTop: 6,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: "#168B4F",
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+  },
+
+  contextualReviewText: {
+    fontSize: 10,
+    lineHeight: 16,
+    fontStyle: "italic",
+    color: "#3C5146",
+  },
+
+  dietaryConcernRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 7,
+    marginTop: 6,
+  },
+
+  dietaryConcernText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#7A5A19",
+  },
+
+  dietaryUnknownRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 7,
+    marginTop: 4,
+  },
+
+  dietaryUnknownText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#69707C",
+  },
+
+  officialItemsSection: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+  },
+
+  officialItemsTitle: {
+    marginBottom: 6,
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  officialItemRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 7,
+    marginTop: 5,
+  },
+
+  officialItemDot: {
+    width: 5,
+    height: 5,
+    marginTop: 6,
+    borderRadius: 999,
+    backgroundColor: "#168B4F",
+  },
+
+  officialItemText: {
+    flex: 1,
+    fontSize: 10,
+    lineHeight: 15,
+    color: "#3C5146",
+  },
+
+  moreItemsText: {
+    marginTop: 7,
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#69707C",
+  },
+
+  menuLinkText: {
+    marginTop: 9,
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+
+  dietaryDetailsButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 42,
+    marginTop: 10,
+    borderRadius: 13,
+    backgroundColor: "#168B4F",
+  },
+
+  dietaryDetailsButtonText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
 
   warningSection: {

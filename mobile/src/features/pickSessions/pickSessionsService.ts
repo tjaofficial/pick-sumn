@@ -14,6 +14,9 @@ import type {
   PickSessionMatchesResponse,
   PickSessionStatus,
   UpdateParticipantStatusResponse,
+  RestaurantDietaryCommunityReport,
+  RestaurantDietaryDetailResponse,
+  SubmitRestaurantDietaryReportInput,
 } from "./types";
 
 
@@ -234,6 +237,50 @@ export async function markAllPickSessionNotificationsRead(): Promise<void> {
     "/api/pick-sessions/notifications/read-all/",
     {
       method: "POST",
+    },
+  );
+}
+
+
+export async function getRestaurantDietaryDetails(
+  placeId: string,
+  dietarySlug: string,
+): Promise<RestaurantDietaryDetailResponse> {
+  const encodedPlaceId = encodeURIComponent(
+    placeId,
+  );
+
+  const encodedDietarySlug =
+    encodeURIComponent(
+      dietarySlug,
+    );
+
+  return apiRequest<RestaurantDietaryDetailResponse>(
+    (
+      "/api/pick-sessions/restaurants/"
+      + `${encodedPlaceId}/dietary/`
+      + `?dietary_slug=${encodedDietarySlug}`
+    ),
+  );
+}
+
+
+export async function submitRestaurantDietaryReport(
+  placeId: string,
+  input: SubmitRestaurantDietaryReportInput,
+): Promise<RestaurantDietaryCommunityReport> {
+  const encodedPlaceId = encodeURIComponent(
+    placeId,
+  );
+
+  return apiRequest<RestaurantDietaryCommunityReport>(
+    (
+      "/api/pick-sessions/restaurants/"
+      + `${encodedPlaceId}/dietary/report/`
+    ),
+    {
+      method: "POST",
+      body: JSON.stringify(input),
     },
   );
 }

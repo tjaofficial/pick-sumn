@@ -3,23 +3,24 @@ import {
   useFocusEffect,
 } from "expo-router";
 import {
-  Ban,
+  ArrowDown,
   Bell,
+  Check,
   ChevronRight,
   Clock3,
   Dices,
   History,
   MapPin,
   RefreshCw,
+  RotateCcw,
   Shuffle,
-  Store,
+  SlidersHorizontal,
   Users,
   Vote,
-  WalletCards,
-  Utensils,
 } from "lucide-react-native";
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -54,122 +55,54 @@ import type {
   PickSession,
   PickSessionNotification,
 } from "@/features/pickSessions/types";
-import {
-  getApiErrorMessage,
-} from "@/services/getApiErrorMessage";
+import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 
-
-function roundCoordinate(
-  value: number | null,
-): number | null {
-  if (value === null) {
-    return null;
-  }
-
-  return Number(
-    value.toFixed(6),
-  );
+function roundCoordinate(value: number | null) {
+  return value === null ? null : Number(value.toFixed(6));
 }
-
 
 export default function PickScreen() {
   const { user } = useAuth();
-  const { draft } = usePickDraft();
+  const { draft, resetDraft } = usePickDraft();
 
-  const [
-    activeSessions,
-    setActiveSessions,
-  ] = useState<PickSession[]>([]);
+  const [activeSessions, setActiveSessions] = useState<PickSession[]>([]);
+  const [recentSessions, setRecentSessions] = useState<PickSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [creatingMode, setCreatingMode] = useState<DecisionMode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [invitation, setInvitation] =
+    useState<PickSessionNotification | null>(null);
 
-  const [
-    recentSessions,
-    setRecentSessions,
-  ] = useState<PickSession[]>([]);
-
-  const [
-    isLoading,
-    setIsLoading,
-  ] = useState(true);
-
-  const [
-    isRefreshing,
-    setIsRefreshing,
-  ] = useState(false);
-
-  const [
-    creatingMode,
-    setCreatingMode,
-  ] = useState<DecisionMode | null>(
-    null,
-  );
-
-  const [
-    error,
-    setError,
-  ] = useState<string | null>(
-    null,
-  );
-
-
-  const [
-    unreadCount,
-    setUnreadCount,
-  ] = useState(0);
-
-  const [
-    invitation,
-    setInvitation,
-  ] = useState<
-    PickSessionNotification | null
-  >(null);
-
-  const loadSessions = useCallback(
-    async () => {
-      try {
-        setError(null);
-
-        const [
-          active,
-          recent,
-          notificationResponse,
-        ] = await Promise.all([
-          getActivePickSessions(),
-          getRecentPickSessions(),
-          getPickSessionNotifications(),
-        ]);
-
-        setActiveSessions(active);
-        setRecentSessions(recent);
-
-        setUnreadCount(
-          notificationResponse.unread_count,
-        );
-
-        const nextInvitation =
-          notificationResponse.notifications.find(
-            (notification) =>
-              !notification.is_read
-              && notification.kind
-                === "group_vote_invite",
-          ) ?? null;
-
-        setInvitation(
-          nextInvitation,
-        );
-      } catch (requestError) {
-        setError(
-          getApiErrorMessage(
-            requestError,
-            "Unable to load your Pick Sum’N sessions.",
-          ),
-        );
-      } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    },
-    [],
-  );
+  const loadSessions = useCallback(async () => {
+    try {
+      setError(null);
+      const [active, recent, notifications] = await Promise.all([
+        getActivePickSessions(),
+        getRecentPickSessions(),
+        getPickSessionNotifications(),
+      ]);
+      setActiveSessions(active);
+      setRecentSessions(recent);
+      setUnreadCount(notifications.unread_count);
+      setInvitation(
+        notifications.notifications.find(
+          (item) => !item.is_read && item.kind === "group_vote_invite",
+        ) ?? null,
+      );
+    } catch (requestError) {
+      setError(
+        getApiErrorMessage(
+          requestError,
+          "Unable to load your Pick Sum’N sessions.",
+        ),
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -177,248 +110,84 @@ export default function PickScreen() {
     }, [loadSessions]),
   );
 
-  const peopleSelected =
-    draft.isJustMe
-    || Boolean(draft.groupId);
-
-  const filtersSelected =
-    Boolean(
-      draft.locationLabel.trim(),
-    );
-
-  const canStart =
-    peopleSelected
-    && filtersSelected
-    && creatingMode === null;
+  const peopleComplete = draft.isJustMe || Boolean(draft.groupId);
+  const locationComplete = Boolean(
+    draft.locationLabel.trim()
+    && draft.latitude !== null
+    && draft.longitude !== null,
+  );
+  const filtersComplete = draft.filtersReviewed;
+  const setupComplete = peopleComplete && locationComplete && filtersComplete;
+  const canStart = setupComplete && creatingMode === null;
 
   const hostName =
-    user?.display_name
-    || user?.first_name
-    || user?.email
-    || "You";
+    user?.display_name || user?.first_name || user?.email || "You";
 
-  const peopleSubtitle =
-    useMemo(() => {
-      if (!peopleSelected) {
-        return (
-          "Choose a group or start by yourself."
-        );
-      }
+  const peopleTitle = useMemo(() => {
+    if (!peopleComplete) return "Who’s Eating?";
+    if (draft.isJustMe) return hostName;
+    if (draft.participantNames.length === 0) return draft.groupName;
+    return [hostName, ...draft.participantNames].join(" + ");
+  }, [draft.groupName, draft.isJustMe, draft.participantNames, hostName, peopleComplete]);
 
-      if (draft.isJustMe) {
-        return `${hostName} · Just me`;
-      }
+  const peopleSubtitle = !peopleComplete
+    ? "Choose your crew"
+    : draft.isJustMe
+      ? "Just me"
+      : `${draft.participantIds.length + 1} people selected`;
 
-      const participantCount =
-        draft.participantIds.length + 1;
+  const filterSummary = useMemo(() => {
+    if (!filtersComplete) return "Review your session filters";
+    const values: string[] = [];
+    if (draft.openNow) values.push("Open now");
+    if (draft.includeDelivery) values.push("Delivery");
+    if (draft.includeDriveThrough) values.push("Drive-through");
+    if (draft.somethingNew) values.push("Something new");
+    return values.length > 0 ? values.join(" · ") : "No extra filters";
+  }, [draft.includeDelivery, draft.includeDriveThrough, draft.openNow, draft.somethingNew, filtersComplete]);
 
-      return `${draft.groupName} · ${participantCount} ${
-        participantCount === 1
-          ? "person"
-          : "people"
-      }`;
-    }, [
-      draft.groupName,
-      draft.isJustMe,
-      draft.participantIds.length,
-      hostName,
-      peopleSelected,
-    ]);
-
-  const confidence = useMemo(() => {
-    if (!peopleSelected) {
-      return 0;
-    }
-
-    if (!filtersSelected) {
-      return 42;
-    }
-
-    let score = 78;
-
-    if (
-      draft.participantIds.length > 0
-    ) {
-      score += 7;
-    }
-
-    if (draft.openNow) {
-      score += 3;
-    }
-
-    if (draft.includeDelivery) {
-      score += 2;
-    }
-
-    if (
-      draft.includeDriveThrough
-    ) {
-      score += 2;
-    }
-
-    if (draft.somethingNew) {
-      score += 3;
-    }
-
-    return Math.min(
-      score,
-      95,
-    );
-  }, [
-    draft.includeDelivery,
-    draft.includeDriveThrough,
-    draft.openNow,
-    draft.participantIds.length,
-    draft.somethingNew,
-    filtersSelected,
-    peopleSelected,
-  ]);
-
-  async function handleRefresh() {
-    setIsRefreshing(true);
-
-    await loadSessions();
-  }
-
-  function openSession(
-    session: PickSession,
-  ) {
-    router.navigate({
-      pathname:
-        "/pick-sessions/[id]",
-      params: {
-        id: session.id,
-      },
-    });
-  }
-
-  function openActiveSession() {
-    router.push(
-      "/pick/active",
-    );
-  }
-
-  async function createSession(
-    decisionMode: DecisionMode,
-  ) {
-    if (!peopleSelected) {
-      setError(
-        "Choose who is eating before starting.",
-      );
-
-      return;
-    }
-
-    if (!filtersSelected) {
-      setError(
-        "Set your current filters before starting.",
-      );
-
+  async function createSession(decisionMode: DecisionMode) {
+    if (!setupComplete) {
+      setError("Complete all three setup steps before starting.");
       return;
     }
 
     try {
-      setCreatingMode(
-        decisionMode,
-      );
-
+      setCreatingMode(decisionMode);
       setError(null);
 
-      const title =
-        draft.isJustMe
-          ? "My Pick Session"
-          : `${draft.groupName} Pick`;
+      const session = await createPickSession({
+        title: draft.isJustMe ? "My Pick Session" : `${draft.groupName} Pick`,
+        group_id: draft.groupId || null,
+        participant_ids: draft.participantIds,
+        decision_mode: decisionMode,
+        location_label: draft.locationLabel.trim(),
+        latitude: roundCoordinate(draft.latitude),
+        longitude: roundCoordinate(draft.longitude),
+        search_radius_miles: draft.searchRadiusMiles,
+        price_min: draft.priceMin,
+        price_max: draft.priceMax,
+        open_now: draft.openNow,
+        include_delivery: draft.includeDelivery,
+        include_drive_through: draft.includeDriveThrough,
+        something_new: draft.somethingNew,
+        cuisine_ids: draft.cuisineIds,
+      });
 
-      const session =
-        await createPickSession({
-          title,
-
-          group_id:
-            draft.groupId || null,
-
-          participant_ids:
-            draft.participantIds,
-
-          decision_mode:
-            decisionMode,
-
-          location_label:
-            draft.locationLabel.trim(),
-
-          latitude:
-            roundCoordinate(
-              draft.latitude,
-            ),
-
-          longitude:
-            roundCoordinate(
-              draft.longitude,
-            ),
-
-          search_radius_miles:
-            draft.searchRadiusMiles,
-
-          price_min:
-            draft.priceMin,
-
-          price_max:
-            draft.priceMax,
-
-          open_now:
-            draft.openNow,
-
-          include_delivery:
-            draft.includeDelivery,
-
-          include_drive_through:
-            draft.includeDriveThrough,
-
-          something_new:
-            draft.somethingNew,
-
-          cuisine_ids:
-            draft.cuisineIds,
-        });
-
-      if (
-        decisionMode
-        === "group_vote"
-      ) {
-        await prepareGroupVote(
-          session.id,
-        );
-
-        router.replace({
-          pathname:
-            "/pick-votes/[id]",
-          params: {
-            id: session.id,
-          },
-        });
-
+      if (decisionMode === "group_vote") {
+        await prepareGroupVote(session.id);
+        router.replace({ pathname: "/pick-votes/[id]", params: { id: session.id } });
         return;
       }
 
-      await startPickSessionMatching(
-        session.id,
-      );
-
+      await startPickSessionMatching(session.id);
       router.replace({
-        pathname:
-          "/(tabs)/matches",
-        params: {
-          sessionId:
-            session.id,
-
-          decisionMode,
-        },
+        pathname: "/(tabs)/matches",
+        params: { sessionId: session.id, decisionMode },
       });
     } catch (requestError) {
       setError(
-        getApiErrorMessage(
-          requestError,
-          "Unable to start matching.",
-        ),
+        getApiErrorMessage(requestError, "Unable to start matching."),
       );
     } finally {
       setCreatingMode(null);
@@ -426,59 +195,45 @@ export default function PickScreen() {
   }
 
   async function openInvitation() {
-    if (!invitation) {
-      return;
-    }
-
+    if (!invitation) return;
     try {
-      await markPickSessionNotificationRead(
-        invitation.id,
-      );
-    } catch {
-      // Opening the vote remains the priority.
-    }
+      await markPickSessionNotificationRead(invitation.id);
+    } catch {}
+    setUnreadCount((count) => Math.max(0, count - 1));
+    setInvitation(null);
+    router.push({ pathname: "/pick-votes/[id]", params: { id: invitation.session_id } });
+  }
 
-    setUnreadCount(
-      (count) => Math.max(
-        0,
-        count - 1,
+  function confirmResetSetup() {
+    Alert.alert(
+      "Reset session setup?",
+      (
+        "This will clear Who’s Eating, location, "
+        + "search radius, and session filters."
       ),
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: () => {
+            resetDraft();
+            setError(null);
+          },
+        },
+      ],
     );
-
-    setInvitation(null);
-
-    router.push({
-      pathname: "/pick-votes/[id]",
-      params: {
-        id: invitation.session_id,
-      },
-    });
   }
-
-
-  function dismissInvitation() {
-    setInvitation(null);
-  }
-
 
   if (isLoading) {
     return (
-      <SafeAreaView
-        style={styles.screen}
-      >
-        <View
-          style={styles.centerState}
-        >
-          <ActivityIndicator
-            size="large"
-            color="#F3344A"
-          />
-
-          <Text
-            style={styles.loadingText}
-          >
-            Loading Pick Sum’N...
-          </Text>
+      <SafeAreaView style={styles.screen}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color="#F3344A" />
+          <Text style={styles.loadingText}>Loading Pick Sum’N...</Text>
         </View>
       </SafeAreaView>
     );
@@ -486,1158 +241,304 @@ export default function PickScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <Modal
-        visible={invitation !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={dismissInvitation}
-      >
+      <Modal visible={invitation !== null} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.invitationModal}>
-            <View style={styles.invitationIcon}>
-              <Vote
-                size={32}
-                color="#F3344A"
-              />
-            </View>
-
-            <Text style={styles.invitationTitle}>
-              Group Vote Invitation
-            </Text>
-
-            <Text style={styles.invitationMessage}>
-              {invitation?.message}
-            </Text>
-
-            <Pressable
-              onPress={() =>
-                void openInvitation()
-              }
-              style={styles.openVoteButton}
-            >
-              <Text
-                style={
-                  styles.openVoteButtonText
-                }
-              >
-                Open Vote
-              </Text>
+          <View style={styles.modalCard}>
+            <Vote size={34} color="#F3344A" />
+            <Text style={styles.modalTitle}>Group Vote Invitation</Text>
+            <Text style={styles.modalText}>{invitation?.message}</Text>
+            <Pressable onPress={() => void openInvitation()} style={styles.modalPrimary}>
+              <Text style={styles.modalPrimaryText}>Open Vote</Text>
             </Pressable>
-
-            <Pressable
-              onPress={dismissInvitation}
-              style={styles.laterButton}
-            >
-              <Text style={styles.laterText}>
-                Later
-              </Text>
+            <Pressable onPress={() => setInvitation(null)} style={styles.modalSecondary}>
+              <Text style={styles.modalSecondaryText}>Later</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
       <ScrollView
-        contentContainerStyle={
-          styles.content
-        }
-        showsVerticalScrollIndicator={
-          false
-        }
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
-            onRefresh={handleRefresh}
+            onRefresh={() => {
+              setIsRefreshing(true);
+              void loadSessions();
+            }}
             tintColor="#F3344A"
           />
         }
       >
         <View style={styles.logoRow}>
           <View style={styles.logoSpacer} />
-
           <Image
-            source={require(
-              "../../../assets/images/pick-sumn-logo.png"
-            )}
+            source={require("../../../assets/images/pick-sumn-logo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
-
-          <Pressable
-            onPress={() =>
-              router.push(
-                "/notifications",
-              )
-            }
-            style={styles.notificationButton}
-          >
-            <Bell
-              size={23}
-              color="#07111F"
-            />
-
+          <Pressable onPress={() => router.push("/notifications")} style={styles.notificationButton}>
+            <Bell size={23} color="#07111F" />
             {unreadCount > 0 && (
-              <View
-                style={
-                  styles.notificationBadge
-                }
-              >
-                <Text
-                  style={
-                    styles.notificationBadgeText
-                  }
-                >
-                  {unreadCount > 9
-                    ? "9+"
-                    : unreadCount}
-                </Text>
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
               </View>
             )}
           </Pressable>
         </View>
 
+        <Text style={styles.guideTitle}>Set up your session</Text>
+        <Text style={styles.guideSubtitle}>Follow the path, then Pick Sum’N.</Text>
+
         <Pressable
-          onPress={() =>
-            router.navigate(
-              "/pick/new",
-            )
-          }
+          onPress={confirmResetSetup}
+          disabled={creatingMode !== null}
           style={({ pressed }) => [
-            styles.peopleCard,
+            styles.resetSetupButton,
             pressed
-              && styles.cardPressed,
+              && styles.resetSetupButtonPressed,
+            creatingMode !== null
+              && styles.resetSetupButtonDisabled,
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Reset session setup"
         >
-          <View
-            style={styles.peopleIcon}
-          >
-            <Users
-              size={29}
-              color="#F3344A"
-            />
-          </View>
-
-          <View
-            style={styles.peopleContent}
-          >
-            <Text
-              style={styles.peopleTitle}
-            >
-              Who’s Eating?
-            </Text>
-
-            <Text
-              style={
-                styles.peopleSubtitle
-              }
-              numberOfLines={1}
-            >
-              {peopleSubtitle}
-            </Text>
-          </View>
-
-          <ChevronRight
-            size={23}
-            color="#9298A2"
+          <RotateCcw
+            size={17}
+            color="#C62828"
           />
-        </Pressable>
 
-        <Pressable
-          onPress={() =>
-            router.navigate(
-              "/pick/setup",
-            )
-          }
-          style={({ pressed }) => [
-            styles.filtersCard,
-            pressed
-              && styles.cardPressed,
-          ]}
-        >
-          <View
-            style={
-              styles.filtersHeadingRow
-            }
-          >
-            <Text
-              style={
-                styles.filtersHeading
-              }
-            >
-              Current Filters
-            </Text>
-
-            <ChevronRight
-              size={22}
-              color="#9298A2"
-            />
-          </View>
-
-          <View style={styles.filterGrid}>
-            <View style={styles.filterItem}>
-              <View
-                style={
-                  styles.filterIconCircle
-                }
-              >
-                <Utensils
-                  size={21}
-                  color="#F3344A"
-                />
-              </View>
-
-              <Text
-                style={styles.filterLabel}
-              >
-                Cuisines
-              </Text>
-
-              <Text
-                style={styles.filterValue}
-              >
-                Any
-              </Text>
-            </View>
-
-            <View style={styles.filterItem}>
-              <View
-                style={
-                  styles.filterIconCircle
-                }
-              >
-                <WalletCards
-                  size={21}
-                  color="#168B4F"
-                />
-              </View>
-
-              <Text
-                style={styles.filterLabel}
-              >
-                Price Range
-              </Text>
-
-              <Text
-                style={styles.filterValue}
-              >
-                {"$".repeat(
-                  draft.priceMin,
-                )}
-                {"–"}
-                {"$".repeat(
-                  draft.priceMax,
-                )}
-              </Text>
-            </View>
-
-            <View style={styles.filterItem}>
-              <View
-                style={
-                  styles.filterIconCircle
-                }
-              >
-                <MapPin
-                  size={21}
-                  color="#168B4F"
-                />
-              </View>
-
-              <Text
-                style={styles.filterLabel}
-              >
-                Distance
-              </Text>
-
-              <Text
-                style={styles.filterValue}
-              >
-                {filtersSelected
-                  ? `${draft.searchRadiusMiles} mi`
-                  : "Not set"}
-              </Text>
-            </View>
-
-            <View style={styles.filterItem}>
-              <View
-                style={
-                  styles.filterIconCircle
-                }
-              >
-                <Store
-                  size={21}
-                  color="#07111F"
-                />
-              </View>
-
-              <Text
-                style={styles.filterLabel}
-              >
-                Dining Type
-              </Text>
-
-              <Text
-                style={styles.filterValue}
-              >
-                {draft.includeDriveThrough
-                  ? "Drive-through"
-                  : draft.includeDelivery
-                    ? "Delivery"
-                    : "Any"}
-              </Text>
-            </View>
-
-            <View style={styles.filterItem}>
-              <View
-                style={
-                  styles.filterIconCircle
-                }
-              >
-                <Clock3
-                  size={21}
-                  color="#168B4F"
-                />
-              </View>
-
-              <Text
-                style={styles.filterLabel}
-              >
-                Open Now
-              </Text>
-
-              <Text
-                style={styles.filterValue}
-              >
-                {draft.openNow
-                  ? "Yes"
-                  : "No"}
-              </Text>
-            </View>
-
-            <View style={styles.filterItem}>
-              <View
-                style={
-                  styles.filterIconCircle
-                }
-              >
-                <Ban
-                  size={21}
-                  color="#F3344A"
-                />
-              </View>
-
-              <Text
-                style={styles.filterLabel}
-              >
-                Something New
-              </Text>
-
-              <Text
-                style={styles.filterValue}
-              >
-                {draft.somethingNew
-                  ? "Preferred"
-                  : "Any"}
-              </Text>
-            </View>
-          </View>
-        </Pressable>
-
-        <View
-          style={
-            styles.confidenceSection
-          }
-        >
           <Text
             style={
-              styles.confidenceMessage
+              styles.resetSetupText
             }
           >
-            {!peopleSelected
-              ? "Choose who’s eating to get started."
-              : !filtersSelected
-                ? "Add your location and filters."
-                : "Great matches ahead!"}
+            Reset Setup
           </Text>
-        </View>
+        </Pressable>
+
+        <StepCard
+          complete={peopleComplete}
+          active={!peopleComplete}
+          icon={<Users size={27} color={peopleComplete ? "#168B4F" : "#F3344A"} />}
+          title={peopleTitle}
+          subtitle={peopleSubtitle}
+          onPress={() => router.navigate("/pick/new")}
+        />
+
+        <GuideArrow active={peopleComplete && !locationComplete} complete={peopleComplete} />
+
+        <StepCard
+          complete={locationComplete}
+          active={peopleComplete && !locationComplete}
+          icon={<MapPin size={27} color={locationComplete ? "#168B4F" : "#F3344A"} />}
+          title={locationComplete ? draft.locationLabel : "Location"}
+          subtitle={locationComplete ? `${draft.searchRadiusMiles} mile search radius` : "Choose an area or address"}
+          onPress={() => router.navigate("/pick/location")}
+        />
+
+        <GuideArrow active={locationComplete && !filtersComplete} complete={locationComplete} />
+
+        <StepCard
+          complete={filtersComplete}
+          active={locationComplete && !filtersComplete}
+          icon={<SlidersHorizontal size={27} color={filtersComplete ? "#168B4F" : "#F3344A"} />}
+          title={filtersComplete ? "Session Filters Saved" : "Session Filters"}
+          subtitle={filterSummary}
+          onPress={() => router.navigate("/pick/setup")}
+        />
+
+        <GuideArrow active={setupComplete} complete={filtersComplete} />
+
+        <Text style={[styles.readyText, setupComplete && styles.readyTextComplete]}>
+          {setupComplete ? "Everything is ready." : "Complete each step to unlock the buttons."}
+        </Text>
 
         <View style={styles.decisionRow}>
-          <Pressable
-            onPress={() =>
-              void createSession(
-                "pick_for_us",
-              )
-            }
+          <DecisionSideButton
+            label={"Surprise\nMe"}
+            icon={<Shuffle size={29} color="#07111F" />}
             disabled={!canStart}
-            style={({ pressed }) => [
-              styles.sideDecisionButton,
-
-              !canStart
-                && styles.disabledButton,
-
-              pressed
-                && canStart
-                && styles.pressedButton,
-            ]}
-          >
-            {creatingMode
-              === "pick_for_us" ? (
-              <ActivityIndicator
-                size="small"
-                color="#07111F"
-              />
-            ) : (
-              <Shuffle
-                size={30}
-                color="#07111F"
-              />
-            )}
-
-            <Text
-              style={
-                styles.sideDecisionText
-              }
-            >
-              Surprise{"\n"}Me
-            </Text>
-          </Pressable>
+            loading={creatingMode === "pick_for_us"}
+            onPress={() => void createSession("pick_for_us")}
+          />
 
           <Pressable
-            onPress={() =>
-              void createSession(
-                "ranked",
-              )
-            }
+            onPress={() => void createSession("ranked")}
             disabled={!canStart}
-            style={({ pressed }) => [
-              styles.pickButtonOuter,
-
-              !canStart
-                && styles.pickButtonDisabled,
-
-              pressed
-                && canStart
-                && styles.pickButtonPressed,
-            ]}
+            style={[styles.pickOuter, !canStart && styles.pickDisabled]}
           >
-            <View
-              style={
-                styles.pickButtonInner
-              }
-            >
-              {creatingMode
-                === "ranked" ? (
-                <ActivityIndicator
-                  size="large"
-                  color="#FFFFFF"
-                />
+            <View style={[styles.pickInner, setupComplete && styles.pickInnerReady]}>
+              {creatingMode === "ranked" ? (
+                <ActivityIndicator size="large" color="#FFFFFF" />
               ) : (
                 <>
-                  <Dices
-                    size={52}
-                    color="#FFFFFF"
-                    strokeWidth={2.5}
-                  />
-
-                  <Text
-                    style={
-                      styles.pickButtonText
-                    }
-                  >
-                    PICK SUM’N
-                  </Text>
+                  <Dices size={49} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text style={styles.pickText}>PICK SUM’N</Text>
                 </>
               )}
             </View>
           </Pressable>
 
-          <Pressable
-            onPress={() =>
-              void createSession(
-                "group_vote",
-              )
-            }
+          <DecisionSideButton
+            label={"Group\nVote"}
+            icon={<Vote size={29} color="#07111F" />}
             disabled={!canStart}
-            style={({ pressed }) => [
-              styles.sideDecisionButton,
-
-              !canStart
-                && styles.disabledButton,
-
-              pressed
-                && canStart
-                && styles.pressedButton,
-            ]}
-          >
-            {creatingMode
-              === "group_vote" ? (
-              <ActivityIndicator
-                size="small"
-                color="#07111F"
-              />
-            ) : (
-              <Vote
-                size={30}
-                color="#07111F"
-              />
-            )}
-
-            <Text
-              style={
-                styles.sideDecisionText
-              }
-            >
-              Group{"\n"}Vote
-            </Text>
-          </Pressable>
+            loading={creatingMode === "group_vote"}
+            onPress={() => void createSession("group_vote")}
+          />
         </View>
-
-        <Text
-          style={styles.tapInstruction}
-        >
-          Tap the button to find your top
-          matches!
-        </Text>
-
-        {!canStart
-          && creatingMode === null && (
-          <Text
-            style={
-              styles.unlockMessage
-            }
-          >
-            Select who’s eating and set your
-            current filters to unlock the
-            buttons.
-          </Text>
-        )}
 
         {error && (
           <View style={styles.errorCard}>
-            <Text
-              style={styles.errorText}
-            >
-              {error}
-            </Text>
-
-            <Pressable
-              onPress={() =>
-                setError(null)
-              }
-            >
-              <Text
-                style={styles.dismissText}
-              >
-                Dismiss
-              </Text>
-            </Pressable>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
-        <View
-          style={
-            styles.bottomShortcutRow
-          }
-        >
-          <Pressable
-            onPress={openActiveSession}
-            style={({ pressed }) => [
-              styles.bottomShortcut,
-              pressed
-                && styles.cardPressed,
-            ]}
-          >
-            <View
-              style={
-                styles.shortcutHeading
-              }
-            >
-              <Clock3
-                size={21}
-                color="#F3344A"
-              />
-
-              <Text
-                style={
-                  styles.shortcutTitle
-                }
-              >
-                Active Session
-              </Text>
-            </View>
-
-            <Text
-              style={
-                styles.shortcutDescription
-              }
-            >
-              {activeSessions.length > 0
-                ? `${activeSessions.length} session${
-                    activeSessions.length
-                    === 1
-                      ? ""
-                      : "s"
-                  } in progress`
-                : "No active session"}
-            </Text>
-
-            <ChevronRight
-              size={20}
-              color="#F3344A"
-              style={
-                styles.shortcutArrow
-              }
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={() =>
-              router.push(
-                "/pick/recent",
-              )
-            }
-            style={({ pressed }) => [
-              styles.bottomShortcut,
-              pressed
-                && styles.cardPressed,
-            ]}
-          >
-            <View
-              style={
-                styles.shortcutHeading
-              }
-            >
-              <History
-                size={21}
-                color="#F3344A"
-              />
-
-              <Text
-                style={
-                  styles.shortcutTitle
-                }
-              >
-                Recent Picks
-              </Text>
-            </View>
-
-            <Text
-              style={
-                styles.shortcutDescription
-              }
-            >
-              {recentSessions.length > 0
-                ? `${recentSessions.length} recent pick${
-                    recentSessions.length
-                    === 1
-                      ? ""
-                      : "s"
-                  }`
-                : "Nothing picked yet"}
-            </Text>
-
-            <ChevronRight
-              size={20}
-              color="#F3344A"
-              style={
-                styles.shortcutArrow
-              }
-            />
-          </Pressable>
+        <View style={styles.bottomRow}>
+          <Shortcut
+            icon={<Clock3 size={21} color="#F3344A" />}
+            title="Active Session"
+            subtitle={activeSessions.length > 0 ? `${activeSessions.length} in progress` : "No active session"}
+            onPress={() => router.push("/pick/active")}
+          />
+          <Shortcut
+            icon={<History size={21} color="#F3344A" />}
+            title="Recent Picks"
+            subtitle={recentSessions.length > 0 ? `${recentSessions.length} recent picks` : "Nothing picked yet"}
+            onPress={() => router.push("/pick/recent")}
+          />
         </View>
 
-        <Pressable
-          onPress={() =>
-            void loadSessions()
-          }
-          style={styles.refreshButton}
-        >
-          <RefreshCw
-            size={15}
-            color="#777E89"
-          />
-
-          <Text
-            style={styles.refreshText}
-          >
-            Refresh sessions
-          </Text>
+        <Pressable onPress={() => void loadSessions()} style={styles.refreshButton}>
+          <RefreshCw size={15} color="#777E89" />
+          <Text style={styles.refreshText}>Refresh sessions</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+type StepCardProps = {
+  complete: boolean;
+  active: boolean;
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+};
+
+function StepCard({ complete, active, icon, title, subtitle, onPress }: StepCardProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.stepCard,
+        active && styles.stepCardActive,
+        complete && styles.stepCardComplete,
+      ]}
+    >
+      <View style={[styles.stepIcon, complete && styles.stepIconComplete]}>{icon}</View>
+      <View style={styles.stepContent}>
+        <Text style={[styles.stepTitle, complete && styles.stepTitleComplete]} numberOfLines={1}>{title}</Text>
+        <Text style={[styles.stepSubtitle, complete && styles.stepSubtitleComplete]} numberOfLines={2}>{subtitle}</Text>
+      </View>
+      {complete ? (
+        <View style={styles.checkCircle}><Check size={17} color="#FFFFFF" strokeWidth={3} /></View>
+      ) : (
+        <ChevronRight size={23} color={active ? "#F3344A" : "#9298A2"} />
+      )}
+    </Pressable>
+  );
+}
+
+function GuideArrow({ active, complete }: { active: boolean; complete: boolean }) {
+  return (
+    <View style={styles.arrowWrap}>
+      <View style={[styles.arrowLine, complete && styles.arrowLineComplete]} />
+      <ArrowDown size={24} color={active ? "#F3344A" : complete ? "#168B4F" : "#C7CBD1"} strokeWidth={3} />
+    </View>
+  );
+}
+
+function DecisionSideButton({ label, icon, disabled, loading, onPress }: { label: string; icon: React.ReactNode; disabled: boolean; loading: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} disabled={disabled} style={[styles.sideButton, disabled && styles.sideDisabled]}>
+      {loading ? <ActivityIndicator size="small" color="#07111F" /> : icon}
+      <Text style={styles.sideText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function Shortcut({ icon, title, subtitle, onPress }: { icon: React.ReactNode; title: string; subtitle: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={styles.shortcut}>
+      <View style={styles.shortcutHeading}>{icon}<Text style={styles.shortcutTitle}>{title}</Text></View>
+      <Text style={styles.shortcutSubtitle}>{subtitle}</Text>
+      <ChevronRight size={19} color="#F3344A" style={styles.shortcutArrow} />
+    </Pressable>
+  );
+}
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#FFFDFB",
-  },
-
-  content: {
-    paddingHorizontal: 18,
-    paddingTop: 0,
-    paddingBottom: 38,
-  },
-
-  logoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  logoSpacer: {
-    width: 45,
-  },
-
-  notificationButton: {
-    position: "relative",
-    width: 45,
-    height: 45,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-  },
-
-  notificationBadge: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    minWidth: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 5,
-    borderWidth: 2,
-    borderColor: "#FFFDFB",
-    borderRadius: 10,
-    backgroundColor: "#F3344A",
-  },
-
-  notificationBadgeText: {
-    fontSize: 9,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-
-  modalOverlay: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    backgroundColor: "rgba(7, 17, 31, 0.58)",
-  },
-
-  invitationModal: {
-    width: "100%",
-    maxWidth: 380,
-    alignItems: "center",
-    padding: 25,
-    borderRadius: 25,
-    backgroundColor: "#FFFFFF",
-  },
-
-  invitationIcon: {
-    width: 65,
-    height: 65,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 22,
-    backgroundColor: "#FFF0F2",
-  },
-
-  invitationTitle: {
-    marginTop: 17,
-    fontSize: 23,
-    fontWeight: "900",
-    color: "#07111F",
-    textAlign: "center",
-  },
-
-  invitationMessage: {
-    marginTop: 9,
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#69707C",
-    textAlign: "center",
-  },
-
-  openVoteButton: {
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 54,
-    marginTop: 22,
-    borderRadius: 17,
-    backgroundColor: "#F3344A",
-  },
-
-  openVoteButtonText: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-
-  laterButton: {
-    marginTop: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-  },
-
-  laterText: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: "#69707C",
-  },
-
-  logo: {
-    width: 236,
-    height: 142,
-    alignSelf: "center",
-    marginTop: -11,
-    marginBottom: -7,
-  },
-
-  peopleCard: {
-    minHeight: 94,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 14,
-    paddingHorizontal: 17,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
-    shadowOpacity: 0.07,
-    shadowRadius: 13,
-    elevation: 3,
-  },
-
-  peopleIcon: {
-    width: 53,
-    height: 53,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: "#FFF0F2",
-  },
-
-  peopleContent: {
-    flex: 1,
-    marginLeft: 13,
-    marginRight: 10,
-  },
-
-  peopleTitle: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: "#07111F",
-  },
-
-  peopleSubtitle: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#69707C",
-  },
-
-  filtersCard: {
-    marginBottom: 14,
-    paddingHorizontal: 17,
-    paddingTop: 15,
-    paddingBottom: 17,
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 5,
-    },
-    shadowOpacity: 0.07,
-    shadowRadius: 13,
-    elevation: 3,
-  },
-
-  filtersHeadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  filtersHeading: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#07111F",
-  },
-
-  cardPressed: {
-    opacity: 0.85,
-    transform: [
-      {
-        scale: 0.995,
-      },
-    ],
-  },
-
-  filterGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 16,
-  },
-
-  filterItem: {
-    width: "16%",
-    alignItems: "center",
-  },
-
-  filterIconCircle: {
-    width: 41,
-    height: 41,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E7E9ED",
-    borderRadius: 21,
-    backgroundColor: "#FFFFFF",
-  },
-
-  filterLabel: {
-    marginTop: 6,
-    fontSize: 9,
-    fontWeight: "900",
-    color: "#07111F",
-    textAlign: "center",
-  },
-
-  filterValue: {
-    marginTop: 3,
-    fontSize: 9,
-    color: "#4F5662",
-    textAlign: "center",
-  },
-
-  confidenceSection: {
-    alignItems: "center",
-    marginTop: 4,
-  },
-
-  confidenceMessage: {
-    marginTop: -3,
-    fontSize: 13,
-    color: "#69707C",
-  },
-
-  decisionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 17,
-  },
-
-  sideDecisionButton: {
-    width: 92,
-    minHeight: 112,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.07,
-    shadowRadius: 9,
-    elevation: 2,
-  },
-
-  sideDecisionText: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 17,
-    color: "#07111F",
-    textAlign: "center",
-  },
-
-  pickButtonOuter: {
-    width: 151,
-    height: 151,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 4,
-    borderColor: "#FF9A38",
-    borderRadius: 76,
-    backgroundColor: "#FFF2E8",
-    shadowColor: "#F3344A",
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.28,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-
-  pickButtonInner: {
-    width: 132,
-    height: 132,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 66,
-    backgroundColor: "#F3344A",
-  },
-
-  pickButtonText: {
-    marginTop: 7,
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-
-  disabledButton: {
-    opacity: 0.42,
-  },
-
-  pickButtonDisabled: {
-    opacity: 0.45,
-  },
-
-  pressedButton: {
-    opacity: 0.8,
-    transform: [
-      {
-        scale: 0.97,
-      },
-    ],
-  },
-
-  pickButtonPressed: {
-    transform: [
-      {
-        scale: 0.96,
-      },
-    ],
-  },
-
-  tapInstruction: {
-    marginTop: 13,
-    fontSize: 14,
-    fontStyle: "italic",
-    fontWeight: "700",
-    color: "#07111F",
-    textAlign: "center",
-  },
-
-  unlockMessage: {
-    marginTop: 7,
-    fontSize: 11,
-    lineHeight: 16,
-    color: "#777E89",
-    textAlign: "center",
-  },
-
-  errorCard: {
-    alignItems: "center",
-    marginTop: 16,
-    padding: 13,
-    borderWidth: 1,
-    borderColor: "#F3C5C5",
-    borderRadius: 17,
-    backgroundColor: "#FFF1F1",
-  },
-
-  errorText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#9F2424",
-    textAlign: "center",
-  },
-
-  dismissText: {
-    marginTop: 7,
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#C62828",
-  },
-
-  bottomShortcutRow: {
-    flexDirection: "row",
-    gap: 11,
-    marginTop: 22,
-  },
-
-  bottomShortcut: {
-    flex: 1,
-    minHeight: 92,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 21,
-    backgroundColor: "#FFFFFF",
-  },
-
-  shortcutHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  shortcutTitle: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: "#07111F",
-  },
-
-  shortcutDescription: {
-    marginTop: 8,
-    paddingRight: 20,
-    fontSize: 11,
-    lineHeight: 16,
-    color: "#69707C",
-  },
-
-  shortcutArrow: {
-    position: "absolute",
-    right: 12,
-    bottom: 13,
-  },
-
-  refreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    marginTop: 15,
-  },
-
-  refreshText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#777E89",
-  },
-
-  centerState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-
-  loadingText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#69707C",
-  },
+  screen: { flex: 1, backgroundColor: "#FFFDFB" },
+  content: { paddingHorizontal: 18, paddingBottom: 38 },
+  logoRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  logoSpacer: { width: 45 },
+  logo: { width: 220, height: 124, marginTop: -10, marginBottom: -14 },
+  notificationButton: { position: "relative", width: 45, height: 45, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 16, backgroundColor: "#FFFFFF" },
+  notificationBadge: { position: "absolute", top: -4, right: -4, minWidth: 20, height: 20, alignItems: "center", justifyContent: "center", paddingHorizontal: 5, borderWidth: 2, borderColor: "#FFFDFB", borderRadius: 10, backgroundColor: "#F3344A" },
+  notificationBadgeText: { fontSize: 9, fontWeight: "900", color: "#FFFFFF" },
+  guideTitle: { fontSize: 22, fontWeight: "900", color: "#07111F", textAlign: "center" },
+  guideSubtitle: { marginTop: 4, marginBottom: 10, fontSize: 13, color: "#69707C", textAlign: "center" },
+  resetSetupButton: { alignSelf: "center", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 38, marginBottom: 14, paddingHorizontal: 14, borderWidth: 1, borderColor: "#F3C5C5", borderRadius: 999, backgroundColor: "#FFF4F4" },
+  resetSetupButtonPressed: { opacity: 0.72 },
+  resetSetupButtonDisabled: { opacity: 0.45 },
+  resetSetupText: { fontSize: 12, fontWeight: "900", color: "#C62828" },
+  stepCard: { minHeight: 82, flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderWidth: 2, borderColor: "#E4E7EB", borderRadius: 22, backgroundColor: "#FFFFFF" },
+  stepCardActive: { borderColor: "#F3344A", shadowColor: "#F3344A", shadowOpacity: 0.12, shadowRadius: 10, elevation: 3 },
+  stepCardComplete: { borderColor: "#168B4F", backgroundColor: "#EFFAF3" },
+  stepIcon: { width: 49, height: 49, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: "#FFF0F2" },
+  stepIconComplete: { backgroundColor: "#DDF4E6" },
+  stepContent: { flex: 1, marginHorizontal: 12 },
+  stepTitle: { fontSize: 17, fontWeight: "900", color: "#07111F" },
+  stepTitleComplete: { color: "#116A3D" },
+  stepSubtitle: { marginTop: 4, fontSize: 12, lineHeight: 17, color: "#69707C" },
+  stepSubtitleComplete: { color: "#397A58" },
+  checkCircle: { width: 29, height: 29, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: "#168B4F" },
+  arrowWrap: { height: 36, alignItems: "center", justifyContent: "center" },
+  arrowLine: { position: "absolute", top: 0, bottom: 0, width: 3, borderRadius: 2, backgroundColor: "#E0E3E7" },
+  arrowLineComplete: { backgroundColor: "#B8E4CA" },
+  readyText: { marginTop: 5, fontSize: 12, fontWeight: "800", color: "#777E89", textAlign: "center" },
+  readyTextComplete: { color: "#168B4F" },
+  decisionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 14 },
+  sideButton: { width: 88, minHeight: 108, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 23, backgroundColor: "#FFFFFF" },
+  sideDisabled: { opacity: 0.38 },
+  sideText: { marginTop: 8, fontSize: 13, fontWeight: "900", lineHeight: 17, color: "#07111F", textAlign: "center" },
+  pickOuter: { width: 148, height: 148, alignItems: "center", justifyContent: "center", borderWidth: 4, borderColor: "#FF9A38", borderRadius: 74, backgroundColor: "#FFF2E8", shadowColor: "#F3344A", shadowOpacity: 0.25, shadowRadius: 15, elevation: 8 },
+  pickDisabled: { opacity: 0.38 },
+  pickInner: { width: 129, height: 129, alignItems: "center", justifyContent: "center", borderRadius: 65, backgroundColor: "#A7ADB6" },
+  pickInnerReady: { backgroundColor: "#F3344A" },
+  pickText: { marginTop: 7, fontSize: 18, fontWeight: "900", color: "#FFFFFF" },
+  errorCard: { marginTop: 15, padding: 13, borderWidth: 1, borderColor: "#F3C5C5", borderRadius: 17, backgroundColor: "#FFF1F1" },
+  errorText: { fontSize: 13, fontWeight: "700", color: "#9F2424", textAlign: "center" },
+  bottomRow: { flexDirection: "row", gap: 11, marginTop: 22 },
+  shortcut: { flex: 1, minHeight: 90, padding: 14, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 21, backgroundColor: "#FFFFFF" },
+  shortcutHeading: { flexDirection: "row", alignItems: "center", gap: 7 },
+  shortcutTitle: { fontSize: 13, fontWeight: "900", color: "#07111F" },
+  shortcutSubtitle: { marginTop: 8, paddingRight: 18, fontSize: 11, color: "#69707C" },
+  shortcutArrow: { position: "absolute", right: 11, bottom: 12 },
+  refreshButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 15 },
+  refreshText: { fontSize: 11, fontWeight: "800", color: "#777E89" },
+  modalOverlay: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: "rgba(7,17,31,0.58)" },
+  modalCard: { width: "100%", maxWidth: 380, alignItems: "center", padding: 25, borderRadius: 25, backgroundColor: "#FFFFFF" },
+  modalTitle: { marginTop: 15, fontSize: 22, fontWeight: "900", color: "#07111F" },
+  modalText: { marginTop: 8, fontSize: 14, lineHeight: 21, color: "#69707C", textAlign: "center" },
+  modalPrimary: { width: "100%", minHeight: 53, alignItems: "center", justifyContent: "center", marginTop: 21, borderRadius: 17, backgroundColor: "#F3344A" },
+  modalPrimaryText: { fontSize: 16, fontWeight: "900", color: "#FFFFFF" },
+  modalSecondary: { padding: 12 },
+  modalSecondaryText: { fontSize: 13, fontWeight: "900", color: "#69707C" },
+  centerState: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  loadingText: { fontSize: 14, fontWeight: "700", color: "#69707C" },
 });

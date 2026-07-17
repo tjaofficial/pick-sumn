@@ -1,4 +1,52 @@
 from rest_framework import serializers
+def _secure_media_url(
+    *,
+    request,
+    url: str,
+) -> str:
+    """
+    Return a device-safe media URL.
+
+    Cloud media backends may expose an http URL even though the same
+    asset is available over https. Android/iOS production networking can
+    reject that insecure image URL.
+    """
+
+    clean_url = str(url or "").strip()
+
+    if not clean_url:
+        return ""
+
+    if clean_url.startswith("http://"):
+        return (
+            "https://"
+            + clean_url[len("http://"):]
+        )
+
+    if clean_url.startswith("https://"):
+        return clean_url
+
+    if request:
+        absolute_url = (
+            request.build_absolute_uri(
+                clean_url
+            )
+        )
+
+        if absolute_url.startswith(
+            "http://"
+        ):
+            return (
+                "https://"
+                + absolute_url[
+                    len("http://"):
+                ]
+            )
+
+        return absolute_url
+
+    return clean_url
+
 
 from accounts.serializers import UserSerializer
 from .models import (
@@ -74,12 +122,11 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
             return None
 
         request = self.context.get("request")
-        url = obj.image.url
 
-        if request:
-            return request.build_absolute_uri(url)
-
-        return url
+        return _secure_media_url(
+            request=request,
+            url=obj.image.url,
+        )
 
     def get_current_user_role(self, obj):
         request = self.context.get("request")

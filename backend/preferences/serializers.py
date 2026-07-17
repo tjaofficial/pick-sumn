@@ -109,11 +109,17 @@ class UserDiningStylePreferenceSerializer(
         read_only=True,
     )
 
+    dining_style_slug = serializers.CharField(
+        source="dining_style.slug",
+        read_only=True,
+    )
+
     class Meta:
         model = UserDiningStylePreference
         fields = (
             "dining_style_id",
             "dining_style_name",
+            "dining_style_slug",
             "level",
         )
 

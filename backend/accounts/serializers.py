@@ -1,6 +1,54 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
+def _secure_media_url(
+    *,
+    request,
+    url: str,
+) -> str:
+    """
+    Return a device-safe media URL.
+
+    Cloud media backends may expose an http URL even though the same
+    asset is available over https. Android/iOS production networking can
+    reject that insecure image URL.
+    """
+
+    clean_url = str(url or "").strip()
+
+    if not clean_url:
+        return ""
+
+    if clean_url.startswith("http://"):
+        return (
+            "https://"
+            + clean_url[len("http://"):]
+        )
+
+    if clean_url.startswith("https://"):
+        return clean_url
+
+    if request:
+        absolute_url = (
+            request.build_absolute_uri(
+                clean_url
+            )
+        )
+
+        if absolute_url.startswith(
+            "http://"
+        ):
+            return (
+                "https://"
+                + absolute_url[
+                    len("http://"):
+                ]
+            )
+
+        return absolute_url
+
+    return clean_url
+
 
 
 User = get_user_model()
@@ -33,12 +81,11 @@ class UserSerializer(serializers.ModelSerializer):
             return None
 
         request = self.context.get("request")
-        url = obj.avatar.url
 
-        if request:
-            return request.build_absolute_uri(url)
-
-        return url
+        return _secure_media_url(
+            request=request,
+            url=obj.avatar.url,
+        )
 
 
 class RegisterSerializer(serializers.ModelSerializer):

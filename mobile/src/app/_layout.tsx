@@ -87,6 +87,13 @@ function RootNavigator() {
         />
 
         <Stack.Screen
+          name="pick/location"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
           name="pick/review"
           options={{
             headerShown: false,
@@ -115,20 +122,6 @@ function RootNavigator() {
         />
 
         <Stack.Screen
-          name="photo-crop/index"
-          options={{
-            headerShown: false,
-          }}
-        />
-
-        <Stack.Screen
-          name="photo-crop/preview"
-          options={{
-            headerShown: false,
-          }}
-        />
-
-        <Stack.Screen
           name="notifications/index"
           options={{
             headerShown: false,
@@ -137,6 +130,13 @@ function RootNavigator() {
 
         <Stack.Screen
           name="restaurants/[sessionId]/[optionId]"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="restaurants/[placeId]/dietary"
           options={{
             headerShown: false,
           }}

@@ -43,6 +43,7 @@ export type UserCuisinePreference = {
 export type UserDiningStylePreference = {
   dining_style_id: number;
   dining_style_name: string;
+  dining_style_slug: string;
   level: PreferenceLevel;
 };
 

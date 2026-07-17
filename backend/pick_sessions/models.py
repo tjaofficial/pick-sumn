@@ -460,3 +460,368 @@ class PickSessionNotification(models.Model):
             f"{self.user}: "
             f"{self.get_kind_display()}"
         )
+
+
+class DietaryEvidenceSourceType(models.TextChoices):
+    OFFICIAL_MENU = (
+        "official_menu",
+        "Official Menu",
+    )
+    OFFICIAL_SITE = (
+        "official_site",
+        "Official Website",
+    )
+
+
+class DietaryEvidenceStatus(models.TextChoices):
+    FOUND = "found", "Evidence Found"
+    NOT_FOUND = "not_found", "No Evidence Found"
+    UNAVAILABLE = "unavailable", "Source Unavailable"
+    ERROR = "error", "Analysis Error"
+
+
+class RestaurantDietaryProfile(models.Model):
+    """
+    Cached Pick Sum'N analysis of a restaurant's official dietary
+    information.
+
+    Google review text is not stored here. This model only stores
+    findings derived from the restaurant's official website or menu.
+    """
+
+    external_place_id = models.CharField(
+        max_length=255,
+    )
+
+    restaurant_name = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    dietary_slug = models.SlugField(
+        max_length=120,
+    )
+
+    confidence_score = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[
+            MinValueValidator(0),
+            MaxValueValidator(100),
+        ],
+    )
+
+    dedicated_facility = models.BooleanField(
+        default=False,
+    )
+
+    official_menu_found = models.BooleanField(
+        default=False,
+    )
+
+    official_source_url = models.URLField(
+        max_length=1000,
+        blank=True,
+    )
+
+    menu_items = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Short menu labels or item names found on the "
+            "restaurant's official page."
+        ),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=DietaryEvidenceStatus.choices,
+        default=DietaryEvidenceStatus.NOT_FOUND,
+    )
+
+    last_checked_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+
+    expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+
+    last_error = models.CharField(
+        max_length=500,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = (
+            "-confidence_score",
+            "restaurant_name",
+            "dietary_slug",
+        )
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "external_place_id",
+                    "dietary_slug",
+                ),
+                name=(
+                    "unique_restaurant_dietary_profile"
+                ),
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=(
+                    "external_place_id",
+                    "dietary_slug",
+                ),
+                name="pick_diet_place_slug_idx",
+            ),
+            models.Index(
+                fields=("expires_at",),
+                name="pick_diet_expires_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.restaurant_name or self.external_place_id} "
+            f"— {self.dietary_slug}"
+        )
+
+
+class RestaurantDietaryEvidence(models.Model):
+    """One official-source claim supporting a dietary profile."""
+
+    profile = models.ForeignKey(
+        RestaurantDietaryProfile,
+        on_delete=models.CASCADE,
+        related_name="evidence",
+    )
+
+    source_type = models.CharField(
+        max_length=30,
+        choices=DietaryEvidenceSourceType.choices,
+    )
+
+    claim_type = models.CharField(
+        max_length=60,
+    )
+
+    summary = models.CharField(
+        max_length=500,
+    )
+
+    source_url = models.URLField(
+        max_length=1000,
+        blank=True,
+    )
+
+    confidence = models.PositiveSmallIntegerField(
+        default=0,
+        validators=[
+            MinValueValidator(0),
+            MaxValueValidator(100),
+        ],
+    )
+
+    observed_at = models.DateTimeField()
+
+    expires_at = models.DateTimeField()
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = (
+            "-confidence",
+            "-observed_at",
+        )
+
+        indexes = [
+            models.Index(
+                fields=(
+                    "profile",
+                    "claim_type",
+                ),
+                name="pick_diet_claim_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.profile} — {self.claim_type}"
+        )
+
+
+class DietaryReportOutcome(models.TextChoices):
+    ACCOMMODATED = (
+        "accommodated",
+        "Successfully Accommodated",
+    )
+    PARTIALLY_ACCOMMODATED = (
+        "partially_accommodated",
+        "Partially Accommodated",
+    )
+    NOT_ACCOMMODATED = (
+        "not_accommodated",
+        "Could Not Accommodate",
+    )
+    REACTION = (
+        "reaction",
+        "Reaction After Eating",
+    )
+
+
+class DietaryReportModerationStatus(models.TextChoices):
+    VISIBLE = "visible", "Visible"
+    HIDDEN = "hidden", "Hidden"
+    FLAGGED = "flagged", "Flagged"
+
+
+class RestaurantDietaryReport(models.Model):
+    """
+    A structured, location-specific Pick Sum'N community report.
+
+    One user may maintain one current report for each restaurant and
+    dietary need. Resubmitting updates that report instead of creating
+    duplicates.
+    """
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="restaurant_dietary_reports",
+    )
+
+    external_place_id = models.CharField(
+        max_length=255,
+    )
+
+    restaurant_name = models.CharField(
+        max_length=255,
+    )
+
+    dietary_slug = models.SlugField(
+        max_length=120,
+    )
+
+    outcome = models.CharField(
+        max_length=30,
+        choices=DietaryReportOutcome.choices,
+    )
+
+    items_clearly_labeled = models.BooleanField(
+        default=False,
+    )
+
+    staff_understood = models.BooleanField(
+        default=False,
+    )
+
+    dedicated_fryer = models.BooleanField(
+        default=False,
+    )
+
+    separate_preparation_area = models.BooleanField(
+        default=False,
+    )
+
+    gloves_changed = models.BooleanField(
+        default=False,
+    )
+
+    cross_contact_concern = models.BooleanField(
+        default=False,
+    )
+
+    restaurant_could_not_accommodate = models.BooleanField(
+        default=False,
+    )
+
+    reaction_after_eating = models.BooleanField(
+        default=False,
+    )
+
+    notes = models.CharField(
+        max_length=500,
+        blank=True,
+    )
+
+    visited_at = models.DateField(
+        blank=True,
+        null=True,
+    )
+
+    moderation_status = models.CharField(
+        max_length=20,
+        choices=(
+            DietaryReportModerationStatus
+            .choices
+        ),
+        default=(
+            DietaryReportModerationStatus
+            .VISIBLE
+        ),
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = (
+            "-updated_at",
+        )
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "user",
+                    "external_place_id",
+                    "dietary_slug",
+                ),
+                name=(
+                    "unique_user_restaurant_dietary_report"
+                ),
+            ),
+        ]
+
+        indexes = [
+            models.Index(
+                fields=(
+                    "external_place_id",
+                    "dietary_slug",
+                    "moderation_status",
+                ),
+                name="pick_report_place_slug_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user} — {self.restaurant_name} "
+            f"— {self.dietary_slug}"
+        )

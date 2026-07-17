@@ -1,18 +1,33 @@
+from concurrent.futures import ThreadPoolExecutor
+
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .google_places import (
     GooglePlacesError,
+    enrich_restaurants_with_dietary_details,
+    merge_restaurant_results,
+    search_dietary_restaurants,
+    search_dining_style_restaurants,
     search_nearby_restaurants,
 )
+from .menu_intelligence import (
+    analyze_official_menus,
+)
 from .matching import (
+    get_session_dietary_requirements,
     get_session_google_primary_types,
+    get_session_preferred_cuisine_slugs,
+    get_session_preferred_dining_style_slugs,
+    get_session_requested_dietary_slugs,
     score_and_sort_restaurants,
 )
 from .models import (
@@ -25,6 +40,9 @@ from .models import (
     PickSessionRestaurantOption,
     PickSessionStatus,
     PickSessionVote,
+    DietaryReportModerationStatus,
+    RestaurantDietaryProfile,
+    RestaurantDietaryReport,
 )
 from .serializers import (
     PickSessionCreateSerializer,
@@ -35,6 +53,7 @@ from .serializers import (
     PickSessionNotificationSerializer,
     SubmitGroupVoteSerializer,
     UpdateParticipantStatusSerializer,
+    RestaurantDietaryReportSerializer,
 )
 from .services import (
     refresh_pick_session_status,
@@ -52,7 +71,22 @@ ACTIVE_SESSION_STATUSES = (
 
 
 
-def _get_group_vote_matches(
+
+MATCH_SEARCH_CACHE_SECONDS = 30 * 60
+MATCH_SEARCH_CACHE_VERSION = "v5"
+
+
+def _get_session_search_cache_key(
+    session,
+) -> str:
+    return (
+        "pick-sumn:session-search:"
+        f"{MATCH_SEARCH_CACHE_VERSION}:"
+        f"{session.pk}"
+    )
+
+
+def _get_enriched_session_restaurants(
     session,
 ):
     if (
@@ -62,6 +96,19 @@ def _get_group_vote_matches(
         raise GooglePlacesError(
             "This session does not have coordinates."
         )
+
+    cache_key = (
+        _get_session_search_cache_key(
+            session
+        )
+    )
+
+    cached_result = cache.get(
+        cache_key
+    )
+
+    if cached_result is not None:
+        return cached_result
 
     preferred_primary_types = (
         get_session_google_primary_types(
@@ -75,28 +122,177 @@ def _get_group_vote_matches(
             "to restaurant search types."
         )
 
-    nearby_restaurants = search_nearby_restaurants(
-        latitude=float(session.latitude),
-        longitude=float(session.longitude),
-        radius_miles=session.search_radius_miles,
-        preferred_primary_types=(
-            preferred_primary_types
+    dining_style_slugs = (
+        get_session_preferred_dining_style_slugs(
+            session
+        )
+    )
+
+    dietary_slugs = (
+        get_session_requested_dietary_slugs(
+            session
+        )
+    )
+
+    (
+        required_dietary_slugs,
+        preferred_dietary_slugs,
+    ) = get_session_dietary_requirements(
+        session
+    )
+
+    latitude = float(session.latitude)
+    longitude = float(session.longitude)
+
+    search_arguments = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "radius_miles": (
+            session.search_radius_miles
         ),
-        open_now=session.open_now,
-        include_delivery=(
+        "open_now": session.open_now,
+        "include_delivery": (
             session.include_delivery
         ),
-        include_drive_through=(
+        "include_drive_through": (
             session.include_drive_through
         ),
-        max_results_per_type=20,
-        include_generic_fallback=False,
+    }
+
+    with ThreadPoolExecutor(
+        max_workers=3
+    ) as executor:
+        nearby_future = executor.submit(
+            search_nearby_restaurants,
+            **search_arguments,
+            preferred_primary_types=(
+                preferred_primary_types
+            ),
+            max_results_per_type=20,
+            include_generic_fallback=True,
+        )
+
+        dining_style_future = (
+            executor.submit(
+                search_dining_style_restaurants,
+                **search_arguments,
+                dining_style_slugs=(
+                    dining_style_slugs
+                ),
+                location_label=(
+                    session.location_label
+                ),
+            )
+        )
+
+        dietary_future = None
+
+        if dietary_slugs:
+            dietary_future = executor.submit(
+                search_dietary_restaurants,
+                **search_arguments,
+                dietary_slugs=(
+                    dietary_slugs
+                ),
+                preferred_cuisine_slugs=(
+                    get_session_preferred_cuisine_slugs(
+                        session
+                    )
+                ),
+                location_label=(
+                    session.location_label
+                ),
+            )
+
+        nearby_restaurants = (
+            nearby_future.result()
+        )
+
+        dining_style_restaurants = (
+            dining_style_future.result()
+        )
+
+        dietary_restaurants = (
+            dietary_future.result()
+            if dietary_future is not None
+            else []
+        )
+
+    merged_restaurants = (
+        merge_restaurant_results(
+            nearby_restaurants,
+            dining_style_restaurants,
+            dietary_restaurants,
+        )
+    )
+
+    preliminary_scored = (
+        score_and_sort_restaurants(
+            restaurants=merged_restaurants,
+            session=session,
+        )
+    )
+
+    ordered_restaurants = [
+        item.restaurant
+        for item in preliminary_scored
+    ]
+
+    enriched_restaurants = (
+        enrich_restaurants_with_dietary_details(
+            ordered_restaurants,
+            limit=15 if dietary_slugs else 0,
+        )
+    )
+
+    if dietary_slugs:
+        analyze_official_menus(
+            restaurants=(
+                enriched_restaurants
+            ),
+            dietary_slugs=(
+                dietary_slugs
+            ),
+            limit=8,
+        )
+
+    result = (
+        enriched_restaurants,
+        preferred_primary_types,
+        dietary_slugs,
+        required_dietary_slugs,
+        preferred_dietary_slugs,
+    )
+
+    cache.set(
+        cache_key,
+        result,
+        timeout=(
+            MATCH_SEARCH_CACHE_SECONDS
+        ),
+    )
+
+    return result
+
+
+def _get_group_vote_matches(
+    session,
+):
+    (
+        restaurants,
+        _preferred_primary_types,
+        _dietary_slugs,
+        _required_dietary_slugs,
+        _preferred_dietary_slugs,
+    ) = _get_enriched_session_restaurants(
+        session
     )
 
     return score_and_sort_restaurants(
-        restaurants=nearby_restaurants,
+        restaurants=restaurants,
         session=session,
     )[:5]
+
 
 
 def _prepare_group_vote_options(
@@ -821,31 +1017,14 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            nearby_restaurants = (
-                search_nearby_restaurants(
-                    latitude=float(
-                        session.latitude
-                    ),
-                    longitude=float(
-                        session.longitude
-                    ),
-                    radius_miles=(
-                        session.search_radius_miles
-                    ),
-                    preferred_primary_types=(
-                        preferred_primary_types
-                    ),
-                    open_now=session.open_now,
-                    include_delivery=(
-                        session.include_delivery
-                    ),
-                    include_drive_through=(
-                        session
-                        .include_drive_through
-                    ),
-                    max_results_per_type=20,
-                    include_generic_fallback=False,
-                )
+            (
+                enriched_restaurants,
+                preferred_primary_types,
+                dietary_slugs,
+                required_dietary_slugs,
+                preferred_dietary_slugs,
+            ) = _get_enriched_session_restaurants(
+                session
             )
         except GooglePlacesError as error:
             return Response(
@@ -860,7 +1039,7 @@ class PickSessionViewSet(viewsets.ModelViewSet):
         scored_restaurants = (
             score_and_sort_restaurants(
                 restaurants=(
-                    nearby_restaurants
+                    enriched_restaurants
                 ),
                 session=session,
             )
@@ -892,13 +1071,25 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                         session
                         .search_radius_miles
                     ),
+                    "requested_dietary_slugs": (
+                        dietary_slugs
+                    ),
+                    "required_dietary_slugs": (
+                        required_dietary_slugs
+                    ),
+                    "preferred_dietary_slugs": (
+                        preferred_dietary_slugs
+                    ),
                 },
                 "search": {
                     "preferred_primary_types": (
                         preferred_primary_types
                     ),
                     "candidate_count": len(
-                        nearby_restaurants
+                        enriched_restaurants
+                    ),
+                    "dietary_queries": (
+                        dietary_slugs
                     ),
                     "scored_match_count": len(
                         matches
@@ -1769,4 +1960,355 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                     ),
                 },
             },
+        )
+
+def _normalize_dietary_slug(
+    value,
+):
+    return (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace("_", "-")
+        .replace(" ", "-")
+    )
+
+
+def _serialize_official_dietary_profile(
+    profile,
+):
+    if profile is None:
+        return None
+
+    return {
+        "external_place_id": (
+            profile.external_place_id
+        ),
+        "restaurant_name": (
+            profile.restaurant_name
+        ),
+        "dietary_slug": (
+            profile.dietary_slug
+        ),
+        "confidence_score": (
+            profile.confidence_score
+        ),
+        "dedicated_facility": (
+            profile.dedicated_facility
+        ),
+        "official_menu_found": (
+            profile.official_menu_found
+        ),
+        "official_source_url": (
+            profile.official_source_url
+        ),
+        "menu_items": (
+            profile.menu_items
+            or []
+        ),
+        "status": profile.status,
+        "last_checked_at": (
+            profile.last_checked_at
+        ),
+        "expires_at": (
+            profile.expires_at
+        ),
+        "evidence": [
+            {
+                "id": evidence.id,
+                "source_type": (
+                    evidence.source_type
+                ),
+                "claim_type": (
+                    evidence.claim_type
+                ),
+                "summary": evidence.summary,
+                "source_url": (
+                    evidence.source_url
+                ),
+                "confidence": (
+                    evidence.confidence
+                ),
+                "observed_at": (
+                    evidence.observed_at
+                ),
+                "expires_at": (
+                    evidence.expires_at
+                ),
+            }
+            for evidence
+            in profile.evidence.all()
+        ],
+    }
+
+
+def _get_community_summary(
+    reports,
+):
+    report_list = list(reports)
+
+    total_reports = len(
+        report_list
+    )
+
+    accommodated_count = sum(
+        report.outcome
+        in (
+            "accommodated",
+            "partially_accommodated",
+        )
+        for report in report_list
+    )
+
+    concern_count = sum(
+        report.cross_contact_concern
+        or report.restaurant_could_not_accommodate
+        or report.reaction_after_eating
+        for report in report_list
+    )
+
+    return {
+        "total_reports": (
+            total_reports
+        ),
+        "accommodated_count": (
+            accommodated_count
+        ),
+        "concern_count": (
+            concern_count
+        ),
+        "items_clearly_labeled_count": sum(
+            report.items_clearly_labeled
+            for report in report_list
+        ),
+        "staff_understood_count": sum(
+            report.staff_understood
+            for report in report_list
+        ),
+        "dedicated_fryer_count": sum(
+            report.dedicated_fryer
+            for report in report_list
+        ),
+        "separate_preparation_area_count": sum(
+            report.separate_preparation_area
+            for report in report_list
+        ),
+        "gloves_changed_count": sum(
+            report.gloves_changed
+            for report in report_list
+        ),
+        "cross_contact_concern_count": sum(
+            report.cross_contact_concern
+            for report in report_list
+        ),
+        "could_not_accommodate_count": sum(
+            report.restaurant_could_not_accommodate
+            for report in report_list
+        ),
+        "reaction_count": sum(
+            report.reaction_after_eating
+            for report in report_list
+        ),
+    }
+
+
+class RestaurantDietaryDetailView(
+    APIView
+):
+    permission_classes = (
+        IsAuthenticated,
+    )
+
+    def get(
+        self,
+        request,
+        place_id,
+    ):
+        dietary_slug = (
+            _normalize_dietary_slug(
+                request.query_params.get(
+                    "dietary_slug"
+                )
+            )
+        )
+
+        if not dietary_slug:
+            return Response(
+                {
+                    "detail": (
+                        "dietary_slug is required."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        profile = (
+            RestaurantDietaryProfile.objects
+            .filter(
+                external_place_id=place_id,
+                dietary_slug=dietary_slug,
+            )
+            .prefetch_related(
+                "evidence",
+            )
+            .first()
+        )
+
+        visible_reports = (
+            RestaurantDietaryReport.objects
+            .filter(
+                external_place_id=place_id,
+                dietary_slug=dietary_slug,
+                moderation_status=(
+                    DietaryReportModerationStatus
+                    .VISIBLE
+                ),
+            )
+            .select_related("user")
+            .order_by("-updated_at")
+        )
+
+        report_list = list(
+            visible_reports
+        )
+
+        my_report = next(
+            (
+                report
+                for report in report_list
+                if report.user_id
+                == request.user.id
+            ),
+            None,
+        )
+
+        recent_reports = [
+            report
+            for report in report_list
+            if report.user_id
+            != request.user.id
+        ][:10]
+
+        restaurant_name = (
+            profile.restaurant_name
+            if profile
+            else (
+                my_report.restaurant_name
+                if my_report
+                else ""
+            )
+        )
+
+        return Response(
+            {
+                "external_place_id": (
+                    place_id
+                ),
+                "restaurant_name": (
+                    restaurant_name
+                ),
+                "dietary_slug": (
+                    dietary_slug
+                ),
+                "official": (
+                    _serialize_official_dietary_profile(
+                        profile
+                    )
+                ),
+                "community_summary": (
+                    _get_community_summary(
+                        report_list
+                    )
+                ),
+                "recent_reports": (
+                    RestaurantDietaryReportSerializer(
+                        recent_reports,
+                        many=True,
+                    ).data
+                ),
+                "my_report": (
+                    RestaurantDietaryReportSerializer(
+                        my_report,
+                    ).data
+                    if my_report
+                    else None
+                ),
+            }
+        )
+
+
+class RestaurantDietaryReportView(
+    APIView
+):
+    permission_classes = (
+        IsAuthenticated,
+    )
+
+    @transaction.atomic
+    def post(
+        self,
+        request,
+        place_id,
+    ):
+        serializer = (
+            RestaurantDietaryReportSerializer(
+                data={
+                    **request.data,
+                    "external_place_id": (
+                        place_id
+                    ),
+                },
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        dietary_slug = (
+            serializer.validated_data[
+                "dietary_slug"
+            ]
+        )
+
+        defaults = {
+            key: value
+            for key, value
+            in serializer.validated_data.items()
+            if key
+            not in (
+                "external_place_id",
+                "dietary_slug",
+            )
+        }
+
+        report, created = (
+            RestaurantDietaryReport.objects
+            .update_or_create(
+                user=request.user,
+                external_place_id=(
+                    place_id
+                ),
+                dietary_slug=(
+                    dietary_slug
+                ),
+                defaults=defaults,
+            )
+        )
+
+        response_serializer = (
+            RestaurantDietaryReportSerializer(
+                report
+            )
+        )
+
+        return Response(
+            response_serializer.data,
+            status=(
+                status.HTTP_201_CREATED
+                if created
+                else status.HTTP_200_OK
+            ),
         )
