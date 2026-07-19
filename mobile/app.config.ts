@@ -11,12 +11,6 @@ export default ({
     process.env
       .EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY;
 
-  if (!androidMapsKey) {
-    throw new Error(
-      "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY is missing.",
-    );
-  }
-
   return {
     ...config,
 
@@ -35,6 +29,9 @@ export default ({
     userInterfaceStyle: "light",
 
     ios: {
+      bundleIdentifier:
+        "com.picksumn.app",
+
       icon: "./assets/expo.icon",
     },
 
