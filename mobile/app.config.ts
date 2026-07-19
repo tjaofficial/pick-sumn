@@ -74,7 +74,6 @@ export default ({
 
     plugins: [
       "expo-router",
-
       [
         "expo-splash-screen",
         {
@@ -86,9 +85,7 @@ export default ({
           imageWidth: 76,
         },
       ],
-
       "expo-secure-store",
-
       [
         "expo-image-picker",
         {
@@ -100,7 +97,6 @@ export default ({
             ),
         },
       ],
-
       [
         "react-native-maps",
         {
@@ -108,14 +104,15 @@ export default ({
             androidMapsKey,
         },
       ],
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
-
     experiments: {
       typedRoutes: true,
 
       reactCompiler: true,
     },
-
     extra: {
       router: {},
 
