@@ -33,6 +33,9 @@ export default ({
         "com.picksumn.app",
 
       icon: "./assets/expo.icon",
+      infoPlist: {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
 
     android: {
