@@ -1,3 +1,4 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from django.core.cache import cache
@@ -61,6 +62,9 @@ from .services import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 ACTIVE_SESSION_STATUSES = (
     PickSessionStatus.DRAFT,
     PickSessionStatus.WAITING,
@@ -73,7 +77,7 @@ ACTIVE_SESSION_STATUSES = (
 
 
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
-MATCH_SEARCH_CACHE_VERSION = "v5"
+MATCH_SEARCH_CACHE_VERSION = "v6"
 
 
 def _get_session_search_cache_key(
@@ -238,23 +242,49 @@ def _get_enriched_session_restaurants(
         for item in preliminary_scored
     ]
 
-    enriched_restaurants = (
-        enrich_restaurants_with_dietary_details(
-            ordered_restaurants,
-            limit=15 if dietary_slugs else 0,
+    try:
+        enriched_restaurants = (
+            enrich_restaurants_with_dietary_details(
+                ordered_restaurants,
+                limit=15 if dietary_slugs else 0,
+                max_workers=6,
+            )
         )
-    )
+    except Exception as error:
+        logger.exception(
+            (
+                "Dietary review enrichment failed "
+                "for pick session %s: %s"
+            ),
+            session.pk,
+            error,
+        )
+
+        enriched_restaurants = (
+            ordered_restaurants
+        )
 
     if dietary_slugs:
-        analyze_official_menus(
-            restaurants=(
-                enriched_restaurants
-            ),
-            dietary_slugs=(
-                dietary_slugs
-            ),
-            limit=8,
-        )
+        try:
+            analyze_official_menus(
+                restaurants=(
+                    enriched_restaurants
+                ),
+                dietary_slugs=(
+                    dietary_slugs
+                ),
+                limit=4,
+                max_workers=4,
+            )
+        except Exception as error:
+            logger.exception(
+                (
+                    "Official menu analysis failed "
+                    "for pick session %s: %s"
+                ),
+                session.pk,
+                error,
+            )
 
     result = (
         enriched_restaurants,

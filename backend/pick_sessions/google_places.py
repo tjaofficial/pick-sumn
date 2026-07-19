@@ -6,6 +6,7 @@ from typing import Any, Iterable
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 
 
 GOOGLE_NEARBY_SEARCH_URL = (
@@ -29,9 +30,13 @@ MAX_COMBINED_RESULTS = 100
 MAX_PHOTOS_TO_RESOLVE = 25
 MAX_DIETARY_TEXT_RESULTS = 20
 MAX_REVIEW_ENRICHMENTS = 20
-MAX_TEXT_SEARCH_PAGES = 3
+MAX_TEXT_SEARCH_PAGES = 1
 MAX_DIETARY_QUERIES_PER_SLUG = 10
 MAX_GOOGLE_SEARCH_WORKERS = 6
+MAX_GOOGLE_DETAIL_WORKERS = 6
+MAX_GOOGLE_PHOTO_WORKERS = 6
+PLACE_DIETARY_DETAILS_CACHE_SECONDS = 6 * 60 * 60
+PHOTO_URL_CACHE_SECONDS = 24 * 60 * 60
 GENERIC_NEARBY_SUBSEARCH_RADIUS_FACTOR = 0.55
 GENERIC_NEARBY_SUBSEARCH_OFFSET_FACTOR = 0.72
 
@@ -1104,7 +1109,7 @@ def _perform_text_search_request_once(
                         include_contextual_content
                     ),
                 ),
-                timeout=20,
+                timeout=8,
             )
         except requests.RequestException as error:
             if page_index == 0:
@@ -1256,6 +1261,18 @@ def _get_place_dietary_details(
     api_key: str,
     place_id: str,
 ) -> tuple[list[str], str]:
+    cache_key = (
+        "pick-sumn:google-place-dietary-details:"
+        f"{place_id}"
+    )
+
+    cached_result = cache.get(
+        cache_key
+    )
+
+    if cached_result is not None:
+        return cached_result
+
     try:
         response = requests.get(
             (
@@ -1269,17 +1286,40 @@ def _get_place_dietary_details(
                     "reviews,menuUri"
                 ),
             },
-            timeout=12,
+            timeout=5,
         )
-    except requests.RequestException:
+    except requests.RequestException as error:
+        logger.warning(
+            (
+                "Google Places dietary detail request "
+                "failed for place %s: %s"
+            ),
+            place_id,
+            error,
+        )
         return [], ""
 
     if response.status_code >= 400:
+        logger.warning(
+            (
+                "Google Places dietary detail request "
+                "returned HTTP %s for place %s"
+            ),
+            response.status_code,
+            place_id,
+        )
         return [], ""
 
     try:
         payload = response.json()
     except ValueError:
+        logger.warning(
+            (
+                "Google Places dietary detail request "
+                "returned invalid JSON for place %s"
+            ),
+            place_id,
+        )
         return [], ""
 
     reviews = payload.get("reviews", [])
@@ -1295,10 +1335,20 @@ def _get_place_dietary_details(
             if review_text
         ]
 
-    return (
+    result = (
         review_texts,
         str(payload.get("menuUri") or "").strip(),
     )
+
+    cache.set(
+        cache_key,
+        result,
+        timeout=(
+            PLACE_DIETARY_DETAILS_CACHE_SECONDS
+        ),
+    )
+
+    return result
 
 
 def _normalize_search_label(
@@ -1971,36 +2021,107 @@ def enrich_restaurants_with_dietary_details(
     restaurants: list[NearbyRestaurant],
     *,
     limit: int = MAX_REVIEW_ENRICHMENTS,
+    max_workers: int = MAX_GOOGLE_DETAIL_WORKERS,
 ) -> list[NearbyRestaurant]:
     api_key = _get_api_key()
-    enriched: list[NearbyRestaurant] = []
 
-    for index, restaurant in enumerate(
-        restaurants
-    ):
-        if index >= max(0, limit):
-            enriched.append(restaurant)
-            continue
+    if not restaurants or limit <= 0:
+        return restaurants
 
-        review_texts, menu_uri = (
-            _get_place_dietary_details(
-                api_key=api_key,
-                place_id=restaurant.external_id,
+    enrichment_limit = min(
+        len(restaurants),
+        max(0, limit),
+    )
+
+    restaurants_to_enrich = (
+        restaurants[:enrichment_limit]
+    )
+
+    enriched_by_id: dict[
+        str,
+        NearbyRestaurant,
+    ] = {}
+
+    def enrich_one(
+        restaurant: NearbyRestaurant,
+    ) -> NearbyRestaurant:
+        try:
+            review_texts, menu_uri = (
+                _get_place_dietary_details(
+                    api_key=api_key,
+                    place_id=(
+                        restaurant.external_id
+                    ),
+                )
             )
-        )
-
-        enriched.append(
-            replace(
-                restaurant,
-                review_texts=review_texts,
-                menu_uri=(
-                    menu_uri
-                    or restaurant.menu_uri
+        except Exception as error:
+            logger.exception(
+                (
+                    "Unexpected dietary enrichment "
+                    "failure for place %s: %s"
                 ),
+                restaurant.external_id,
+                error,
             )
+            return restaurant
+
+        return replace(
+            restaurant,
+            review_texts=review_texts,
+            menu_uri=(
+                menu_uri
+                or restaurant.menu_uri
+            ),
         )
 
-    return enriched
+    with ThreadPoolExecutor(
+        max_workers=min(
+            max(1, max_workers),
+            enrichment_limit,
+        )
+    ) as executor:
+        future_to_restaurant = {
+            executor.submit(
+                enrich_one,
+                restaurant,
+            ): restaurant
+            for restaurant
+            in restaurants_to_enrich
+        }
+
+        for future in as_completed(
+            future_to_restaurant
+        ):
+            original = (
+                future_to_restaurant[
+                    future
+                ]
+            )
+
+            try:
+                enriched_by_id[
+                    original.external_id
+                ] = future.result()
+            except Exception as error:
+                logger.exception(
+                    (
+                        "Unexpected dietary enrichment "
+                        "worker failure for place %s: %s"
+                    ),
+                    original.external_id,
+                    error,
+                )
+                enriched_by_id[
+                    original.external_id
+                ] = original
+
+    return [
+        enriched_by_id.get(
+            restaurant.external_id,
+            restaurant,
+        )
+        for restaurant in restaurants
+    ]
 
 
 def _resolve_photo_url(
@@ -2010,6 +2131,18 @@ def _resolve_photo_url(
 ) -> str:
     if not photo_name:
         return ""
+
+    cache_key = (
+        "pick-sumn:google-photo-url:"
+        f"{photo_name}"
+    )
+
+    cached_url = cache.get(
+        cache_key
+    )
+
+    if cached_url is not None:
+        return str(cached_url)
 
     photo_media_url = (
         f"{GOOGLE_PLACES_BASE_URL}/"
@@ -2025,7 +2158,7 @@ def _resolve_photo_url(
                 "skipHttpRedirect": "true",
                 "key": api_key,
             },
-            timeout=12,
+            timeout=5,
         )
     except requests.RequestException:
         return ""
@@ -2038,12 +2171,21 @@ def _resolve_photo_url(
     except ValueError:
         return ""
 
-    return str(
+    photo_url = str(
         payload.get(
             "photoUri"
         )
         or ""
     ).strip()
+
+    if photo_url:
+        cache.set(
+            cache_key,
+            photo_url,
+            timeout=PHOTO_URL_CACHE_SECONDS,
+        )
+
+    return photo_url
 
 
 def _add_photo_urls(
@@ -2053,38 +2195,77 @@ def _add_photo_urls(
     ],
     api_key: str,
 ) -> list[NearbyRestaurant]:
-    resolved_restaurants: list[
-        NearbyRestaurant
-    ] = []
+    if not restaurants:
+        return restaurants
 
-    for index, restaurant in enumerate(
-        restaurants
-    ):
-        if (
-            index >= MAX_PHOTOS_TO_RESOLVE
-            or not restaurant.photo_name
+    photo_candidates = [
+        restaurant
+        for restaurant in restaurants[
+            :MAX_PHOTOS_TO_RESOLVE
+        ]
+        if restaurant.photo_name
+    ]
+
+    if not photo_candidates:
+        return restaurants
+
+    resolved_urls: dict[
+        str,
+        str,
+    ] = {}
+
+    with ThreadPoolExecutor(
+        max_workers=min(
+            MAX_GOOGLE_PHOTO_WORKERS,
+            len(photo_candidates),
+        )
+    ) as executor:
+        future_to_restaurant = {
+            executor.submit(
+                _resolve_photo_url,
+                api_key=api_key,
+                photo_name=(
+                    restaurant.photo_name
+                ),
+            ): restaurant
+            for restaurant
+            in photo_candidates
+        }
+
+        for future in as_completed(
+            future_to_restaurant
         ):
-            resolved_restaurants.append(
-                restaurant
+            restaurant = (
+                future_to_restaurant[
+                    future
+                ]
             )
 
-            continue
+            try:
+                resolved_urls[
+                    restaurant.external_id
+                ] = future.result()
+            except Exception:
+                resolved_urls[
+                    restaurant.external_id
+                ] = ""
 
-        photo_url = _resolve_photo_url(
-            api_key=api_key,
-            photo_name=(
-                restaurant.photo_name
+    return [
+        replace(
+            restaurant,
+            photo_url=(
+                resolved_urls.get(
+                    restaurant.external_id,
+                    "",
+                )
+                or restaurant.photo_url
             ),
         )
-
-        resolved_restaurants.append(
-            replace(
-                restaurant,
-                photo_url=photo_url,
-            )
-        )
-
-    return resolved_restaurants
+        if restaurant.external_id
+        in resolved_urls
+        else restaurant
+        for restaurant in restaurants
+    ]
 
 
 def _passes_service_filters(

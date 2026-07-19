@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 import socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import timedelta
 from html.parser import HTMLParser
@@ -12,7 +14,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 from .google_places import NearbyRestaurant
@@ -30,7 +32,11 @@ MAX_RESPONSE_BYTES = 4_000_000
 MAX_PDF_PAGES = 35
 MAX_PDF_TEXT_CHARACTERS = 300_000
 CACHE_DAYS = 30
-REQUEST_TIMEOUT_SECONDS = 12
+REQUEST_TIMEOUT_SECONDS = 5
+MAX_OFFICIAL_MENU_WORKERS = 4
+
+
+logger = logging.getLogger(__name__)
 
 
 DIETARY_ALIASES = {
@@ -927,17 +933,110 @@ def _save_failure(
     )
 
 
+def _analyze_one_official_source(
+    *,
+    restaurant: NearbyRestaurant,
+    dietary_slug: str,
+) -> None:
+    close_old_connections()
+
+    try:
+        source_url = _get_source_url(
+            restaurant
+        )
+
+        if not source_url:
+            return
+
+        existing = (
+            RestaurantDietaryProfile.objects
+            .filter(
+                external_place_id=(
+                    restaurant.external_id
+                ),
+                dietary_slug=(
+                    dietary_slug
+                ),
+            )
+            .first()
+        )
+
+        if (
+            existing is not None
+            and _profile_is_fresh(
+                existing
+            )
+        ):
+            return
+
+        try:
+            (
+                source_bytes,
+                content_type,
+                final_url,
+            ) = _fetch_official_source(
+                source_url
+            )
+
+            lines = _extract_source_lines(
+                source_bytes=source_bytes,
+                content_type=content_type,
+            )
+
+            finding = _analyze_lines(
+                source_url=final_url,
+                source_type=(
+                    DietaryEvidenceSourceType.OFFICIAL_MENU
+                    if content_type == "application/pdf"
+                    else DietaryEvidenceSourceType.OFFICIAL_SITE
+                ),
+                dietary_slug=dietary_slug,
+                lines=lines,
+            )
+
+            _save_finding(
+                restaurant=restaurant,
+                dietary_slug=dietary_slug,
+                finding=finding,
+            )
+        except OfficialMenuFetchError as error:
+            _save_failure(
+                restaurant=restaurant,
+                dietary_slug=dietary_slug,
+                source_url=source_url,
+                error=str(error),
+            )
+        except Exception as error:
+            logger.exception(
+                (
+                    "Unexpected official menu analysis "
+                    "failure for place %s and dietary "
+                    "slug %s: %s"
+                ),
+                restaurant.external_id,
+                dietary_slug,
+                error,
+            )
+    finally:
+        close_old_connections()
+
+
 def analyze_official_menus(
     *,
     restaurants: list[NearbyRestaurant],
     dietary_slugs: list[str],
     limit: int = MAX_OFFICIAL_MENU_ANALYSES,
+    max_workers: int = MAX_OFFICIAL_MENU_WORKERS,
 ) -> None:
     """
     Analyze a limited number of official restaurant pages.
 
-    This function intentionally stores only short findings and item labels.
-    It does not store full page HTML or Google review text.
+    Fresh cached profiles are reused for 30 days. Missing or stale
+    profiles are refreshed concurrently so dietary matching does not
+    spend the full request waiting on one restaurant at a time.
+
+    This function intentionally stores only short findings and item
+    labels. It does not store full page HTML or Google review text.
     """
 
     normalized_slugs = [
@@ -946,83 +1045,66 @@ def analyze_official_menus(
         if _normalize_slug(slug)
     ]
 
-    if not normalized_slugs:
+    if (
+        not normalized_slugs
+        or not restaurants
+        or limit <= 0
+    ):
         return
+
+    tasks: list[
+        tuple[
+            NearbyRestaurant,
+            str,
+        ]
+    ] = []
 
     for restaurant in restaurants[
         :max(0, limit)
     ]:
-        source_url = _get_source_url(
+        if not _get_source_url(
             restaurant
-        )
-
-        if not source_url:
+        ):
             continue
 
         for dietary_slug in normalized_slugs:
-            existing = (
-                RestaurantDietaryProfile.objects
-                .filter(
-                    external_place_id=(
-                        restaurant.external_id
-                    ),
-                    dietary_slug=(
-                        dietary_slug
-                    ),
+            tasks.append(
+                (
+                    restaurant,
+                    dietary_slug,
                 )
-                .first()
             )
 
-            if (
-                existing is not None
-                and _profile_is_fresh(
-                    existing
-                )
-            ):
-                continue
+    if not tasks:
+        return
 
+    with ThreadPoolExecutor(
+        max_workers=min(
+            max(1, max_workers),
+            len(tasks),
+        )
+    ) as executor:
+        futures = [
+            executor.submit(
+                _analyze_one_official_source,
+                restaurant=restaurant,
+                dietary_slug=dietary_slug,
+            )
+            for (
+                restaurant,
+                dietary_slug,
+            ) in tasks
+        ]
+
+        for future in as_completed(
+            futures
+        ):
             try:
-                (
-                    source_bytes,
-                    content_type,
-                    final_url,
-                ) = _fetch_official_source(
-                    source_url
-                )
-
-                lines = _extract_source_lines(
-                    source_bytes=source_bytes,
-                    content_type=content_type,
-                )
-
-                finding = _analyze_lines(
-                    source_url=final_url,
-                    source_type=(
-                        DietaryEvidenceSourceType.OFFICIAL_MENU
-                        if content_type == "application/pdf"
-                        else DietaryEvidenceSourceType.OFFICIAL_SITE
-                    ),
-                    dietary_slug=(
-                        dietary_slug
-                    ),
-                    lines=lines,
-                )
-
-                _save_finding(
-                    restaurant=restaurant,
-                    dietary_slug=(
-                        dietary_slug
-                    ),
-                    finding=finding,
-                )
-            except OfficialMenuFetchError as error:
-                _save_failure(
-                    restaurant=restaurant,
-                    dietary_slug=(
-                        dietary_slug
-                    ),
-                    source_url=(
-                        source_url
-                    ),
-                    error=str(error),
+                future.result()
+            except Exception:
+                logger.exception(
+                    (
+                        "Unexpected official menu "
+                        "analysis worker failure."
+                    )
                 )
