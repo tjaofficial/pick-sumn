@@ -2,6 +2,8 @@ from django.core.files.images import get_image_dimensions
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+
+from accounts.models import Friendship, FriendshipStatus
 from rest_framework import parsers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -9,8 +11,10 @@ from rest_framework.response import Response
 
 from .models import (
     DiningGroup,
+    DiningGroupInvitation,
     DiningGroupMember,
     GroupRole,
+    InvitationStatus,
 )
 from .permissions import (
     IsDiningGroupMember,
@@ -19,6 +23,7 @@ from .permissions import (
 from .serializers import (
     DiningGroupCreateSerializer,
     DiningGroupDetailSerializer,
+    DiningGroupInvitationSerializer,
     DiningGroupListSerializer,
     JoinGroupSerializer,
 )
@@ -62,6 +67,7 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                 ),
             )
             .distinct()
+            .order_by("name")
         )
 
     def get_serializer_class(self):
@@ -82,6 +88,7 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             "partial_update",
             "destroy",
             "image",
+            "invite_friends",
         ):
             permission_classes = (
                 IsAuthenticated,
@@ -202,15 +209,6 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             is_active=True,
         )
 
-        if group.is_expired:
-            return Response(
-                {
-                    "detail": (
-                        "This group has expired."
-                    ),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         membership, created = (
             DiningGroupMember.objects.get_or_create(
@@ -286,6 +284,238 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                 else status.HTTP_200_OK
             ),
         )
+
+    @action(
+        detail=True,
+        methods=("post",),
+        url_path="invite-friends",
+    )
+    @transaction.atomic
+    def invite_friends(self, request, id=None):
+        group = self.get_object()
+        user_ids = request.data.get("user_ids", [])
+
+        if not isinstance(user_ids, list):
+            return Response(
+                {"user_ids": "Provide a list of friend user IDs."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        requested_ids = {
+            int(user_id)
+            for user_id in user_ids
+            if str(user_id).isdigit()
+        }
+        requested_ids.discard(request.user.id)
+
+        if not requested_ids:
+            return Response(
+                {"detail": "Choose at least one friend."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        friendships = Friendship.objects.filter(
+            Q(
+                from_user=request.user,
+                to_user_id__in=requested_ids,
+                status=FriendshipStatus.ACCEPTED,
+            )
+            | Q(
+                to_user=request.user,
+                from_user_id__in=requested_ids,
+                status=FriendshipStatus.ACCEPTED,
+            )
+        )
+
+        accepted_friend_ids = set()
+        for friendship in friendships:
+            accepted_friend_ids.add(
+                friendship.to_user_id
+                if friendship.from_user_id == request.user.id
+                else friendship.from_user_id
+            )
+
+        if accepted_friend_ids != requested_ids:
+            return Response(
+                {
+                    "detail": (
+                        "One or more selected users are not "
+                        "accepted friends."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing_member_ids = set(
+            DiningGroupMember.objects.filter(
+                group=group,
+                user_id__in=accepted_friend_ids,
+                is_active=True,
+            ).values_list(
+                "user_id",
+                flat=True,
+            )
+        )
+
+        invited_count = 0
+
+        for user_id in (
+            accepted_friend_ids - existing_member_ids
+        ):
+            invitation = (
+                DiningGroupInvitation.objects.filter(
+                    group=group,
+                    invited_user_id=user_id,
+                )
+                .order_by("-created_at")
+                .first()
+            )
+
+            if invitation:
+                invitation.invited_by = request.user
+                invitation.status = InvitationStatus.PENDING
+                invitation.responded_at = None
+                invitation.expires_at = None
+                invitation.save(
+                    update_fields=(
+                        "invited_by",
+                        "status",
+                        "responded_at",
+                        "expires_at",
+                    )
+                )
+            else:
+                DiningGroupInvitation.objects.create(
+                    group=group,
+                    invited_by=request.user,
+                    invited_user_id=user_id,
+                    status=InvitationStatus.PENDING,
+                )
+
+            invited_count += 1
+
+        return Response(
+            {
+                "detail": (
+                    f"Sent {invited_count} group "
+                    f"invitation{'s' if invited_count != 1 else ''}."
+                ),
+                "invited_count": invited_count,
+            }
+        )
+
+    @action(
+        detail=False,
+        methods=("get",),
+        url_path="invitations",
+    )
+    def invitations(self, request):
+        invitations = (
+            DiningGroupInvitation.objects.filter(
+                invited_user=request.user,
+                status=InvitationStatus.PENDING,
+                group__is_active=True,
+            )
+            .select_related(
+                "group",
+                "invited_by",
+            )
+            .order_by(
+                "group__name",
+                "-created_at",
+            )
+        )
+
+        serializer = DiningGroupInvitationSerializer(
+            invitations,
+            many=True,
+            context={"request": request},
+        )
+
+        return Response(serializer.data)
+
+    @action(
+        detail=False,
+        methods=("post",),
+        url_path=(
+            r"invitations/"
+            r"(?P<invitation_id>[^/.]+)/respond"
+        ),
+    )
+    @transaction.atomic
+    def respond_invitation(
+        self,
+        request,
+        invitation_id=None,
+    ):
+        invitation = get_object_or_404(
+            DiningGroupInvitation.objects.select_related(
+                "group",
+            ),
+            id=invitation_id,
+            invited_user=request.user,
+            status=InvitationStatus.PENDING,
+        )
+
+        response_action = str(
+            request.data.get("action", "")
+        ).strip().lower()
+
+        if response_action not in (
+            "accept",
+            "decline",
+        ):
+            return Response(
+                {"detail": "Choose accept or decline."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if response_action == "accept":
+            membership, _ = (
+                DiningGroupMember.objects.get_or_create(
+                    group=invitation.group,
+                    user=request.user,
+                    defaults={
+                        "role": GroupRole.MEMBER,
+                        "is_active": True,
+                    },
+                )
+            )
+
+            if not membership.is_active:
+                membership.is_active = True
+                membership.role = GroupRole.MEMBER
+                membership.save(
+                    update_fields=(
+                        "is_active",
+                        "role",
+                    )
+                )
+
+            invitation.status = InvitationStatus.ACCEPTED
+        else:
+            invitation.status = InvitationStatus.DECLINED
+
+        from django.utils import timezone
+
+        invitation.responded_at = timezone.now()
+        invitation.save(
+            update_fields=(
+                "status",
+                "responded_at",
+            )
+        )
+
+        return Response(
+            {
+                "detail": (
+                    "Group invitation accepted."
+                    if response_action == "accept"
+                    else "Group invitation declined."
+                )
+            }
+        )
+
 
     @action(
         detail=True,

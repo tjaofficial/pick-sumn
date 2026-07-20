@@ -37,6 +37,8 @@ import {
 import {
   finishGroupVote,
   getGroupVote,
+  getPickSessionNotifications,
+  markPickSessionNotificationRead,
   submitGroupVote,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
@@ -197,6 +199,38 @@ export default function GroupVoteScreen() {
     isMounted.current = true;
 
     void loadVote();
+
+    async function markVoteNotificationsRead() {
+      if (!sessionId) {
+        return;
+      }
+
+      try {
+        const response =
+          await getPickSessionNotifications();
+
+        const matchingUnread =
+          response.notifications.filter(
+            (notification) =>
+              !notification.is_read
+              && notification.session_id
+                === sessionId,
+          );
+
+        await Promise.all(
+          matchingUnread.map(
+            (notification) =>
+              markPickSessionNotificationRead(
+                notification.id,
+              ),
+          ),
+        );
+      } catch {
+        // The vote screen should still work if notification cleanup fails.
+      }
+    }
+
+    void markVoteNotificationsRead();
 
     const interval = setInterval(
       () => {
@@ -725,7 +759,7 @@ export default function GroupVoteScreen() {
 
                           <Pressable
                             onPress={() =>
-                              router.push({
+                              router.replace({
                                 pathname:
                                   "/restaurants/[sessionId]/[optionId]",
                                 params: {

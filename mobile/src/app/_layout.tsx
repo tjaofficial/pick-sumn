@@ -13,6 +13,9 @@ import {
   useAuth,
 } from "@/features/auth/AuthContext";
 import {
+  LiveNotificationsProvider,
+} from "@/features/notifications/LiveNotificationsContext";
+import {
   PickDraftProvider,
 } from "@/features/pickSessions/PickDraftContext";
 
@@ -154,7 +157,9 @@ export default function RootLayout() {
     >
       <AuthProvider>
         <PickDraftProvider>
-          <RootNavigator />
+          <LiveNotificationsProvider>
+            <RootNavigator />
+          </LiveNotificationsProvider>
         </PickDraftProvider>
       </AuthProvider>
     </GestureHandlerRootView>

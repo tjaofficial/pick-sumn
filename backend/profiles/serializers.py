@@ -48,7 +48,7 @@ def _secure_media_url(
     return clean_url
 
 
-from .models import Profile
+from .models import Profile, SavedLocation
 from .services import calculate_profile_completion
 
 
@@ -96,6 +96,9 @@ class ProfileSerializer(serializers.ModelSerializer):
             "bio",
             "city",
             "state",
+            "default_location_label",
+            "default_location_latitude",
+            "default_location_longitude",
             "location_display",
             "default_search_radius_miles",
             "default_price_min",
@@ -199,3 +202,68 @@ class ProfileSerializer(serializers.ModelSerializer):
         return calculate_profile_completion(
             obj.user
         ).missing_sections
+
+class SavedLocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SavedLocation
+        fields = (
+            "id",
+            "name",
+            "location_label",
+            "latitude",
+            "longitude",
+            "created_at",
+            "updated_at",
+        )
+
+        read_only_fields = (
+            "id",
+            "created_at",
+            "updated_at",
+        )
+
+    def validate_name(self, value):
+        clean_value = value.strip()
+
+        if not clean_value:
+            raise serializers.ValidationError(
+                "Enter a name for this saved location."
+            )
+
+        return clean_value
+
+    def validate_location_label(self, value):
+        clean_value = value.strip()
+
+        if not clean_value:
+            raise serializers.ValidationError(
+                "Choose a location."
+            )
+
+        return clean_value
+
+    def validate(self, attrs):
+        latitude = attrs.get(
+            "latitude",
+            getattr(
+                self.instance,
+                "latitude",
+                None,
+            ),
+        )
+
+        longitude = attrs.get(
+            "longitude",
+            getattr(
+                self.instance,
+                "longitude",
+                None,
+            ),
+        )
+
+        if latitude is None or longitude is None:
+            raise serializers.ValidationError(
+                "Latitude and longitude are required."
+            )
+
+        return attrs

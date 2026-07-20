@@ -5,13 +5,17 @@ import {
 import {
   ArrowLeft,
   Bell,
+  Check,
   CheckCheck,
   ChevronRight,
   Trophy,
+  UserPlus,
   Vote,
+  X,
 } from "lucide-react-native";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -22,9 +26,19 @@ import {
 } from "react-native";
 import {
   useCallback,
+  useMemo,
   useState,
 } from "react";
 
+import { Avatar } from "@/components/ui/Avatar";
+import {
+  getFriendRequests,
+  respondToFriendRequest,
+} from "@/features/friends/friendsService";
+import type {
+  FriendRequest,
+  FriendUser,
+} from "@/features/friends/types";
 import {
   getPickSessionNotifications,
   markAllPickSessionNotificationsRead,
@@ -38,6 +52,38 @@ import {
 } from "@/services/getApiErrorMessage";
 
 
+type CombinedNotification =
+  | {
+      type: "friend_request";
+      createdAt: string;
+      request: FriendRequest;
+    }
+  | {
+      type: "pick_session";
+      createdAt: string;
+      notification: PickSessionNotification;
+    };
+
+
+function friendName(
+  user: FriendUser,
+): string {
+  const fullName = [
+    user.first_name,
+    user.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return (
+    fullName
+    || user.display_name
+    || user.email
+  );
+}
+
+
 export default function NotificationsScreen() {
   const [
     notifications,
@@ -47,8 +93,15 @@ export default function NotificationsScreen() {
   >([]);
 
   const [
-    unreadCount,
-    setUnreadCount,
+    friendRequests,
+    setFriendRequests,
+  ] = useState<FriendRequest[]>(
+    [],
+  );
+
+  const [
+    pickUnreadCount,
+    setPickUnreadCount,
   ] = useState(0);
 
   const [
@@ -69,21 +122,72 @@ export default function NotificationsScreen() {
   );
 
 
+  const unreadCount =
+    pickUnreadCount
+    + friendRequests.length;
+
+
+  const combinedNotifications =
+    useMemo<CombinedNotification[]>(
+      () => [
+        ...friendRequests.map(
+          (request) => ({
+            type:
+              "friend_request" as const,
+            createdAt:
+              request.created_at,
+            request,
+          }),
+        ),
+        ...notifications.map(
+          (notification) => ({
+            type:
+              "pick_session" as const,
+            createdAt:
+              notification.created_at,
+            notification,
+          }),
+        ),
+      ].sort(
+        (first, second) =>
+          new Date(
+            second.createdAt,
+          ).getTime()
+          - new Date(
+            first.createdAt,
+          ).getTime(),
+      ),
+      [
+        friendRequests,
+        notifications,
+      ],
+    );
+
+
   const loadNotifications =
     useCallback(
       async () => {
         try {
           setError(null);
 
-          const response =
-            await getPickSessionNotifications();
+          const [
+            pickResponse,
+            requests,
+          ] = await Promise.all([
+            getPickSessionNotifications(),
+            getFriendRequests(),
+          ]);
 
           setNotifications(
-            response.notifications,
+            pickResponse.notifications,
           );
 
-          setUnreadCount(
-            response.unread_count,
+          setPickUnreadCount(
+            pickResponse.unread_count,
+          );
+
+          setFriendRequests(
+            requests,
           );
         } catch (requestError) {
           setError(
@@ -108,7 +212,7 @@ export default function NotificationsScreen() {
   );
 
 
-  async function openNotification(
+  async function openPickNotification(
     notification:
       PickSessionNotification,
   ) {
@@ -121,7 +225,8 @@ export default function NotificationsScreen() {
         setNotifications(
           (current) =>
             current.map((item) =>
-              item.id === notification.id
+              item.id
+              === notification.id
                 ? {
                     ...item,
                     is_read: true,
@@ -130,23 +235,58 @@ export default function NotificationsScreen() {
             ),
         );
 
-        setUnreadCount(
-          (count) => Math.max(
-            0,
-            count - 1,
-          ),
+        setPickUnreadCount(
+          (count) =>
+            Math.max(
+              0,
+              count - 1,
+            ),
         );
       } catch {
-        // The destination should still open.
+        // Destination can still open.
       }
     }
 
     router.push({
-      pathname: "/pick-votes/[id]",
+      pathname:
+        "/pick-votes/[id]",
       params: {
-        id: notification.session_id,
+        id:
+          notification.session_id,
       },
     });
+  }
+
+
+  async function respond(
+    request: FriendRequest,
+    action:
+      | "accept"
+      | "decline",
+  ) {
+    try {
+      await respondToFriendRequest(
+        request.friendship_id,
+        action,
+      );
+
+      setFriendRequests(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.friendship_id
+              !== request.friendship_id,
+          ),
+      );
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to update request",
+        getApiErrorMessage(
+          requestError,
+          "The friend request could not be updated.",
+        ),
+      );
+    }
   }
 
 
@@ -164,7 +304,7 @@ export default function NotificationsScreen() {
           ),
       );
 
-      setUnreadCount(0);
+      setPickUnreadCount(0);
     } catch (requestError) {
       setError(
         getApiErrorMessage(
@@ -187,7 +327,9 @@ export default function NotificationsScreen() {
             color="#F3344A"
           />
 
-          <Text style={styles.loadingText}>
+          <Text
+            style={styles.loadingText}
+          >
             Loading notifications...
           </Text>
         </View>
@@ -197,10 +339,14 @@ export default function NotificationsScreen() {
 
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView
+      style={styles.screen}
+    >
       <View style={styles.topBar}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() =>
+            router.back()
+          }
           style={styles.topBarButton}
         >
           <ArrowLeft
@@ -210,17 +356,25 @@ export default function NotificationsScreen() {
         </Pressable>
 
         <View>
-          <Text style={styles.topBarTitle}>
+          <Text
+            style={styles.topBarTitle}
+          >
             Notifications
           </Text>
 
-          <Text style={styles.topBarSubtitle}>
+          <Text
+            style={
+              styles.topBarSubtitle
+            }
+          >
             {unreadCount} unread
           </Text>
         </View>
 
         <Pressable
-          disabled={unreadCount === 0}
+          disabled={
+            pickUnreadCount === 0
+          }
           onPress={() =>
             void markAllRead()
           }
@@ -229,7 +383,7 @@ export default function NotificationsScreen() {
           <CheckCheck
             size={21}
             color={
-              unreadCount > 0
+              pickUnreadCount > 0
                 ? "#F3344A"
                 : "#A7ADB6"
             }
@@ -249,6 +403,7 @@ export default function NotificationsScreen() {
             refreshing={isRefreshing}
             onRefresh={() => {
               setIsRefreshing(true);
+
               void loadNotifications();
             }}
             tintColor="#F3344A"
@@ -257,112 +412,246 @@ export default function NotificationsScreen() {
       >
         {error && (
           <View style={styles.errorCard}>
-            <Text style={styles.errorText}>
+            <Text
+              style={styles.errorText}
+            >
               {error}
             </Text>
           </View>
         )}
 
-        {notifications.length === 0 ? (
+        {combinedNotifications.length
+          === 0 ? (
           <View style={styles.emptyCard}>
             <Bell
               size={38}
               color="#F3344A"
             />
 
-            <Text style={styles.emptyTitle}>
+            <Text
+              style={styles.emptyTitle}
+            >
               Nothing new
             </Text>
 
-            <Text style={styles.emptyText}>
-              Group Vote invitations and
-              results will appear here.
+            <Text
+              style={styles.emptyText}
+            >
+              Friend requests, Group Vote
+              invitations, and results will
+              appear here.
             </Text>
           </View>
         ) : (
           <View style={styles.list}>
-            {notifications.map(
-              (notification) => (
-                <Pressable
-                  key={notification.id}
-                  onPress={() =>
-                    void openNotification(
-                      notification,
-                    )
-                  }
-                  style={[
-                    styles.card,
-                    !notification.is_read
-                      && styles.unreadCard,
-                  ]}
-                >
+            {combinedNotifications.map(
+              (item) =>
+                item.type
+                === "friend_request" ? (
                   <View
-                    style={
-                      styles.iconCircle
+                    key={
+                      `friend-${item.request.friendship_id}`
                     }
-                  >
-                    {notification.kind
-                    === "group_vote_completed" ? (
-                      <Trophy
-                        size={23}
-                        color="#D99A00"
-                      />
-                    ) : (
-                      <Vote
-                        size={23}
-                        color="#F3344A"
-                      />
-                    )}
-                  </View>
-
-                  <View
-                    style={
-                      styles.cardContent
-                    }
+                    style={[
+                      styles.card,
+                      styles.unreadCard,
+                    ]}
                   >
                     <View
                       style={
-                        styles.titleRow
+                        styles.friendAvatar
                       }
                     >
-                      <Text
+                      <Avatar
+                        imageUrl={
+                          item.request.user.avatar
+                        }
+                        name={friendName(
+                          item.request.user,
+                        )}
+                        size={47}
+                      />
+                    </View>
+
+                    <View
+                      style={
+                        styles.cardContent
+                      }
+                    >
+                      <View
                         style={
-                          styles.cardTitle
+                          styles.titleRow
                         }
                       >
-                        {notification.title}
-                      </Text>
+                        <Text
+                          style={
+                            styles.cardTitle
+                          }
+                        >
+                          New Friend Request
+                        </Text>
 
-                      {!notification.is_read && (
                         <View
                           style={
                             styles.unreadDot
                           }
                         />
+                      </View>
+
+                      <Text
+                        style={
+                          styles.cardMessage
+                        }
+                      >
+                        {friendName(
+                          item.request.user,
+                        )} wants to add you
+                        as a friend.
+                      </Text>
+
+                      <View
+                        style={
+                          styles.friendActions
+                        }
+                      >
+                        <Pressable
+                          onPress={() =>
+                            void respond(
+                              item.request,
+                              "accept",
+                            )
+                          }
+                          style={
+                            styles.acceptButton
+                          }
+                        >
+                          <Check
+                            size={15}
+                            color="#FFFFFF"
+                          />
+
+                          <Text
+                            style={
+                              styles.acceptText
+                            }
+                          >
+                            Accept
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() =>
+                            void respond(
+                              item.request,
+                              "decline",
+                            )
+                          }
+                          style={
+                            styles.declineButton
+                          }
+                        >
+                          <X
+                            size={15}
+                            color="#C62828"
+                          />
+
+                          <Text
+                            style={
+                              styles.declineText
+                            }
+                          >
+                            Decline
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable
+                    key={
+                      `pick-${item.notification.id}`
+                    }
+                    onPress={() =>
+                      void openPickNotification(
+                        item.notification,
+                      )
+                    }
+                    style={[
+                      styles.card,
+                      !item.notification.is_read
+                        && styles.unreadCard,
+                    ]}
+                  >
+                    <View
+                      style={
+                        styles.iconCircle
+                      }
+                    >
+                      {item.notification.kind
+                      === "group_vote_completed" ? (
+                        <Trophy
+                          size={23}
+                          color="#D99A00"
+                        />
+                      ) : (
+                        <Vote
+                          size={23}
+                          color="#F3344A"
+                        />
                       )}
                     </View>
 
-                    <Text
+                    <View
                       style={
-                        styles.cardMessage
+                        styles.cardContent
                       }
                     >
-                      {notification.message}
-                    </Text>
+                      <View
+                        style={
+                          styles.titleRow
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.cardTitle
+                          }
+                        >
+                          {item.notification.title}
+                        </Text>
 
-                    <Text
-                      style={styles.openText}
-                    >
-                      Open Group Vote
-                    </Text>
-                  </View>
+                        {!item.notification.is_read
+                          && (
+                          <View
+                            style={
+                              styles.unreadDot
+                            }
+                          />
+                        )}
+                      </View>
 
-                  <ChevronRight
-                    size={21}
-                    color="#9298A2"
-                  />
-                </Pressable>
-              ),
+                      <Text
+                        style={
+                          styles.cardMessage
+                        }
+                      >
+                        {item.notification.message}
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.openText
+                        }
+                      >
+                        Open Group Vote
+                      </Text>
+                    </View>
+
+                    <ChevronRight
+                      size={21}
+                      color="#9298A2"
+                    />
+                  </Pressable>
+                ),
             )}
           </View>
         )}
@@ -377,17 +666,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFF9F2",
   },
-
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderBottomWidth: 1,
     borderBottomColor: "#ECEDEF",
   },
-
   topBarButton: {
     width: 42,
     height: 42,
@@ -396,14 +684,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
   },
-
   topBarTitle: {
     fontSize: 18,
     fontWeight: "900",
     color: "#07111F",
     textAlign: "center",
   },
-
   topBarSubtitle: {
     marginTop: 2,
     fontSize: 10,
@@ -411,16 +697,13 @@ const styles = StyleSheet.create({
     color: "#69707C",
     textAlign: "center",
   },
-
   content: {
     padding: 18,
     paddingBottom: 45,
   },
-
   list: {
     gap: 10,
   },
-
   card: {
     flexDirection: "row",
     alignItems: "center",
@@ -430,12 +713,10 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: "#FFFFFF",
   },
-
   unreadCard: {
     borderColor: "#F7B6BE",
     backgroundColor: "#FFF6F7",
   },
-
   iconCircle: {
     width: 49,
     height: 49,
@@ -444,46 +725,75 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     backgroundColor: "#FFF0F2",
   },
-
+  friendAvatar: {
+    alignSelf: "flex-start",
+  },
   cardContent: {
     flex: 1,
-    marginHorizontal: 12,
+    marginLeft: 12,
   },
-
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
   },
-
   cardTitle: {
     flex: 1,
     fontSize: 15,
     fontWeight: "900",
     color: "#07111F",
   },
-
   unreadDot: {
     width: 9,
     height: 9,
     borderRadius: 5,
     backgroundColor: "#F3344A",
   },
-
   cardMessage: {
     marginTop: 4,
     fontSize: 12,
     lineHeight: 18,
     color: "#69707C",
   },
-
   openText: {
     marginTop: 7,
     fontSize: 11,
     fontWeight: "900",
     color: "#F3344A",
   },
-
+  friendActions: {
+    flexDirection: "row",
+    gap: 7,
+    marginTop: 10,
+  },
+  acceptButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 11,
+    backgroundColor: "#168B4F",
+  },
+  acceptText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+  declineButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 11,
+    backgroundColor: "#FFF1F1",
+  },
+  declineText: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#C62828",
+  },
   emptyCard: {
     alignItems: "center",
     marginTop: 45,
@@ -491,14 +801,12 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
   },
-
   emptyTitle: {
     marginTop: 12,
     fontSize: 20,
     fontWeight: "900",
     color: "#07111F",
   },
-
   emptyText: {
     marginTop: 7,
     fontSize: 13,
@@ -506,27 +814,23 @@ const styles = StyleSheet.create({
     color: "#69707C",
     textAlign: "center",
   },
-
   errorCard: {
     marginBottom: 14,
     padding: 14,
     borderRadius: 15,
     backgroundColor: "#FFF1F1",
   },
-
   errorText: {
     fontWeight: "700",
     color: "#9F2424",
     textAlign: "center",
   },
-
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
   },
-
   loadingText: {
     fontWeight: "700",
     color: "#69707C",

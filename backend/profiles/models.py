@@ -26,6 +26,25 @@ class Profile(models.Model):
         blank=True,
     )
 
+    default_location_label = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    default_location_latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+    )
+
+    default_location_longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+        blank=True,
+        null=True,
+    )
+
     default_search_radius_miles = models.PositiveSmallIntegerField(
         default=10,
     )
@@ -79,6 +98,9 @@ class Profile(models.Model):
 
     @property
     def location_display(self):
+        if self.default_location_label:
+            return self.default_location_label
+
         values = [
             value
             for value in (self.city, self.state)
@@ -86,3 +108,54 @@ class Profile(models.Model):
         ]
 
         return ", ".join(values)
+
+
+class SavedLocation(models.Model):
+    """A user-saved place that can be reused when starting a Pick session."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saved_locations",
+    )
+
+    name = models.CharField(
+        max_length=100,
+    )
+
+    location_label = models.CharField(
+        max_length=255,
+    )
+
+    latitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+    )
+
+    longitude = models.DecimalField(
+        max_digits=9,
+        decimal_places=6,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = (
+            "name",
+            "location_label",
+        )
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "name"),
+                name="unique_saved_location_name_per_user",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user}: {self.name}"

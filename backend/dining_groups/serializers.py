@@ -51,9 +51,9 @@ def _secure_media_url(
 from accounts.serializers import UserSerializer
 from .models import (
     DiningGroup,
+    DiningGroupInvitation,
     DiningGroupMember,
     GroupRole,
-    GroupType,
 )
 from .services import create_dining_group
 
@@ -97,12 +97,10 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "image",
-            "group_type",
             "join_code",
             "member_count",
             "current_user_role",
             "is_active",
-            "expires_at",
             "created_at",
             "updated_at",
         )
@@ -173,32 +171,7 @@ class DiningGroupCreateSerializer(serializers.ModelSerializer):
         fields = (
             "name",
             "description",
-            "group_type",
-            "expires_at",
         )
-
-    def validate(self, attrs):
-        group_type = attrs.get(
-            "group_type",
-            GroupType.PERMANENT,
-        )
-
-        expires_at = attrs.get("expires_at")
-
-        if (
-            group_type == GroupType.PERMANENT
-            and expires_at is not None
-        ):
-            raise serializers.ValidationError(
-                {
-                    "expires_at": (
-                        "Permanent groups should not have "
-                        "an expiration date."
-                    )
-                }
-            )
-
-        return attrs
 
     def create(self, validated_data):
         request = self.context["request"]
@@ -217,3 +190,27 @@ class JoinGroupSerializer(serializers.Serializer):
 
     def validate_join_code(self, value):
         return value.strip().upper()
+
+class DiningGroupInvitationSerializer(serializers.ModelSerializer):
+    group_id = serializers.UUIDField(
+        source="group.id",
+        read_only=True,
+    )
+    group_name = serializers.CharField(
+        source="group.name",
+        read_only=True,
+    )
+    invited_by = UserSerializer(
+        read_only=True,
+    )
+
+    class Meta:
+        model = DiningGroupInvitation
+        fields = (
+            "id",
+            "group_id",
+            "group_name",
+            "invited_by",
+            "status",
+            "created_at",
+        )

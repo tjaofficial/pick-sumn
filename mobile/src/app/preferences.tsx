@@ -1,13 +1,11 @@
 import { router } from "expo-router";
 import {
-  AlertTriangle,
   ArrowLeft,
   CircleDollarSign,
   Heart,
   Leaf,
   Save,
   Sparkles,
-  Utensils,
 } from "lucide-react-native";
 import {
   ActivityIndicator,
@@ -43,17 +41,10 @@ type SelectedCuisine = {
   rank: number;
 };
 
-type SelectedDiningStyle = {
-  level: PreferenceLevel;
-};
-
 type SelectedDietaryTag = {
   isRequired: boolean;
 };
 
-type SelectedFoodDislike = {
-  isAbsolute: boolean;
-};
 
 type SectionHeaderProps = {
   icon: React.ReactNode;
@@ -98,25 +89,12 @@ export default function PreferencesScreen() {
     );
 
   const [
-    selectedDiningStyles,
-    setSelectedDiningStyles,
-  ] = useState<Map<number, SelectedDiningStyle>>(
-    new Map(),
-  );
-
-  const [
     selectedDietaryTags,
     setSelectedDietaryTags,
   ] = useState<Map<number, SelectedDietaryTag>>(
     new Map(),
   );
 
-  const [
-    selectedFoodDislikes,
-    setSelectedFoodDislikes,
-  ] = useState<Map<number, SelectedFoodDislike>>(
-    new Map(),
-  );
 
   const [isLoading, setIsLoading] =
     useState(true);
@@ -160,19 +138,6 @@ export default function PreferencesScreen() {
           ),
         );
 
-        setSelectedDiningStyles(
-          new Map(
-            loadedPreferences.dining_styles.map(
-              (preference) => [
-                preference.dining_style_id,
-                {
-                  level: preference.level,
-                },
-              ],
-            ),
-          ),
-        );
-
         setSelectedDietaryTags(
           new Map(
             loadedPreferences.dietary_preferences.map(
@@ -187,19 +152,6 @@ export default function PreferencesScreen() {
           ),
         );
 
-        setSelectedFoodDislikes(
-          new Map(
-            loadedPreferences.food_dislikes.map(
-              (preference) => [
-                preference.food_dislike_id,
-                {
-                  isAbsolute:
-                    preference.is_absolute,
-                },
-              ],
-            ),
-          ),
-        );
       } catch (requestError) {
         setError(
           getApiErrorMessage(
@@ -322,26 +274,6 @@ export default function PreferencesScreen() {
     });
   }
 
-  function toggleDiningStyle(
-    diningStyleId: number,
-  ) {
-    setSelectedDiningStyles(
-      (currentSelections) => {
-        const next = new Map(currentSelections);
-
-        if (next.has(diningStyleId)) {
-          next.delete(diningStyleId);
-        } else {
-          next.set(diningStyleId, {
-            level: 1,
-          });
-        }
-
-        return next;
-      },
-    );
-  }
-
   function toggleDietaryTag(
     dietaryTagId: number,
   ) {
@@ -385,48 +317,7 @@ export default function PreferencesScreen() {
     );
   }
 
-  function toggleFoodDislike(
-    foodDislikeId: number,
-  ) {
-    setSelectedFoodDislikes(
-      (currentSelections) => {
-        const next = new Map(currentSelections);
 
-        if (next.has(foodDislikeId)) {
-          next.delete(foodDislikeId);
-        } else {
-          next.set(foodDislikeId, {
-            isAbsolute: false,
-          });
-        }
-
-        return next;
-      },
-    );
-  }
-
-  function toggleFoodDislikeAbsolute(
-    foodDislikeId: number,
-  ) {
-    setSelectedFoodDislikes(
-      (currentSelections) => {
-        const next = new Map(currentSelections);
-        const currentValue =
-          next.get(foodDislikeId);
-
-        if (!currentValue) {
-          return currentSelections;
-        }
-
-        next.set(foodDislikeId, {
-          isAbsolute:
-            !currentValue.isAbsolute,
-        });
-
-        return next;
-      },
-    );
-  }
     function handleBack() {
         if (router.canGoBack()) {
             router.back();
@@ -445,14 +336,6 @@ export default function PreferencesScreen() {
       return;
     }
 
-    if (selectedDiningStyles.size < 1) {
-      setError(
-        "Choose at least one dining style.",
-      );
-
-      return;
-    }
-
     const payload: SavePreferencesInput = {
       cuisines: sortedCuisineSelections.map(
         ([cuisineId, value]) => ({
@@ -462,12 +345,10 @@ export default function PreferencesScreen() {
         }),
       ),
 
-      dining_styles: [
-        ...selectedDiningStyles.entries(),
-      ].map(([diningStyleId, value]) => ({
-        dining_style_id: diningStyleId,
-        level: value.level,
-      })),
+      // Dining Styles are session-level now.
+      // Preserve any legacy permanent values without editing them.
+      dining_styles:
+        current?.dining_styles ?? [],
 
       dietary_preferences: [
         ...selectedDietaryTags.entries(),
@@ -476,12 +357,10 @@ export default function PreferencesScreen() {
         is_required: value.isRequired,
       })),
 
-      food_dislikes: [
-        ...selectedFoodDislikes.entries(),
-      ].map(([foodDislikeId, value]) => ({
-        food_dislike_id: foodDislikeId,
-        is_absolute: value.isAbsolute,
-      })),
+      // Dislikes & Avoid is no longer part of the visible
+      // preference flow. Preserve legacy values without editing them.
+      food_dislikes:
+        current?.food_dislikes ?? [],
     };
 
     try {
@@ -717,38 +596,6 @@ export default function PreferencesScreen() {
         <View style={styles.section}>
           <SectionHeader
             icon={
-              <Utensils
-                size={22}
-                color="#F3344A"
-              />
-            }
-            title="Dining Styles"
-            description="How do you usually want to get your food?"
-          />
-
-          <View style={styles.chipContainer}>
-            {options.dining_styles.map(
-              (diningStyle) => (
-                <PreferenceChip
-                  key={diningStyle.id}
-                  label={diningStyle.name}
-                  selected={selectedDiningStyles.has(
-                    diningStyle.id,
-                  )}
-                  onPress={() =>
-                    toggleDiningStyle(
-                      diningStyle.id,
-                    )
-                  }
-                />
-              ),
-            )}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader
-            icon={
               <Leaf
                 size={22}
                 color="#21A05A"
@@ -794,57 +641,6 @@ export default function PreferencesScreen() {
           <Text style={styles.sectionNote}>
             Leave this section empty when no dietary
             preferences apply.
-          </Text>
-        </View>
-
-        <View style={styles.section}>
-          <SectionHeader
-            icon={
-              <AlertTriangle
-                size={22}
-                color="#C62828"
-              />
-            }
-            title="Dislikes & Avoid"
-            description="Select foods you dislike. Mark Never when an item should strongly affect matches."
-          />
-
-          <View style={styles.chipContainer}>
-            {options.food_dislikes.map(
-              (foodDislike) => {
-                const selection =
-                  selectedFoodDislikes.get(
-                    foodDislike.id,
-                  );
-
-                return (
-                  <PreferenceChip
-                    key={foodDislike.id}
-                    label={foodDislike.name}
-                    selected={Boolean(selection)}
-                    secondarySelected={
-                      selection?.isAbsolute
-                    }
-                    secondaryLabel="Never"
-                    onPress={() =>
-                      toggleFoodDislike(
-                        foodDislike.id,
-                      )
-                    }
-                    onSecondaryPress={() =>
-                      toggleFoodDislikeAbsolute(
-                        foodDislike.id,
-                      )
-                    }
-                  />
-                );
-              },
-            )}
-          </View>
-
-          <Text style={styles.sectionNote}>
-            Leave this section empty when you are willing
-            to eat anything.
           </Text>
         </View>
 

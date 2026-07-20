@@ -257,6 +257,33 @@ class PickSessionCuisineFilter(models.Model):
 
 
 
+class PickSessionDiningStyleFilter(models.Model):
+    """Dining styles selected specifically for one Pick Session."""
+
+    session = models.ForeignKey(
+        PickSession,
+        on_delete=models.CASCADE,
+        related_name="dining_style_filters",
+    )
+
+    dining_style = models.ForeignKey(
+        "preferences.DiningStyle",
+        on_delete=models.CASCADE,
+        related_name="pick_session_filters",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("session", "dining_style"),
+                name="unique_pick_session_dining_style_filter",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.session} — {self.dining_style}"
+
+
 class PickSessionRestaurantOption(models.Model):
     """A frozen restaurant option used by a Group Vote."""
 

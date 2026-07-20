@@ -52,6 +52,17 @@ type CoordinateRestaurant = {
 
 const MAX_VISIBLE_MARKERS = 15;
 
+const FOCUS_LATITUDE_OFFSET = 0.0065;
+
+
+function getVisuallyCenteredLatitude(
+  latitude: number,
+): number {
+  return (
+    latitude
+    - FOCUS_LATITUDE_OFFSET
+  );
+}
 
 
 function getCoordinateRestaurants(
@@ -255,8 +266,10 @@ export const RestaurantMap =
             ?.animateToRegion(
               {
                 latitude:
-                  coordinateRestaurants[0]
-                    .latitude,
+                  getVisuallyCenteredLatitude(
+                    coordinateRestaurants[0]
+                      .latitude,
+                  ),
 
                 longitude:
                   coordinateRestaurants[0]
@@ -284,9 +297,9 @@ export const RestaurantMap =
             ),
             {
               edgePadding: {
-                top: 215,
+                top: 150,
                 right: 42,
-                bottom: 185,
+                bottom: 330,
                 left: 42,
               },
 
@@ -344,7 +357,10 @@ export const RestaurantMap =
             mapRef.current
               ?.animateToRegion(
                 {
-                  latitude,
+                  latitude:
+                    getVisuallyCenteredLatitude(
+                      latitude,
+                    ),
                   longitude,
                   latitudeDelta: 0.032,
                   longitudeDelta: 0.032,
@@ -379,9 +395,9 @@ export const RestaurantMap =
           loadingIndicatorColor="#F3344A"
           loadingBackgroundColor="#E9EEF5"
           mapPadding={{
-            top: 180,
+            top: 125,
             right: 10,
-            bottom: 160,
+            bottom: 300,
             left: 10,
           }}
         >

@@ -4,7 +4,6 @@ from preferences.models import (
     UserCuisinePreference,
     UserDietaryPreference,
     UserDiningStylePreference,
-    UserFoodDislike,
 )
 
 
@@ -20,7 +19,6 @@ SECTION_WEIGHTS = {
     "cuisines": 25,
     "dining_styles": 15,
     "dietary_preferences": 15,
-    "food_dislikes": 10,
     "default_settings": 10,
 }
 
@@ -86,16 +84,6 @@ def calculate_profile_completion(user) -> ProfileCompletionResult:
     else:
         missing_sections.append("dietary_preferences")
 
-    dislikes_complete = (
-        UserFoodDislike.objects.filter(
-            user=user,
-        ).exists()
-    )
-
-    if dislikes_complete:
-        completed_score += SECTION_WEIGHTS["food_dislikes"]
-    else:
-        missing_sections.append("food_dislikes")
 
     defaults_complete = bool(
         profile.default_search_radius_miles

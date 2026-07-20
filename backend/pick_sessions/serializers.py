@@ -1,8 +1,10 @@
 from rest_framework import serializers
 
+from accounts.models import Friendship, FriendshipStatus
 from accounts.serializers import UserSerializer
+from django.db.models import Q
 from dining_groups.models import DiningGroup
-from preferences.models import Cuisine
+from preferences.models import Cuisine, DiningStyle
 
 from .models import (
     DecisionMode,
@@ -128,6 +130,7 @@ class PickSessionDetailSerializer(
     )
 
     cuisine_filters = serializers.SerializerMethodField()
+    dining_style_filters = serializers.SerializerMethodField()
 
     class Meta(PickSessionListSerializer.Meta):
         fields = (
@@ -143,6 +146,7 @@ class PickSessionDetailSerializer(
                 "started_at",
                 "participants",
                 "cuisine_filters",
+                "dining_style_filters",
             )
         )
 
@@ -155,6 +159,18 @@ class PickSessionDetailSerializer(
             }
             for item in obj.cuisine_filters.select_related(
                 "cuisine"
+            )
+        ]
+
+    def get_dining_style_filters(self, obj):
+        return [
+            {
+                "id": item.dining_style_id,
+                "name": item.dining_style.name,
+                "slug": item.dining_style.slug,
+            }
+            for item in obj.dining_style_filters.select_related(
+                "dining_style"
             )
         ]
 
@@ -258,6 +274,13 @@ class PickSessionCreateSerializer(serializers.Serializer):
         allow_empty=True,
     )
 
+    dining_style_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=True,
+        allow_empty=False,
+        min_length=1,
+    )
+
     def validate(self, attrs):
         price_min = attrs.get("price_min")
         price_max = attrs.get("price_max")
@@ -299,12 +322,6 @@ class PickSessionCreateSerializer(serializers.Serializer):
                     }
                 )
 
-            if group.is_expired:
-                raise serializers.ValidationError(
-                    {
-                        "group_id": "This group has expired."
-                    }
-                )
 
             attrs["group"] = group
 
@@ -312,16 +329,6 @@ class PickSessionCreateSerializer(serializers.Serializer):
             "participant_ids",
             [],
         )
-
-        if participant_ids and not group:
-            raise serializers.ValidationError(
-                {
-                    "participant_ids": (
-                        "A group is required when selecting "
-                        "additional participants."
-                    )
-                }
-            )
 
         participant_users = []
 
@@ -357,6 +364,42 @@ class PickSessionCreateSerializer(serializers.Serializer):
                     }
                 )
 
+        if participant_ids and not group:
+            requested_ids = set(participant_ids)
+            requested_ids.discard(request.user.id)
+
+            friendships = Friendship.objects.filter(
+                Q(
+                    from_user=request.user,
+                    to_user_id__in=requested_ids,
+                    status=FriendshipStatus.ACCEPTED,
+                )
+                | Q(
+                    to_user=request.user,
+                    from_user_id__in=requested_ids,
+                    status=FriendshipStatus.ACCEPTED,
+                )
+            ).select_related("from_user", "to_user")
+
+            friend_users = [
+                friendship.to_user
+                if friendship.from_user_id == request.user.id
+                else friendship.from_user
+                for friendship in friendships
+            ]
+
+            if {user.id for user in friend_users} != requested_ids:
+                raise serializers.ValidationError(
+                    {
+                        "participant_ids": (
+                            "One or more selected participants "
+                            "are not accepted friends."
+                        )
+                    }
+                )
+
+            participant_users = friend_users
+
         attrs["participant_users"] = participant_users
 
         cuisine_ids = attrs.get("cuisine_ids", [])
@@ -379,6 +422,35 @@ class PickSessionCreateSerializer(serializers.Serializer):
 
         attrs["cuisine_filters"] = cuisines
 
+        dining_style_ids = attrs.get(
+            "dining_style_ids",
+            [],
+        )
+
+        dining_styles = list(
+            DiningStyle.objects.filter(
+                id__in=dining_style_ids,
+                is_active=True,
+            )
+        )
+
+        if (
+            not dining_styles
+            or len(dining_styles)
+            != len(set(dining_style_ids))
+        ):
+            raise serializers.ValidationError(
+                {
+                    "dining_style_ids": (
+                        "Choose at least one valid dining style."
+                    )
+                }
+            )
+
+        attrs["dining_style_filters"] = (
+            dining_styles
+        )
+
         return attrs
 
     def create(self, validated_data):
@@ -387,6 +459,10 @@ class PickSessionCreateSerializer(serializers.Serializer):
         validated_data.pop("group_id", None)
         validated_data.pop("participant_ids", None)
         validated_data.pop("cuisine_ids", None)
+        validated_data.pop(
+            "dining_style_ids",
+            None,
+        )
 
         group = validated_data.pop("group", None)
 
@@ -400,11 +476,21 @@ class PickSessionCreateSerializer(serializers.Serializer):
             [],
         )
 
+        dining_style_filters = (
+            validated_data.pop(
+                "dining_style_filters",
+                [],
+            )
+        )
+
         return create_pick_session(
             created_by=request.user,
             group=group,
             participant_users=participant_users,
             cuisine_filters=cuisine_filters,
+            dining_style_filters=(
+                dining_style_filters
+            ),
             **validated_data,
         )
 

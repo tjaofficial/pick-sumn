@@ -10,6 +10,7 @@ from .models import (
     ParticipantStatus,
     PickSession,
     PickSessionCuisineFilter,
+    PickSessionDiningStyleFilter,
     PickSessionParticipant,
     PickSessionStatus,
 )
@@ -84,6 +85,7 @@ def create_pick_session(
     title="",
     decision_mode="ranked",
     cuisine_filters=None,
+    dining_style_filters=None,
     participant_users=None,
     **overrides,
 ):
@@ -92,6 +94,16 @@ def create_pick_session(
     profile, _ = Profile.objects.get_or_create(
         user=created_by,
     )
+
+    dining_style_filters = list(
+        dining_style_filters or []
+    )
+
+    dining_style_slugs = {
+        dining_style.slug
+        for dining_style
+        in dining_style_filters
+    }
 
     session = PickSession.objects.create(
         created_by=created_by,
@@ -124,13 +136,17 @@ def create_pick_session(
             "open_now",
             True,
         ),
-        include_delivery=overrides.get(
-            "include_delivery",
-            False,
+        # These legacy fields are derived from the session dining
+        # styles instead of being separate setup toggles.
+        include_delivery=(
+            "delivery"
+            in dining_style_slugs
+            and len(dining_style_slugs) == 1
         ),
-        include_drive_through=overrides.get(
-            "include_drive_through",
-            False,
+        include_drive_through=(
+            "drive-through"
+            in dining_style_slugs
+            and len(dining_style_slugs) == 1
         ),
         something_new=overrides.get(
             "something_new",
@@ -163,58 +179,53 @@ def create_pick_session(
         ready_at=now,
     )
 
-    if group:
-        if participant_users is None:
-            memberships = (
-                DiningGroupMember.objects
-                .filter(
-                    group=group,
-                    is_active=True,
-                )
-                .exclude(user=created_by)
-                .select_related("user")
+    if group and participant_users is None:
+        memberships = (
+            DiningGroupMember.objects
+            .filter(group=group, is_active=True)
+            .exclude(user=created_by)
+            .select_related("user")
+        )
+        participant_users = [
+            membership.user
+            for membership in memberships
+        ]
+
+    participant_users = participant_users or []
+
+    unique_participant_users = {
+        user.id: user
+        for user in participant_users
+        if user.id != created_by.id
+    }
+
+    participant_status = (
+        ParticipantStatus.INVITED
+        if decision_mode == DecisionMode.GROUP_VOTE
+        else ParticipantStatus.READY
+    )
+
+    PickSessionParticipant.objects.bulk_create(
+        [
+            PickSessionParticipant(
+                session=session,
+                user=user,
+                status=participant_status,
+                is_current=False,
+                joined_at=(
+                    None
+                    if participant_status == ParticipantStatus.INVITED
+                    else now
+                ),
+                ready_at=(
+                    None
+                    if participant_status == ParticipantStatus.INVITED
+                    else now
+                ),
             )
-
-            participant_users = [
-                membership.user
-                for membership in memberships
-            ]
-
-        unique_participant_users = {
-            user.id: user
-            for user in participant_users
-            if user.id != created_by.id
-        }
-
-        # Ranked and Surprise Me sessions use other members only as
-        # preference contributors. Group Vote creates true invitations.
-        participant_status = (
-            ParticipantStatus.INVITED
-            if decision_mode == DecisionMode.GROUP_VOTE
-            else ParticipantStatus.READY
-        )
-
-        PickSessionParticipant.objects.bulk_create(
-            [
-                PickSessionParticipant(
-                    session=session,
-                    user=user,
-                    status=participant_status,
-                    is_current=False,
-                    joined_at=(
-                        None
-                        if participant_status == ParticipantStatus.INVITED
-                        else now
-                    ),
-                    ready_at=(
-                        None
-                        if participant_status == ParticipantStatus.INVITED
-                        else now
-                    ),
-                )
-                for user in unique_participant_users.values()
-            ]
-        )
+            for user in unique_participant_users.values()
+        ]
+    )
 
     if cuisine_filters:
         PickSessionCuisineFilter.objects.bulk_create(
@@ -226,6 +237,17 @@ def create_pick_session(
                 for cuisine in cuisine_filters
             ]
         )
+
+    PickSessionDiningStyleFilter.objects.bulk_create(
+        [
+            PickSessionDiningStyleFilter(
+                session=session,
+                dining_style=dining_style,
+            )
+            for dining_style
+            in dining_style_filters
+        ]
+    )
 
     refresh_pick_session_status(session)
 

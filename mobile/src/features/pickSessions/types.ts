@@ -55,8 +55,7 @@ export type NewPickSessionSetup = {
   priceMin: number;
   priceMax: number;
   openNow: boolean;
-  includeDelivery: boolean;
-  includeDriveThrough: boolean;
+  diningStyleIds: number[];
   somethingNew: boolean;
   cuisineIds: number[];
 };
@@ -74,8 +73,7 @@ export type CreatePickSessionInput = {
   price_min?: number;
   price_max?: number;
   open_now?: boolean;
-  include_delivery?: boolean;
-  include_drive_through?: boolean;
+  dining_style_ids: number[];
   something_new?: boolean;
   cuisine_ids?: number[];
 };
@@ -121,6 +119,13 @@ export type PickSessionCuisineFilter = {
 };
 
 
+export type PickSessionDiningStyleFilter = {
+  id: number;
+  name: string;
+  slug: string;
+};
+
+
 export type PickSessionDetail =
   PickSession & {
     latitude: string | number | null;
@@ -133,6 +138,7 @@ export type PickSessionDetail =
     started_at: string | null;
     participants: PickSessionParticipant[];
     cuisine_filters: PickSessionCuisineFilter[];
+    dining_style_filters: PickSessionDiningStyleFilter[];
   };
 
 

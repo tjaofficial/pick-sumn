@@ -10,7 +10,6 @@ from preferences.models import (
     PreferenceLevel,
     UserCuisinePreference,
     UserDietaryPreference,
-    UserDiningStylePreference,
 )
 
 from .google_places import NearbyRestaurant
@@ -280,7 +279,6 @@ class ParticipantPreferenceSnapshot:
     user_id: int
     cuisine_levels: dict[str, int]
     cuisine_ranks: dict[str, int]
-    dining_style_levels: dict[str, int]
     required_dietary_slugs: set[str]
     preferred_dietary_slugs: set[str]
 
@@ -347,11 +345,6 @@ def _build_participant_snapshot(
         .select_related("cuisine")
     )
 
-    dining_style_preferences = (
-        UserDiningStylePreference.objects
-        .filter(user=user)
-        .select_related("dining_style")
-    )
 
     dietary_preferences = (
         UserDietaryPreference.objects
@@ -374,12 +367,6 @@ def _build_participant_snapshot(
         if preference.rank is not None
     }
 
-    dining_style_levels = {
-        _normalize_slug(
-            preference.dining_style.slug
-        ): int(preference.level)
-        for preference in dining_style_preferences
-    }
 
     required_dietary_slugs = {
         _normalize_slug(
@@ -401,7 +388,6 @@ def _build_participant_snapshot(
         user_id=user.id,
         cuisine_levels=cuisine_levels,
         cuisine_ranks=cuisine_ranks,
-        dining_style_levels=dining_style_levels,
         required_dietary_slugs=required_dietary_slugs,
         preferred_dietary_slugs=preferred_dietary_slugs,
     )
@@ -535,44 +521,15 @@ def get_session_requested_dietary_slugs(
 def get_session_preferred_dining_style_slugs(
     session: PickSession,
 ) -> list[str]:
-    participants = (
-        get_session_participant_preferences(
-            session
+    return list(
+        session.dining_style_filters
+        .select_related("dining_style")
+        .order_by("dining_style__name")
+        .values_list(
+            "dining_style__slug",
+            flat=True,
         )
     )
-
-    weighted_styles: dict[str, int] = {}
-
-    for participant in participants:
-        for style_slug, level in (
-            participant
-            .dining_style_levels
-            .items()
-        ):
-            if level <= PreferenceLevel.NEUTRAL:
-                continue
-
-            weighted_styles[
-                style_slug
-            ] = (
-                weighted_styles.get(
-                    style_slug,
-                    0,
-                )
-                + int(level)
-            )
-
-    return [
-        style_slug
-        for style_slug, _
-        in sorted(
-            weighted_styles.items(),
-            key=lambda item: (
-                -item[1],
-                item[0],
-            ),
-        )
-    ]
 
 
 
@@ -585,8 +542,8 @@ def get_session_google_primary_types(
         )
     )
 
-    participants = (
-        get_session_participant_preferences(
+    dining_style_slugs = set(
+        get_session_preferred_dining_style_slugs(
             session
         )
     )
@@ -616,71 +573,72 @@ def get_session_google_primary_types(
                 google_type
             )
 
-    local_restaurant_bar_selected = any(
-        participant
-        .dining_style_levels
-        .get(
-            "local-restaurant-bar-tavern",
-            PreferenceLevel.NEUTRAL,
-        )
-        in (
-            PreferenceLevel.LIKE,
-            PreferenceLevel.LOVE,
-        )
-        for participant in participants
-    )
-
-    bar_tavern_selected = any(
-        participant
-        .dining_style_levels
-        .get(
-            "bar-tavern",
-            PreferenceLevel.NEUTRAL,
-        )
-        in (
-            PreferenceLevel.LIKE,
-            PreferenceLevel.LOVE,
-        )
-        for participant in participants
-    )
-
-    coffee_cafe_selected = any(
-        participant
-        .dining_style_levels
-        .get(
-            "coffee-shop-cafe",
-            PreferenceLevel.NEUTRAL,
-        )
-        in (
-            PreferenceLevel.LIKE,
-            PreferenceLevel.LOVE,
-        )
-        for participant in participants
-    )
-
-    if local_restaurant_bar_selected:
-        for google_type in sorted(
+    style_type_map = {
+        "bar-tavern": BAR_TAVERN_TYPES,
+        "coffee-shop-cafe": COFFEE_CAFE_TYPES,
+        "local-restaurant-bar-tavern": (
             LOCAL_RESTAURANT_BAR_TAVERN_TYPES
+        ),
+        "buffet": {
+            "buffet_restaurant",
+        },
+        "casual-dining": {
+            "restaurant",
+            "american_restaurant",
+            "diner",
+        },
+        "dine-in": {
+            "restaurant",
+            "american_restaurant",
+            "diner",
+        },
+        "fast-casual": {
+            "fast_food_restaurant",
+            "restaurant",
+        },
+        "fast-food": {
+            "fast_food_restaurant",
+        },
+        "fine-dining": {
+            "restaurant",
+        },
+        "food-truck": {
+            "food_truck",
+        },
+        "local-restaurant": {
+            "restaurant",
+            "american_restaurant",
+        },
+        "outdoor-dining": {
+            "restaurant",
+        },
+        "carryout": {
+            "restaurant",
+            "fast_food_restaurant",
+        },
+        "delivery": {
+            "restaurant",
+            "fast_food_restaurant",
+        },
+        "drive-through": {
+            "fast_food_restaurant",
+        },
+    }
+
+    for style_slug in dining_style_slugs:
+        for google_type in (
+            style_type_map.get(
+                style_slug,
+                set(),
+            )
         ):
             add_type(
                 google_type
             )
 
-    if bar_tavern_selected:
-        for google_type in sorted(
-            BAR_TAVERN_TYPES
-        ):
-            add_type(
-                google_type
-            )
-
-    if coffee_cafe_selected:
-        for google_type in sorted(
-            COFFEE_CAFE_TYPES
-        ):
-            add_type(
-                google_type
-            )
+    # A generic restaurant search is important for places whose Google
+    # listing has only the broad "restaurant" classification.
+    add_type("restaurant")
 
     return google_types
 
@@ -1878,110 +1836,177 @@ def _restaurant_is_coffee_cafe(
 
 def _get_dining_style_adjustment(
     restaurant: NearbyRestaurant,
-    participants: list[
-        ParticipantPreferenceSnapshot
-    ],
-) -> tuple[float, bool]:
-    """
-    Returns a score adjustment and whether the restaurant should be
-    excluded by the dedicated Bar / Tavern preference.
-    """
+    dining_style_slugs: set[str],
+) -> float:
+    """Give restaurants a session-specific dining-style boost."""
 
-    bar_tavern_selected = any(
-        participant
-        .dining_style_levels
-        .get(
-            "bar-tavern",
-            PreferenceLevel.NEUTRAL,
-        )
-        in (
-            PreferenceLevel.LIKE,
-            PreferenceLevel.LOVE,
-        )
-        for participant in participants
-    )
-
-    local_bar_selected = any(
-        participant
-        .dining_style_levels
-        .get(
-            "local-restaurant-bar-tavern",
-            PreferenceLevel.NEUTRAL,
-        )
-        in (
-            PreferenceLevel.LIKE,
-            PreferenceLevel.LOVE,
-        )
-        for participant in participants
-    )
-
-    coffee_cafe_selected = any(
-        participant
-        .dining_style_levels
-        .get(
-            "coffee-shop-cafe",
-            PreferenceLevel.NEUTRAL,
-        )
-        in (
-            PreferenceLevel.LIKE,
-            PreferenceLevel.LOVE,
-        )
-        for participant in participants
-    )
-
-    has_bar_type = (
-        _restaurant_has_bar_tavern_type(
+    normalized_types = (
+        _get_normalized_place_types(
             restaurant
         )
     )
-
-    if (
-        bar_tavern_selected
-        and not has_bar_type
-    ):
-        return 0.0, True
-
-    is_coffee_cafe = (
-        _restaurant_is_coffee_cafe(
-            restaurant
-        )
-    )
-
-    if (
-        is_coffee_cafe
-        and not coffee_cafe_selected
-    ):
-        return 0.0, True
 
     adjustment = 0.0
 
-    if bar_tavern_selected:
-        adjustment += 10.0
+    if (
+        "bar-tavern"
+        in dining_style_slugs
+        and _restaurant_has_bar_tavern_type(
+            restaurant
+        )
+    ):
+        adjustment = max(
+            adjustment,
+            10.0,
+        )
 
     if (
-        local_bar_selected
-        and has_bar_type
+        "local-restaurant-bar-tavern"
+        in dining_style_slugs
+        and _restaurant_has_bar_tavern_type(
+            restaurant
+        )
         and _restaurant_is_food_forward_bar(
             restaurant
         )
     ):
-        adjustment += 7.0
+        adjustment = max(
+            adjustment,
+            9.0,
+        )
 
     if (
-        coffee_cafe_selected
-        and is_coffee_cafe
+        "coffee-shop-cafe"
+        in dining_style_slugs
+        and _restaurant_is_coffee_cafe(
+            restaurant
+        )
     ):
-        adjustment += 8.0
+        adjustment = max(
+            adjustment,
+            9.0,
+        )
 
-    return adjustment, False
+    if (
+        "delivery"
+        in dining_style_slugs
+        and restaurant.delivery is True
+    ):
+        adjustment = max(
+            adjustment,
+            9.0,
+        )
+
+    if (
+        "carryout"
+        in dining_style_slugs
+        and restaurant.takeout is True
+    ):
+        adjustment = max(
+            adjustment,
+            8.0,
+        )
+
+    if (
+        "dine-in"
+        in dining_style_slugs
+        and restaurant.dine_in is True
+    ):
+        adjustment = max(
+            adjustment,
+            8.0,
+        )
+
+    if (
+        "casual-dining"
+        in dining_style_slugs
+        and restaurant.dine_in is True
+    ):
+        adjustment = max(
+            adjustment,
+            8.0,
+        )
+
+    if (
+        "drive-through"
+        in dining_style_slugs
+        and "drive-through"
+        in normalized_types
+    ):
+        adjustment = max(
+            adjustment,
+            10.0,
+        )
+
+    if (
+        (
+            "fast-food"
+            in dining_style_slugs
+            or "fast-casual"
+            in dining_style_slugs
+        )
+        and "fast-food-restaurant"
+        in normalized_types
+    ):
+        adjustment = max(
+            adjustment,
+            9.0,
+        )
+
+    if (
+        "buffet"
+        in dining_style_slugs
+        and "buffet-restaurant"
+        in normalized_types
+    ):
+        adjustment = max(
+            adjustment,
+            9.0,
+        )
+
+    if (
+        "food-truck"
+        in dining_style_slugs
+        and "food-truck"
+        in normalized_types
+    ):
+        adjustment = max(
+            adjustment,
+            9.0,
+        )
+
+    if (
+        "local-restaurant"
+        in dining_style_slugs
+        and "restaurant"
+        in normalized_types
+    ):
+        adjustment = max(
+            adjustment,
+            6.0,
+        )
+
+    if (
+        "fine-dining"
+        in dining_style_slugs
+        and PRICE_LEVEL_MAP.get(
+            restaurant.price_level,
+            0,
+        )
+        >= 3
+    ):
+        adjustment = max(
+            adjustment,
+            7.0,
+        )
+
+    return adjustment
 
 
 
 def _get_dining_style_reasons(
     restaurant: NearbyRestaurant,
-    participants: list[
-        ParticipantPreferenceSnapshot
-    ],
+    dining_style_slugs: set[str],
 ) -> list[str]:
     available_styles: set[str] = set()
 
@@ -1996,44 +2021,51 @@ def _get_dining_style_reasons(
         )
 
     if restaurant.dine_in is True:
-        available_styles.add(
-            "dine-in"
+        available_styles.update(
+            {
+                "dine-in",
+                "casual-dining",
+            }
         )
 
-    if (
-        restaurant.primary_type
-        == "fast_food_restaurant"
-        or "fast_food_restaurant"
-        in restaurant.types
-    ):
-        available_styles.add(
-            "fast-food"
-        )
-
-    has_bar_or_tavern_type = (
-        _restaurant_has_bar_tavern_type(
+    normalized_types = (
+        _get_normalized_place_types(
             restaurant
         )
     )
 
-    has_food_service_signal = (
-        _restaurant_is_food_forward_bar(
-            restaurant
+    if "fast-food-restaurant" in normalized_types:
+        available_styles.update(
+            {
+                "fast-food",
+                "fast-casual",
+                "drive-through",
+            }
         )
-    )
 
-    if (
-        has_bar_or_tavern_type
-        and has_food_service_signal
-    ):
+    if "buffet-restaurant" in normalized_types:
         available_styles.add(
-            "local-restaurant-bar-tavern"
+            "buffet"
         )
 
-    if has_bar_or_tavern_type:
+    if "food-truck" in normalized_types:
+        available_styles.add(
+            "food-truck"
+        )
+
+    if _restaurant_has_bar_tavern_type(
+        restaurant
+    ):
         available_styles.add(
             "bar-tavern"
         )
+
+        if _restaurant_is_food_forward_bar(
+            restaurant
+        ):
+            available_styles.add(
+                "local-restaurant-bar-tavern"
+            )
 
     if _restaurant_is_coffee_cafe(
         restaurant
@@ -2042,31 +2074,28 @@ def _get_dining_style_reasons(
             "coffee-shop-cafe"
         )
 
-    reasons: list[str] = []
+    if "restaurant" in normalized_types:
+        available_styles.add(
+            "local-restaurant"
+        )
 
-    for participant in participants:
-        for style_slug in available_styles:
-            level = (
-                participant
-                .dining_style_levels
-                .get(
-                    style_slug,
-                    PreferenceLevel.NEUTRAL,
-                )
-            )
+    matching_styles = (
+        available_styles
+        .intersection(
+            dining_style_slugs
+        )
+    )
 
-            if level in (
-                PreferenceLevel.LIKE,
-                PreferenceLevel.LOVE,
-            ):
-                reasons.append(
-                    (
-                        "Preferred dining style: "
-                        f"{_display_slug(style_slug)}"
-                    )
-                )
-
-    return reasons
+    return [
+        (
+            "Session dining style: "
+            f"{_display_slug(style_slug)}"
+        )
+        for style_slug
+        in sorted(
+            matching_styles
+        )
+    ]
 
 
 def _deduplicate_strings(
@@ -2097,6 +2126,7 @@ def score_restaurant_for_session(
     participants: list[
         ParticipantPreferenceSnapshot
     ],
+    dining_style_slugs: set[str],
 ) -> ScoredRestaurant | None:
     restaurant_cuisines = (
         _get_restaurant_cuisine_slugs(
@@ -2173,20 +2203,16 @@ def score_restaurant_for_session(
     dining_style_reasons = (
         _get_dining_style_reasons(
             restaurant,
-            participants,
+            dining_style_slugs,
         )
     )
 
-    (
-        dining_style_adjustment,
-        exclude_for_bar_tavern,
-    ) = _get_dining_style_adjustment(
-        restaurant,
-        participants,
+    dining_style_adjustment = (
+        _get_dining_style_adjustment(
+            restaurant,
+            dining_style_slugs,
+        )
     )
-
-    if exclude_for_bar_tavern:
-        return None
 
     weighted_score = (
         cuisine_score
@@ -2285,6 +2311,12 @@ def score_and_sort_restaurants(
         )
     )
 
+    dining_style_slugs = set(
+        get_session_preferred_dining_style_slugs(
+            session
+        )
+    )
+
     scored_restaurants: list[
         ScoredRestaurant
     ] = []
@@ -2295,6 +2327,9 @@ def score_and_sort_restaurants(
                 restaurant=restaurant,
                 session=session,
                 participants=participants,
+                dining_style_slugs=(
+                    dining_style_slugs
+                ),
             )
         )
 

@@ -4,6 +4,7 @@ import type {
   CreateGroupInput,
   DiningGroup,
   DiningGroupDetail,
+  DiningGroupInvitation,
   JoinGroupInput,
 } from "./types";
 
@@ -47,6 +48,65 @@ export async function leaveGroup(
     `/api/groups/${groupId}/leave/`,
     {
       method: "POST",
+    },
+  );
+}
+
+
+export async function inviteFriendsToGroup(
+  groupId: string,
+  userIds: number[],
+): Promise<{
+  detail: string;
+  invited_count: number;
+}> {
+  return apiRequest<{
+    detail: string;
+    invited_count: number;
+  }>(
+    `/api/groups/${groupId}/invite-friends/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        user_ids: userIds,
+      }),
+    },
+  );
+}
+
+
+export async function getGroupInvitations(): Promise<
+  DiningGroupInvitation[]
+> {
+  return apiRequest<DiningGroupInvitation[]>(
+    "/api/groups/invitations/",
+  );
+}
+
+
+export async function respondToGroupInvitation(
+  invitationId: string,
+  action: "accept" | "decline",
+): Promise<{ detail: string }> {
+  return apiRequest<{ detail: string }>(
+    `/api/groups/invitations/${invitationId}/respond/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        action,
+      }),
+    },
+  );
+}
+
+
+export async function deleteGroup(
+  groupId: string,
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/groups/${groupId}/`,
+    {
+      method: "DELETE",
     },
   );
 }

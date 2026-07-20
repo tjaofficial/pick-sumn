@@ -2,8 +2,6 @@ import { Link } from "expo-router";
 import { useState } from "react";
 import {
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -12,6 +10,9 @@ import {
   View,
 } from "react-native";
 
+import {
+  KeyboardAwareScrollView,
+} from "@/components/KeyboardAwareScrollView";
 import { useAuth } from "@/features/auth/AuthContext";
 import { ApiError } from "@/services/api";
 
@@ -50,10 +51,9 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={
-          Platform.OS === "ios" ? "padding" : undefined
+      <KeyboardAwareScrollView
+        contentContainerStyle={
+          styles.container
         }
       >
         <Image
@@ -118,7 +118,7 @@ export default function LoginScreen() {
             </Link>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
@@ -129,13 +129,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF9F2",
   },
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 36,
   },
   logo: {
-    width: 380,
-    height: 300,
+    width: "100%",
+    maxWidth: 380,
+    height: 250,
     alignSelf: "center",
   },
   title: {

@@ -1,35 +1,20 @@
 from django.db import transaction
 
-from .models import (
-    DiningGroup,
-    DiningGroupMember,
-    GroupRole,
-)
+from .models import DiningGroup, DiningGroupMember, GroupRole
 
 
 @transaction.atomic
-def create_dining_group(
-    *,
-    created_by,
-    name,
-    description="",
-    group_type="permanent",
-    expires_at=None,
-):
-    """Create a dining group and add its creator as owner."""
-
+def create_dining_group(*, created_by, name, description=""):
     group = DiningGroup.objects.create(
         created_by=created_by,
         name=name,
         description=description,
-        group_type=group_type,
-        expires_at=expires_at,
+        group_type="permanent",
+        expires_at=None,
     )
-
     DiningGroupMember.objects.create(
         group=group,
         user=created_by,
         role=GroupRole.OWNER,
     )
-
     return group

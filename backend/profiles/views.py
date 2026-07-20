@@ -4,8 +4,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Profile
-from .serializers import ProfileSerializer
+from .models import Profile, SavedLocation
+from .serializers import (
+    ProfileSerializer,
+    SavedLocationSerializer,
+)
 
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -160,4 +163,33 @@ class ProfileAvatarView(APIView):
 
         return Response(
             serializer.data,
+        )
+
+
+class SavedLocationListCreateView(
+    generics.ListCreateAPIView
+):
+    serializer_class = SavedLocationSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return SavedLocation.objects.filter(
+            user=self.request.user,
+        )
+
+    def perform_create(self, serializer):
+        serializer.save(
+            user=self.request.user,
+        )
+
+
+class SavedLocationDetailView(
+    generics.RetrieveUpdateDestroyAPIView
+):
+    serializer_class = SavedLocationSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return SavedLocation.objects.filter(
+            user=self.request.user,
         )

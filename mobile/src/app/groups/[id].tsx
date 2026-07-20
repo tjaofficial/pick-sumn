@@ -1,133 +1,108 @@
 import * as Clipboard from "expo-clipboard";
 import QRCode from "react-native-qrcode-svg";
 import {
-  router,
-  useLocalSearchParams,
-} from "expo-router";
+  Swipeable,
+} from "react-native-gesture-handler";
+import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
-  CalendarClock,
   Camera,
   Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
   Copy,
   Crown,
   LogOut,
+  Pencil,
   Share2,
-  ShieldCheck,
+  Trash2,
   User,
+  UserPlus,
   Users,
 } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Pressable,
   SafeAreaView,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import {
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Avatar } from "@/components/ui/Avatar";
+import { getFriends } from "@/features/friends/friendsService";
+import type { FriendListItem, FriendUser } from "@/features/friends/types";
 import {
+  inviteFriendsToGroup,
+  deleteGroup,
   deleteGroupImage,
   getGroup,
   leaveGroup,
+  removeGroupMember,
 } from "@/features/groups/groupsService";
-import {
-  Avatar,
-} from "@/components/ui/Avatar";
 import type {
   DiningGroupDetail,
   DiningGroupMember,
 } from "@/features/groups/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
-import {
-  choosePhotoForCrop,
-} from "@/services/photoPicker";
+import { choosePhotoForCrop } from "@/services/photoPicker";
 
-function getRoleIcon(role: DiningGroupMember["role"]) {
-  if (role === "owner") {
-    return (
-      <Crown
-        size={18}
-        color="#D99A00"
-        fill="#FFE18A"
-      />
-    );
-  }
-
-  if (role === "admin") {
-    return (
-      <ShieldCheck
-        size={18}
-        color="#3A72D8"
-      />
-    );
-  }
-
-  return (
-    <User
-      size={18}
-      color="#69707C"
-    />
-  );
+function memberName(member: DiningGroupMember): string {
+  const fullName = [member.user.first_name, member.user.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return member.nickname || fullName || member.user.display_name || member.user.email;
 }
 
-function getMemberName(member: DiningGroupMember): string {
-  return (
-    member.nickname ||
-    member.user.display_name ||
-    member.user.email
-  );
+function friendName(user: FriendUser): string {
+  const fullName = [user.first_name, user.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return fullName || user.display_name || user.email;
 }
 
 export default function GroupDetailScreen() {
-  const params = useLocalSearchParams<{
-    id?: string | string[];
-  }>();
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const groupId = Array.isArray(params.id) ? params.id[0] : params.id;
 
-  const groupId = Array.isArray(params.id)
-    ? params.id[0]
-    : params.id;
-
-  const [group, setGroup] =
-    useState<DiningGroupDetail | null>(null);
-
-  const joinLink = group
-    ? `picksumn://join-group?code=${encodeURIComponent(
-        group.join_code,
-      )}`
-    : "";
-
+  const [group, setGroup] = useState<DiningGroupDetail | null>(null);
+  const [friends, setFriends] = useState<FriendListItem[]>([]);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<Set<number>>(new Set());
+  const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
+  const [shareInviteOpen, setShareInviteOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [
+    removingMemberId,
+    setRemovingMemberId,
+  ] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadGroup = useCallback(async () => {
-    if (!groupId) {
-      setError("The group ID is missing.");
-      setIsLoading(false);
-      return;
-    }
-
+  const load = useCallback(async () => {
+    if (!groupId) return;
     try {
-      setError(null);
-
-      const result = await getGroup(groupId);
-      setGroup(result);
+      const [loadedGroup, loadedFriends] = await Promise.all([
+        getGroup(groupId),
+        getFriends(),
+      ]);
+      setGroup(loadedGroup);
+      setFriends(loadedFriends);
     } catch (requestError) {
-      setError(
+      Alert.alert(
+        "Unable to load group",
         getApiErrorMessage(
           requestError,
-          "Unable to load this group.",
+          "This group could not be loaded.",
         ),
       );
     } finally {
@@ -136,888 +111,740 @@ export default function GroupDetailScreen() {
   }, [groupId]);
 
   useEffect(() => {
-    loadGroup();
-  }, [loadGroup]);
+    void load();
+  }, [load]);
 
-  async function handleCopyCode() {
-    if (!group) {
+  const availableFriends = useMemo(() => {
+    const memberIds = new Set(
+      group?.members.map((member) => member.user.id) || [],
+    );
+
+    return friends
+      .filter((friend) => !memberIds.has(friend.user.id))
+      .sort((a, b) => friendName(a.user).localeCompare(friendName(b.user)));
+  }, [friends, group?.members]);
+
+  if (isLoading || !group || !groupId) {
+    return (
+      <SafeAreaView style={styles.screen}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color="#F3344A" />
+          <Text style={styles.stateText}>Loading group...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const canManage =
+    group.current_user_role === "owner" ||
+    group.current_user_role === "admin";
+
+  const joinLink = `picksumn://join-group?code=${encodeURIComponent(group.join_code)}`;
+
+  function toggleFriend(userId: number) {
+    setSelectedFriendIds((current) => {
+      const next = new Set(current);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  async function inviteSelectedFriends() {
+    const currentGroupId = groupId;
+
+    if (!currentGroupId || selectedFriendIds.size === 0) {
       return;
     }
 
-    await Clipboard.setStringAsync(group.join_code);
+    try {
+      setIsAdding(true);
+
+      const result = await inviteFriendsToGroup(
+        currentGroupId,
+        [...selectedFriendIds],
+      );
+      setSelectedFriendIds(new Set());
+      setInviteFriendsOpen(false);
+
+      Alert.alert(
+        "Invitations sent",
+        result.detail,
+      );
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to invite friends",
+        getApiErrorMessage(
+          requestError,
+          "The selected friends could not be invited.",
+        ),
+      );
+    } finally {
+      setIsAdding(false);
+    }
+  }
+
+  async function copyCode() {
+    const currentGroup = group;
+
+    if (!currentGroup) {
+      return;
+    }
+
+    await Clipboard.setStringAsync(
+      currentGroup.join_code,
+    );
+
     setCopied(true);
 
-    setTimeout(() => {
-      setCopied(false);
-    }, 1800);
+    setTimeout(
+      () => setCopied(false),
+      1500,
+    );
   }
 
-  async function handleShareCode() {
-  if (!group) {
-    return;
+  async function shareCode() {
+    const currentGroup = group;
+
+    if (!currentGroup) {
+      return;
+    }
+
+    await Share.share({
+      message:
+        `Join my Pick Sum’N group "${currentGroup.name}".\n\n`
+        + `${joinLink}\n\n`
+        + `Join code: ${currentGroup.join_code}`,
+    });
   }
 
-  await Share.share({
-    message:
-      `Join my Pick Sum’N group "${group.name}".\n\n` +
-      `Open Pick Sum’N: ${joinLink}\n\n` +
-      `Or enter join code: ${group.join_code}`,
-  });
-}
+  function managePhoto() {
+    const currentGroup = group;
+    const currentGroupId = groupId;
 
-  function manageGroupPhoto() {
     if (
-      !group
-      || !groupId
-      || !(
-        group.current_user_role
-        === "owner"
-        || group.current_user_role
-        === "admin"
-      )
+      !currentGroup
+      || !currentGroupId
+      || !canManage
+    ) {
+      return;
+    }
+    Alert.alert(
+      currentGroup.image ? "Group Photo" : "Add Group Photo",
+      "Choose what you would like to do.",
+      [
+        {
+          text: "Choose Photo",
+          onPress: () =>
+            void choosePhotoForCrop({
+              type: "group",
+              groupId: currentGroupId,
+            }),
+        },
+        ...(currentGroup.image
+          ? [
+              {
+                text: "Remove Photo",
+                style: "destructive" as const,
+                onPress: async () => {
+                  setGroup(
+                    await deleteGroupImage(
+                      currentGroupId,
+                    ),
+                  );
+                },
+              },
+            ]
+          : []),
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  }
+
+  function confirmDelete() {
+    const currentGroupId = groupId;
+
+    if (!currentGroupId) {
+      return;
+    }
+
+    Alert.alert(
+      "Delete this group?",
+      "This will remove the group for everyone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Group",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsDeleting(true);
+              await deleteGroup(currentGroupId);
+              router.replace("/(tabs)/groups");
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmLeave() {
+    const currentGroupId = groupId;
+
+    if (!currentGroupId) {
+      return;
+    }
+
+    Alert.alert(
+      "Leave group?",
+      "You can rejoin later if you still have the join code.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Leave",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsLeaving(true);
+              await leaveGroup(currentGroupId);
+              router.replace("/(tabs)/groups");
+            } finally {
+              setIsLeaving(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmRemoveMember(
+    member: DiningGroupMember,
+  ) {
+    const currentGroupId = groupId;
+    const currentGroup = group;
+
+    if (
+      !currentGroupId
+      || !currentGroup
+      || currentGroup.current_user_role
+        !== "owner"
+      || member.role === "owner"
     ) {
       return;
     }
 
     Alert.alert(
-      group.image
-        ? "Group Photo"
-        : "Add Group Photo",
-      "Choose what you would like to do.",
+      "Remove member?",
+      (
+        `Are you sure you want to remove `
+        + `${memberName(member)} from `
+        + `${currentGroup.name}?`
+      ),
       [
         {
-          text: "Choose Photo",
-          onPress: () => {
-            void choosePhotoForCrop({
-              type: "group",
-              groupId,
-            });
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setRemovingMemberId(
+                member.id,
+              );
+
+              await removeGroupMember(
+                currentGroupId,
+                member.id,
+              );
+
+              setGroup(
+                (currentGroup) => {
+                  if (!currentGroup) {
+                    return currentGroup;
+                  }
+
+                  return {
+                    ...currentGroup,
+                    member_count:
+                      Math.max(
+                        0,
+                        currentGroup
+                          .member_count
+                        - 1,
+                      ),
+                    members:
+                      currentGroup.members
+                        .filter(
+                          (currentMember) =>
+                            currentMember.id
+                            !== member.id,
+                        ),
+                  };
+                },
+              );
+            } catch (requestError) {
+              Alert.alert(
+                "Unable to remove member",
+                getApiErrorMessage(
+                  requestError,
+                  "This member could not be removed.",
+                ),
+              );
+            } finally {
+              setRemovingMemberId(
+                null,
+              );
+            }
           },
         },
-        ...(group.image
-          ? [
-              {
-                text: "Remove Photo",
-                style:
-                  "destructive" as const,
-                onPress: async () => {
-                  try {
-                    const result =
-                      await deleteGroupImage(
-                        groupId,
-                      );
-
-                    setGroup(result);
-                  } catch (
-                    requestError
-                  ) {
-                    Alert.alert(
-                      "Unable to remove photo",
-                      getApiErrorMessage(
-                        requestError,
-                        (
-                          "The group photo "
-                          + "could not be removed."
-                        ),
-                      ),
-                    );
-                  }
-                },
-              },
-            ]
-          : []),
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
       ],
     );
   }
 
-
-  async function performLeave() {
-    if (!groupId) {
-      return;
-    }
-
-    try {
-      setIsLeaving(true);
-
-      await leaveGroup(groupId);
-
-      router.replace("/(tabs)/groups");
-    } catch (requestError) {
-      Alert.alert(
-        "Unable to leave group",
-        getApiErrorMessage(
-          requestError,
-          "The group could not be left.",
-        ),
-      );
-    } finally {
-      setIsLeaving(false);
-    }
-  }
-
-  function handleLeave() {
-    Alert.alert(
-      group?.current_user_role === "owner"
-        ? "Leave this group?"
-        : "Leave group?",
-      group?.current_user_role === "owner"
-        ? (
-            "Owners must transfer ownership before leaving " +
-            "a group that still has other active members."
-          )
-        : "You can rejoin later if you still have the code.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Leave",
-          style: "destructive",
-          onPress: performLeave,
-        },
-      ],
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.screen}>
-        <View style={styles.centerState}>
-          <ActivityIndicator
-            size="large"
-            color="#F3344A"
-          />
-
-          <Text style={styles.stateText}>
-            Loading group...
-          </Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error || !group) {
-    return (
-      <SafeAreaView style={styles.screen}>
-        <View style={styles.centerState}>
-          <Text style={styles.errorTitle}>
-            Group unavailable
-          </Text>
-
-          <Text style={styles.errorMessage}>
-            {error ?? "This group could not be found."}
-          </Text>
-
-          <Pressable
-            onPress={() => router.back()}
-            style={styles.errorButton}
-          >
-            <Text style={styles.errorButtonText}>
-              Go Back
-            </Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.topBarButton}
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft
-            size={24}
-            color="#07111F"
-          />
+        <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <ArrowLeft size={23} color="#07111F" />
         </Pressable>
-
-        <Text style={styles.topBarTitle}>
-          Group Details
-        </Text>
-
-        <View style={styles.topBarSpacer} />
+        <Text style={styles.topTitle}>Group Details</Text>
+        <View style={{ width: 42 }} />
       </View>
 
-      <FlatList
-        data={group.members}
-        keyExtractor={(member) => String(member.id)}
+      <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <>
-            <View style={styles.heroCard}>
-              <Pressable
-                onPress={manageGroupPhoto}
-                disabled={
-                  !(
-                    group.current_user_role
-                    === "owner"
-                    || group.current_user_role
-                    === "admin"
-                  )
-                }
-                style={
-                  styles.heroImageButton
-                }
-              >
-                {group.image ? (
-                  <Image
-                    source={{
-                      uri: group.image,
-                    }}
-                    style={styles.heroImage}
-                  />
+      >
+        <View style={styles.hero}>
+          <Pressable onPress={managePhoto} disabled={!canManage} style={styles.photoWrap}>
+            {group.image ? (
+              <Image source={{ uri: group.image }} style={styles.heroImage} />
+            ) : (
+              <View style={styles.heroFallback}>
+                <Users size={34} color="#F3344A" />
+              </View>
+            )}
+            {canManage && (
+              <View style={styles.cameraBadge}>
+                <Camera size={15} color="#FFFFFF" />
+              </View>
+            )}
+          </Pressable>
+          <Text style={styles.groupName}>{group.name}</Text>
+          {!!group.description && (
+            <Text style={styles.description}>{group.description}</Text>
+          )}
+          <Text style={styles.memberMeta}>
+            {group.member_count} {group.member_count === 1 ? "member" : "members"}
+          </Text>
+          {canManage && (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: "/groups/[id]/edit",
+                  params: {
+                    id: group.id,
+                  },
+                })
+              }
+              style={styles.editGroupButton}
+            >
+              <Pencil size={17} color="#F3344A" />
+              <Text style={styles.editGroupText}>
+                Edit Group
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
+        <Text style={styles.eyebrow}>ADD PEOPLE</Text>
+
+        {canManage && (
+          <View style={styles.collapseCard}>
+            <Pressable
+              onPress={() => setInviteFriendsOpen(!inviteFriendsOpen)}
+              style={styles.collapseHeader}
+            >
+              <View style={styles.collapseIcon}>
+                <UserPlus size={21} color="#F3344A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.collapseTitle}>Invite Friends</Text>
+                <Text style={styles.collapseSubtitle}>
+                  Send a group invitation to people in your Friends list
+                </Text>
+              </View>
+              {inviteFriendsOpen ? (
+                <ChevronUp size={20} color="#69707C" />
+              ) : (
+                <ChevronDown size={20} color="#69707C" />
+              )}
+            </Pressable>
+
+            {inviteFriendsOpen && (
+              <View style={styles.collapseBody}>
+                {availableFriends.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    All of your friends are already in this group.
+                  </Text>
                 ) : (
-                  <View style={styles.heroIcon}>
-                    <Users
-                      size={34}
-                      color="#F3344A"
-                      strokeWidth={2.2}
-                    />
-                  </View>
+                  availableFriends.map((friend) => {
+                    const selected = selectedFriendIds.has(friend.user.id);
+                    return (
+                      <Pressable
+                        key={friend.friendship_id}
+                        onPress={() => toggleFriend(friend.user.id)}
+                        style={styles.friendRow}
+                      >
+                        <Avatar
+                          imageUrl={friend.user.avatar}
+                          name={friendName(friend.user)}
+                          size={42}
+                        />
+                        <Text style={styles.friendName}>{friendName(friend.user)}</Text>
+                        <View
+                          style={[
+                            styles.selectCircle,
+                            selected && styles.selectCircleSelected,
+                          ]}
+                        >
+                          {selected && <Check size={15} color="#FFFFFF" />}
+                        </View>
+                      </Pressable>
+                    );
+                  })
                 )}
 
-                {(
-                  group.current_user_role
-                  === "owner"
-                  || group.current_user_role
-                  === "admin"
-                ) && (
-                  <View
-                    style={
-                      styles.heroCameraBadge
-                    }
+                {availableFriends.length > 0 && (
+                  <Pressable
+                    onPress={() => void inviteSelectedFriends()}
+                    disabled={selectedFriendIds.size === 0 || isAdding}
+                    style={[
+                      styles.addButton,
+                      selectedFriendIds.size === 0 && styles.disabled,
+                    ]}
                   >
-                    <Camera
-                      size={15}
-                      color="#FFFFFF"
-                    />
-                  </View>
+                    <Text style={styles.addButtonText}>
+                      {isAdding
+                        ? "Sending..."
+                        : `Invite ${selectedFriendIds.size} Friend${selectedFriendIds.size === 1 ? "" : "s"}`}
+                    </Text>
+                  </Pressable>
                 )}
-              </Pressable>
-
-              {(
-                group.current_user_role
-                === "owner"
-                || group.current_user_role
-                === "admin"
-              ) && (
-                <Pressable
-                  onPress={manageGroupPhoto}
-                >
-                  <Text
-                    style={
-                      styles.groupPhotoAction
-                    }
-                  >
-                    {group.image
-                      ? "Change Group Photo"
-                      : "Add Group Photo"}
-                  </Text>
-                </Pressable>
-              )}
-
-              <Text style={styles.groupName}>
-                {group.name}
-              </Text>
-
-              {!!group.description && (
-                <Text style={styles.description}>
-                  {group.description}
-                </Text>
-              )}
-
-              <View style={styles.badgeRow}>
-                <View style={styles.badge}>
-                  <CalendarClock
-                    size={15}
-                    color="#69707C"
-                  />
-
-                  <Text style={styles.badgeText}>
-                    {group.group_type === "temporary"
-                      ? "Temporary"
-                      : "Permanent"}
-                  </Text>
-                </View>
-
-                <View style={styles.badge}>
-                  <Users
-                    size={15}
-                    color="#69707C"
-                  />
-
-                  <Text style={styles.badgeText}>
-                    {group.member_count}{" "}
-                    {group.member_count === 1
-                      ? "member"
-                      : "members"}
-                  </Text>
-                </View>
               </View>
+            )}
+          </View>
+        )}
+
+        <View style={styles.collapseCard}>
+          <Pressable
+            onPress={() => setShareInviteOpen(!shareInviteOpen)}
+            style={styles.collapseHeader}
+          >
+            <View style={styles.collapseIcon}>
+              <Share2 size={21} color="#F3344A" />
             </View>
-
-            <View style={styles.joinCard}>
-              <Text style={styles.sectionEyebrow}>
-                INVITE PEOPLE
+            <View style={{ flex: 1 }}>
+              <Text style={styles.collapseTitle}>Share Group Invite</Text>
+              <Text style={styles.collapseSubtitle}>
+                QR code, join code, and share link
               </Text>
+            </View>
+            {shareInviteOpen ? (
+              <ChevronUp size={20} color="#69707C" />
+            ) : (
+              <ChevronDown size={20} color="#69707C" />
+            )}
+          </Pressable>
 
-              <Text style={styles.joinTitle}>
-                Group Join Code
-              </Text>
-
-              <Text style={styles.joinDescription}>
-                Share this code with anyone you want to
-                add to the group.
-              </Text>
-
-              <View style={styles.qrSection}>
-                <View style={styles.qrContainer}>
-                  <QRCode
-                    value={joinLink}
-                    size={164}
-                    color="#07111F"
-                    backgroundColor="#FFFFFF"
-                    quietZone={4}
-                  />
-                </View>
-
-                <Text style={styles.qrTitle}>
-                  Scan to Join
-                </Text>
-
-                <Text style={styles.qrDescription}>
-                  Open your phone’s camera and scan this code to join
-                  the group in Pick Sum’N.
-                </Text>
+          {shareInviteOpen && (
+            <View style={styles.shareBody}>
+              <View style={styles.qrBox}>
+                <QRCode
+                  value={joinLink}
+                  size={170}
+                  color="#07111F"
+                  backgroundColor="#FFFFFF"
+                />
               </View>
-
-              <View style={styles.codeDivider}>
-                <View style={styles.codeDividerLine} />
-
-                <Text style={styles.codeDividerText}>
-                  OR USE THE CODE
-                </Text>
-
-                <View style={styles.codeDividerLine} />
-              </View>
-
-              <View style={styles.codeContainer}>
-                <Text style={styles.code}>
-                  {group.join_code}
-                </Text>
-              </View>
-
-              <View style={styles.codeActions}>
-                <Pressable
-                  onPress={handleCopyCode}
-                  style={styles.copyButton}
-                >
+              <Text style={styles.code}>{group.join_code}</Text>
+              <View style={styles.actionRow}>
+                <Pressable onPress={() => void copyCode()} style={styles.primary}>
                   {copied ? (
-                    <Check
-                      size={20}
-                      color="#FFFFFF"
-                    />
+                    <Check size={18} color="#FFFFFF" />
                   ) : (
-                    <Copy
-                      size={20}
-                      color="#FFFFFF"
-                    />
+                    <Copy size={18} color="#FFFFFF" />
                   )}
-
-                  <Text style={styles.copyButtonText}>
+                  <Text style={styles.primaryText}>
                     {copied ? "Copied" : "Copy Code"}
                   </Text>
                 </Pressable>
-
-                <Pressable
-                  onPress={handleShareCode}
-                  style={styles.shareButton}
-                >
-                  <Share2
-                    size={20}
-                    color="#F3344A"
-                  />
-
-                  <Text style={styles.shareButtonText}>
-                    Share
-                  </Text>
+                <Pressable onPress={() => void shareCode()} style={styles.secondary}>
+                  <Share2 size={18} color="#F3344A" />
+                  <Text style={styles.secondaryText}>Share</Text>
                 </Pressable>
               </View>
             </View>
+          )}
+        </View>
 
-            <View style={styles.membersHeader}>
-              <View>
-                <Text style={styles.sectionEyebrow}>
-                  DINNER CREW
-                </Text>
-
-                <Text style={styles.membersTitle}>
-                  Members
-                </Text>
-              </View>
-
-              <Text style={styles.memberCount}>
-                {group.member_count}
-              </Text>
-            </View>
-          </>
-        }
-        renderItem={({ item }) => (
-          <View style={styles.memberCard}>
-            <Avatar
-              imageUrl={item.user.avatar}
-              name={getMemberName(item)}
-              size={47}
-              shape="circle"
-            />
-
-            <View style={styles.memberContent}>
-              <Text style={styles.memberName}>
-                {getMemberName(item)}
-              </Text>
-
-              <Text style={styles.memberEmail}>
-                {item.user.email}
-              </Text>
-            </View>
-
-            <View style={styles.roleContainer}>
-              {getRoleIcon(item.role)}
-
-              <Text style={styles.roleText}>
-                {item.role_display}
-              </Text>
-            </View>
+        <View style={styles.membersHeader}>
+          <View>
+            <Text style={styles.eyebrow}>DINNER CREW</Text>
+            <Text style={styles.membersTitle}>Members</Text>
           </View>
-        )}
-        ItemSeparatorComponent={() => (
-          <View style={styles.separator} />
-        )}
-        ListFooterComponent={
-          <Pressable
-            onPress={handleLeave}
-            disabled={isLeaving}
-            style={[
-              styles.leaveButton,
-              isLeaving && styles.leaveButtonDisabled,
-            ]}
-          >
-            <LogOut
-              size={20}
-              color="#C62828"
-            />
+          <Text style={styles.memberCount}>{group.member_count}</Text>
+        </View>
 
-            <Text style={styles.leaveButtonText}>
-              {isLeaving
-                ? "Leaving..."
-                : "Leave Group"}
+        {[...group.members]
+          .sort((a, b) =>
+            memberName(a).localeCompare(
+              memberName(b),
+            ),
+          )
+          .map((member) => {
+            const canRemove =
+              group.current_user_role
+                === "owner"
+              && member.role
+                !== "owner";
+
+            const memberCard = (
+              <View
+                style={styles.memberCard}
+              >
+                <Avatar
+                  imageUrl={
+                    member.user.avatar
+                  }
+                  name={memberName(
+                    member,
+                  )}
+                  size={47}
+                />
+
+                <View
+                  style={styles.memberInfo}
+                >
+                  <View
+                    style={styles.memberNameRow}
+                  >
+                    {member.role
+                    === "owner" ? (
+                      <Crown
+                        size={17}
+                        color="#E3A008"
+                      />
+                    ) : (
+                      <User
+                        size={17}
+                        color="#69707C"
+                      />
+                    )}
+
+                    <Text
+                      style={styles.friendName}
+                    >
+                      {memberName(member)}
+                    </Text>
+                  </View>
+
+                  <Text
+                    style={styles.roleText}
+                  >
+                    {member.role_display}
+                  </Text>
+                </View>
+
+                {removingMemberId
+                === member.id ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#F3344A"
+                  />
+                ) : canRemove ? (
+                  <View
+                    style={styles.swipeHint}
+                  >
+                    <ChevronLeft
+                      size={18}
+                      color="#9298A2"
+                    />
+                  </View>
+                ) : null}
+              </View>
+            );
+
+            if (!canRemove) {
+              return (
+                <View key={member.id}>
+                  {memberCard}
+                </View>
+              );
+            }
+
+            return (
+              <Swipeable
+                key={member.id}
+                overshootRight={false}
+                rightThreshold={36}
+                renderRightActions={() => (
+                  <Pressable
+                    onPress={() =>
+                      confirmRemoveMember(
+                        member,
+                      )
+                    }
+                    disabled={
+                      removingMemberId
+                      === member.id
+                    }
+                    style={
+                      styles.removeAction
+                    }
+                  >
+                    <Trash2
+                      size={21}
+                      color="#FFFFFF"
+                    />
+
+                    <Text
+                      style={
+                        styles.removeActionText
+                      }
+                    >
+                      Remove
+                    </Text>
+                  </Pressable>
+                )}
+              >
+                {memberCard}
+              </Swipeable>
+            );
+          })}
+
+        {group.current_user_role === "owner" ? (
+          <Pressable
+            onPress={confirmDelete}
+            disabled={isDeleting}
+            style={styles.dangerButton}
+          >
+            <Trash2 size={20} color="#C62828" />
+            <Text style={styles.dangerText}>
+              {isDeleting ? "Deleting..." : "Delete Group"}
             </Text>
           </Pressable>
-        }
-      />
+        ) : (
+          <Pressable
+            onPress={confirmLeave}
+            disabled={isLeaving}
+            style={styles.dangerButton}
+          >
+            <LogOut size={20} color="#C62828" />
+            <Text style={styles.dangerText}>
+              {isLeaving ? "Leaving..." : "Leave Group"}
+            </Text>
+          </Pressable>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#FFF9F2",
-  },
-
-  topBar: {
+  screen: { flex: 1, backgroundColor: "#FFF9F2" },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18, borderBottomWidth: 1, borderBottomColor: "#ECEDEF" },
+  backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFFFFF" },
+  topTitle: { fontSize: 17, fontWeight: "900", color: "#07111F" },
+  content: { padding: 20, paddingBottom: 44 },
+  hero: { alignItems: "center", padding: 22, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 24, backgroundColor: "#FFFFFF" },
+  photoWrap: { position: "relative" },
+  heroImage: { width: 88, height: 88, borderRadius: 44 },
+  heroFallback: { width: 88, height: 88, alignItems: "center", justifyContent: "center", borderRadius: 44, backgroundColor: "#FFF0F2" },
+  cameraBadge: { position: "absolute", right: -2, bottom: -2, width: 30, height: 30, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: "#F3344A" },
+  groupName: { marginTop: 15, fontSize: 27, fontWeight: "900", color: "#07111F" },
+  description: { marginTop: 6, fontSize: 14, lineHeight: 20, color: "#69707C", textAlign: "center" },
+  memberMeta: { marginTop: 10, fontSize: 12, fontWeight: "800", color: "#F3344A" },
+  editGroupButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#ECEDEF",
-    backgroundColor: "#FFF9F2",
+    gap: 6,
+    marginTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1.5,
+    borderColor: "#F3344A",
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
   },
-
-  topBarButton: {
-    width: 42,
-    height: 42,
+  editGroupText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+  eyebrow: { marginTop: 24, marginBottom: 8, fontSize: 11, fontWeight: "900", letterSpacing: 1.1, color: "#F3344A" },
+  collapseCard: { marginBottom: 10, overflow: "hidden", borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 20, backgroundColor: "#FFFFFF" },
+  collapseHeader: { flexDirection: "row", alignItems: "center", gap: 11, padding: 15 },
+  collapseIcon: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFF0F2" },
+  collapseTitle: { fontSize: 15, fontWeight: "900", color: "#07111F" },
+  collapseSubtitle: { marginTop: 3, fontSize: 11, color: "#69707C" },
+  collapseBody: { paddingHorizontal: 15, paddingBottom: 15 },
+  friendRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
+  friendName: { flex: 1, fontSize: 15, fontWeight: "900", color: "#07111F" },
+  selectCircle: { width: 26, height: 26, borderWidth: 2, borderColor: "#CDD1D7", borderRadius: 13 },
+  selectCircleSelected: { alignItems: "center", justifyContent: "center", borderColor: "#F3344A", backgroundColor: "#F3344A" },
+  addButton: { minHeight: 47, alignItems: "center", justifyContent: "center", marginTop: 10, borderRadius: 14, backgroundColor: "#F3344A" },
+  addButtonText: { color: "#FFFFFF", fontWeight: "900" },
+  disabled: { opacity: 0.4 },
+  emptyText: { fontSize: 12, lineHeight: 18, color: "#69707C" },
+  shareBody: { alignItems: "center", padding: 16, paddingTop: 4 },
+  qrBox: { padding: 12, borderRadius: 18, backgroundColor: "#FFFFFF" },
+  code: { marginTop: 15, fontSize: 25, fontWeight: "900", letterSpacing: 5, color: "#07111F" },
+  actionRow: { flexDirection: "row", gap: 9, width: "100%", marginTop: 15 },
+  primary: { flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 14, backgroundColor: "#F3344A" },
+  primaryText: { color: "#FFFFFF", fontWeight: "900" },
+  secondary: { flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1.5, borderColor: "#F3344A", borderRadius: 14 },
+  secondaryText: { color: "#F3344A", fontWeight: "900" },
+  membersHeader: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" },
+  membersTitle: { fontSize: 24, fontWeight: "900", color: "#07111F" },
+  memberCount: { fontSize: 18, fontWeight: "900", color: "#F3344A" },
+  memberCard: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 9, padding: 14, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 18, backgroundColor: "#FFFFFF" },
+  removeAction: {
+    width: 96,
+    minHeight: 75,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 15,
-    backgroundColor: "#FFFFFF",
+    gap: 5,
+    marginBottom: 9,
+    marginLeft: 8,
+    borderRadius: 18,
+    backgroundColor: "#D62828",
   },
-
-  topBarTitle: {
-    fontSize: 17,
+  removeActionText: {
+    fontSize: 12,
     fontWeight: "900",
-    color: "#07111F",
+    color: "#FFFFFF",
   },
-
-  topBarSpacer: {
-    width: 42,
-  },
-
-  content: {
-    padding: 20,
-    paddingBottom: 44,
-  },
-
-  heroCard: {
+  memberInfo: { flex: 1 },
+  memberNameRow: {
+    flexDirection: "row",
     alignItems: "center",
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 26,
-    backgroundColor: "#FFFFFF",
+    gap: 7,
   },
-
-  heroImageButton: {
-    position: "relative",
-  },
-
-  heroImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-  },
-
-  heroCameraBadge: {
-    position: "absolute",
-    right: -2,
-    bottom: -2,
+  swipeHint: {
     width: 30,
     height: 30,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-    borderRadius: 15,
-    backgroundColor: "#F3344A",
   },
-
-  groupPhotoAction: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#F3344A",
-  },
-
-  heroIcon: {
-    width: 88,
-    height: 88,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 44,
-    backgroundColor: "#FFF0F2",
-  },
-
-  groupName: {
-    marginTop: 16,
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#07111F",
-    textAlign: "center",
-  },
-
-  description: {
-    marginTop: 7,
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#69707C",
-    textAlign: "center",
-  },
-
-  badgeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 9,
-    marginTop: 17,
-  },
-
-  badge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#F4F5F7",
-  },
-
-  badgeText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#69707C",
-  },
-
-  joinCard: {
-    marginTop: 17,
-    padding: 21,
-    borderRadius: 24,
-    backgroundColor: "#07111F",
-  },
-
-  sectionEyebrow: {
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1.2,
-    color: "#F3344A",
-  },
-
-  joinTitle: {
-    marginTop: 5,
-    fontSize: 23,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-
-  joinDescription: {
-    marginTop: 6,
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#B8BEC7",
-  },
-  qrSection: {
-    alignItems: "center",
-    marginTop: 19,
-    paddingHorizontal: 14,
-    paddingVertical: 18,
-    borderWidth: 1,
-    borderColor: "#303B49",
-    borderRadius: 19,
-    backgroundColor: "#111D2B",
-  },
-
-  qrContainer: {
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
-  },
-
-  qrTitle: {
-    marginTop: 14,
-    fontSize: 17,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-
-  qrDescription: {
-    maxWidth: 270,
-    marginTop: 5,
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#B8BEC7",
-    textAlign: "center",
-  },
-
-  codeDivider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 17,
-  },
-
-  codeDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#303B49",
-  },
-
-  codeDividerText: {
-    fontSize: 9,
-    fontWeight: "900",
-    letterSpacing: 1,
-    color: "#929AA5",
-  },
-  codeContainer: {
-    alignItems: "center",
-    marginTop: 16,
-    paddingVertical: 17,
-    borderWidth: 1,
-    borderColor: "#303B49",
-    borderRadius: 17,
-    backgroundColor: "#111D2B",
-  },
-
-  code: {
-    fontSize: 28,
-    fontWeight: "900",
-    letterSpacing: 6,
-    color: "#FFFFFF",
-  },
-
-  codeActions: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 13,
-  },
-
-  copyButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 50,
-    borderRadius: 16,
-    backgroundColor: "#F3344A",
-  },
-
-  copyButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-  },
-
-  shareButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 50,
-    borderWidth: 1.5,
-    borderColor: "#F3344A",
-    borderRadius: 16,
-  },
-
-  shareButtonText: {
-    color: "#F3344A",
-    fontWeight: "900",
-  },
-
-  membersHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 27,
-    marginBottom: 13,
-  },
-
-  membersTitle: {
-    marginTop: 3,
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#07111F",
-  },
-
-  memberCount: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#F3344A",
-  },
-
-  memberCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#ECEDEF",
-    borderRadius: 19,
-    backgroundColor: "#FFFFFF",
-  },
-
-  memberContent: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  memberName: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#07111F",
-  },
-
-  memberEmail: {
-    marginTop: 3,
-    fontSize: 12,
-    color: "#777E89",
-  },
-
-  roleContainer: {
-    alignItems: "center",
-    gap: 3,
-  },
-
-  roleText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#69707C",
-  },
-
-  separator: {
-    height: 10,
-  },
-
-  leaveButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 28,
-    paddingVertical: 16,
-    borderWidth: 1.5,
-    borderColor: "#E8A7A7",
-    borderRadius: 17,
-    backgroundColor: "#FFF4F4",
-  },
-
-  leaveButtonDisabled: {
-    opacity: 0.55,
-  },
-
-  leaveButtonText: {
-    color: "#C62828",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-
-  centerState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-    padding: 24,
-  },
-
-  stateText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#69707C",
-  },
-
-  errorTitle: {
-    fontSize: 25,
-    fontWeight: "900",
-    color: "#07111F",
-  },
-
-  errorMessage: {
-    maxWidth: 340,
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#69707C",
-    textAlign: "center",
-  },
-
-  errorButton: {
-    marginTop: 10,
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-    borderRadius: 15,
-    backgroundColor: "#F3344A",
-  },
-
-  errorButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-  },
+  roleText: { marginTop: 3, fontSize: 11, color: "#69707C" },
+  dangerButton: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 26, borderWidth: 1.5, borderColor: "#E8A7A7", borderRadius: 16, backgroundColor: "#FFF4F4" },
+  dangerText: { color: "#C62828", fontWeight: "900" },
+  centerState: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
+  stateText: { color: "#69707C", fontWeight: "700" },
 });

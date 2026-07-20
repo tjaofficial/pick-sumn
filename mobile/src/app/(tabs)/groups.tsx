@@ -1,8 +1,10 @@
 import {
+  Check,
   Plus,
   RefreshCw,
   Users,
   UserRoundPlus,
+  X,
 } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import {
@@ -19,13 +21,23 @@ import { router } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import { CreateGroupModal } from "@/features/groups/CreateGroupModal";
 import { GroupCard } from "@/features/groups/GroupCard";
-import { getGroups } from "@/features/groups/groupsService";
+import {
+  getGroupInvitations,
+  getGroups,
+  respondToGroupInvitation,
+} from "@/features/groups/groupsService";
 import { JoinGroupModal } from "@/features/groups/JoinGroupModal";
-import type { DiningGroup } from "@/features/groups/types";
+import type {
+  DiningGroup,
+  DiningGroupInvitation,
+} from "@/features/groups/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 
 export default function GroupsScreen() {
   const [groups, setGroups] = useState<DiningGroup[]>([]);
+  const [invitations, setInvitations] = useState<
+    DiningGroupInvitation[]
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +48,19 @@ export default function GroupsScreen() {
     try {
       setError(null);
 
-      const results = await getGroups();
-      setGroups(results);
+      const [results, pendingInvitations] = await Promise.all([
+        getGroups(),
+        getGroupInvitations(),
+      ]);
+
+      setInvitations(pendingInvitations);
+
+      setGroups(
+        [...results].sort(
+          (first, second) =>
+            first.name.localeCompare(second.name),
+        ),
+      );
     } catch (requestError) {
       setError(
         getApiErrorMessage(
@@ -63,21 +86,58 @@ export default function GroupsScreen() {
   }
 
   function handleCreated(group: DiningGroup) {
-    setGroups((currentGroups) => [
-      group,
-      ...currentGroups.filter(
-        (currentGroup) => currentGroup.id !== group.id,
+    setGroups((currentGroups) =>
+      [
+        group,
+        ...currentGroups.filter(
+          (currentGroup) =>
+            currentGroup.id !== group.id,
+        ),
+      ].sort(
+        (first, second) =>
+          first.name.localeCompare(
+            second.name,
+          ),
       ),
-    ]);
+    );
   }
 
   function handleJoined(group: DiningGroup) {
-    setGroups((currentGroups) => [
-      group,
-      ...currentGroups.filter(
-        (currentGroup) => currentGroup.id !== group.id,
+    setGroups((currentGroups) =>
+      [
+        group,
+        ...currentGroups.filter(
+          (currentGroup) =>
+            currentGroup.id !== group.id,
+        ),
+      ].sort(
+        (first, second) =>
+          first.name.localeCompare(
+            second.name,
+          ),
       ),
-    ]);
+    );
+  }
+
+  async function handleInvitation(
+    invitationId: string,
+    action: "accept" | "decline",
+  ) {
+    try {
+      await respondToGroupInvitation(
+        invitationId,
+        action,
+      );
+
+      await loadGroups();
+    } catch (requestError) {
+      setError(
+        getApiErrorMessage(
+          requestError,
+          "Unable to update the group invitation.",
+        ),
+      );
+    }
   }
 
     function handleOpenGroup(group: DiningGroup) {
@@ -161,6 +221,64 @@ export default function GroupsScreen() {
         </Pressable>
       </View>
 
+      {invitations.length > 0 && (
+        <View style={styles.invitationSection}>
+          <Text style={styles.invitationEyebrow}>
+            GROUP INVITATIONS
+          </Text>
+
+          {invitations.map((invitation) => (
+            <View
+              key={invitation.id}
+              style={styles.invitationCard}
+            >
+              <View style={styles.invitationCopy}>
+                <Text style={styles.invitationTitle}>
+                  {invitation.group_name}
+                </Text>
+
+                <Text style={styles.invitationText}>
+                  {invitation.invited_by.display_name
+                    || invitation.invited_by.first_name
+                    || invitation.invited_by.email}{" "}
+                  invited you to join this group.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() =>
+                  void handleInvitation(
+                    invitation.id,
+                    "accept",
+                  )
+                }
+                style={styles.acceptInviteButton}
+              >
+                <Check
+                  size={18}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  void handleInvitation(
+                    invitation.id,
+                    "decline",
+                  )
+                }
+                style={styles.declineInviteButton}
+              >
+                <X
+                  size={18}
+                  color="#C62828"
+                />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+
       {error && (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{error}</Text>
@@ -227,8 +345,7 @@ export default function GroupsScreen() {
             </Text>
 
             <Text style={styles.emptyText}>
-              Create a permanent crew or join somebody
-              else’s group using their code.
+              Create a crew or join somebody else’s group using their code.
             </Text>
 
             <Pressable
@@ -349,6 +466,65 @@ const styles = StyleSheet.create({
     color: "#F3344A",
     fontSize: 15,
     fontWeight: "900",
+  },
+
+  invitationSection: {
+    paddingHorizontal: 22,
+    paddingBottom: 14,
+  },
+
+  invitationEyebrow: {
+    marginBottom: 8,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    color: "#F3344A",
+  },
+
+  invitationCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 13,
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 17,
+    backgroundColor: "#FFFFFF",
+  },
+
+  invitationCopy: {
+    flex: 1,
+  },
+
+  invitationTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  invitationText: {
+    marginTop: 3,
+    fontSize: 11,
+    lineHeight: 16,
+    color: "#69707C",
+  },
+
+  acceptInviteButton: {
+    width: 37,
+    height: 37,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: "#168B4F",
+  },
+
+  declineInviteButton: {
+    width: 37,
+    height: 37,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    backgroundColor: "#FFF1F1",
   },
 
   errorCard: {

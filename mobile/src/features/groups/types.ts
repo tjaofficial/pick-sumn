@@ -1,5 +1,3 @@
-export type GroupType = "permanent" | "temporary";
-
 export type GroupRole = "owner" | "admin" | "member";
 
 export type DiningGroupMemberUser = {
@@ -27,12 +25,10 @@ export type DiningGroup = {
   name: string;
   description: string;
   image: string | null;
-  group_type: GroupType;
   join_code: string;
   member_count: number;
   current_user_role: GroupRole | null;
   is_active: boolean;
-  expires_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -44,10 +40,17 @@ export type DiningGroupDetail = DiningGroup & {
 export type CreateGroupInput = {
   name: string;
   description?: string;
-  group_type: GroupType;
-  expires_at?: string | null;
 };
 
 export type JoinGroupInput = {
   join_code: string;
+};
+
+export type DiningGroupInvitation = {
+  id: string;
+  group_id: string;
+  group_name: string;
+  invited_by: DiningGroupMemberUser;
+  status: string;
+  created_at: string;
 };

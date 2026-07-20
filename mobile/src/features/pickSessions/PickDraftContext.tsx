@@ -24,9 +24,9 @@ export type PickDraftLocation = {
 };
 
 export type PickDraftSessionFilters = {
+  diningStyleIds: number[];
+  diningStyleNames: string[];
   openNow: boolean;
-  includeDelivery: boolean;
-  includeDriveThrough: boolean;
   somethingNew: boolean;
   cuisineIds: number[];
   filtersReviewed: boolean;
@@ -77,9 +77,9 @@ const DEFAULT_LOCATION: PickDraftLocation = {
 
 const DEFAULT_SESSION_FILTERS:
   PickDraftSessionFilters = {
+    diningStyleIds: [],
+    diningStyleNames: [],
     openNow: true,
-    includeDelivery: false,
-    includeDriveThrough: false,
     somethingNew: false,
     cuisineIds: [],
     filtersReviewed: false,
@@ -131,6 +131,12 @@ export function PickDraftProvider({
     setDraft((current) => ({
       ...current,
       ...filters,
+      diningStyleIds: [
+        ...filters.diningStyleIds,
+      ],
+      diningStyleNames: [
+        ...filters.diningStyleNames,
+      ],
       cuisineIds: [...filters.cuisineIds],
     }));
   }
@@ -162,6 +168,8 @@ export function PickDraftProvider({
       participantIds: [],
       participantNames: [],
       cuisineIds: [],
+      diningStyleIds: [],
+      diningStyleNames: [],
     });
   }
 

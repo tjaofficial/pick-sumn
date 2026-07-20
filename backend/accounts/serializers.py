@@ -132,3 +132,35 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=password,
             **validated_data,
         )
+
+class FriendUserSerializer(UserSerializer):
+    pass
+
+
+class MyFriendCodeSerializer(UserSerializer):
+    friend_code = serializers.CharField(
+        read_only=True,
+    )
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + (
+            "friend_code",
+        )
+
+
+class FriendListItemSerializer(serializers.Serializer):
+    friendship_id = serializers.UUIDField()
+    user = FriendUserSerializer()
+
+
+class FriendRequestSerializer(serializers.Serializer):
+    friendship_id = serializers.UUIDField()
+    user = FriendUserSerializer()
+    created_at = serializers.DateTimeField()
+
+
+class FriendSearchResultSerializer(serializers.Serializer):
+    user = FriendUserSerializer()
+    relationship_status = serializers.CharField(
+        allow_null=True,
+    )

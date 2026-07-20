@@ -11,6 +11,7 @@ import {
   Settings,
   SlidersHorizontal,
   UserCircle,
+  UserRoundPlus,
   Utensils,
 } from "lucide-react-native";
 import {
@@ -435,6 +436,24 @@ export default function ProfileScreen() {
         />
 
         <Text style={styles.sectionTitle}>
+          Social
+        </Text>
+
+        <View style={styles.sectionCard}>
+          <ProfileRow
+            icon={
+              <UserRoundPlus
+                size={21}
+                color="#F3344A"
+              />
+            }
+            title="Friends"
+            subtitle="Manage friends, requests, and your friend code"
+            onPress={() => router.push("/friends")}
+          />
+        </View>
+
+        <Text style={styles.sectionTitle}>
           Food & Matching
         </Text>
 
@@ -447,7 +466,7 @@ export default function ProfileScreen() {
               />
             }
             title="Food Preferences"
-            subtitle="Cuisines, dining styles, dietary needs, and dislikes"
+            subtitle="Favorite cuisines and dietary needs"
             onPress={() =>
               router.push(
                 "/preferences",
@@ -491,6 +510,24 @@ export default function ProfileScreen() {
             onPress={() =>
               router.push(
                 "/saved-restaurants",
+              )
+            }
+          />
+
+          <View style={styles.divider} />
+
+          <ProfileRow
+            icon={
+              <MapPin
+                size={21}
+                color="#F3344A"
+              />
+            }
+            title="Saved Locations"
+            subtitle="Places and areas you search often"
+            onPress={() =>
+              router.push(
+                "/saved-locations",
               )
             }
           />

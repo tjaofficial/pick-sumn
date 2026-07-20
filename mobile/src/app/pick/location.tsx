@@ -3,6 +3,8 @@ import { router } from "expo-router";
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
+  ChevronUp,
   LocateFixed,
   MapPin,
   Search,
@@ -33,12 +35,60 @@ import {
 } from "@/features/pickSessions/locationService";
 import {
   getProfile,
+  getSavedLocations,
 } from "@/features/profile/profileService";
+import type {
+  SavedLocation,
+} from "@/features/profile/types";
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
 
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
+
+
+function locationsMatch(
+  savedLocation: SavedLocation,
+  locationLabel: string,
+  latitude: number | null,
+  longitude: number | null,
+): boolean {
+  const labelMatches =
+    savedLocation.location_label
+      .trim()
+      .toLowerCase()
+    === locationLabel
+      .trim()
+      .toLowerCase();
+
+  if (!labelMatches) {
+    return false;
+  }
+
+  if (
+    latitude === null
+    || longitude === null
+  ) {
+    return true;
+  }
+
+  const latitudeMatches =
+    Math.abs(
+      Number(savedLocation.latitude)
+      - latitude,
+    ) < 0.000001;
+
+  const longitudeMatches =
+    Math.abs(
+      Number(savedLocation.longitude)
+      - longitude,
+    ) < 0.000001;
+
+  return (
+    latitudeMatches
+    && longitudeMatches
+  );
+}
 
 function handleBack() {
   if (router.canGoBack()) {
@@ -65,6 +115,12 @@ export default function PickLocationScreen() {
     useState(draft.searchRadiusMiles);
   const [suggestions, setSuggestions] =
     useState<LocationSuggestion[]>([]);
+  const [savedLocations, setSavedLocations] =
+    useState<SavedLocation[]>([]);
+  const [
+    savedLocationsOpen,
+    setSavedLocationsOpen,
+  ] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -75,11 +131,45 @@ export default function PickLocationScreen() {
   useEffect(() => {
     async function loadDefaults() {
       try {
+        const [
+          profile,
+          saved,
+        ] = await Promise.all([
+          getProfile(),
+          getSavedLocations(),
+        ]);
+
+        setSavedLocations(saved);
+
         if (!draft.locationLabel) {
-          const profile = await getProfile();
-          if (profile.location_display) {
-            setLocationLabel(profile.location_display);
+          if (
+            profile.default_location_label
+            && profile.default_location_latitude
+              !== null
+            && profile.default_location_longitude
+              !== null
+          ) {
+            setLocationLabel(
+              profile.default_location_label,
+            );
+            setLatitude(
+              Number(
+                profile.default_location_latitude,
+              ),
+            );
+            setLongitude(
+              Number(
+                profile.default_location_longitude,
+              ),
+            );
+          } else if (
+            profile.location_display
+          ) {
+            setLocationLabel(
+              profile.location_display,
+            );
           }
+
           setSearchRadiusMiles(
             profile.default_search_radius_miles,
           );
@@ -173,6 +263,23 @@ export default function PickLocationScreen() {
       setIsSelecting(false);
     }
   }
+
+  function selectSavedLocation(
+    location: SavedLocation,
+  ) {
+    setLocationLabel(
+      location.location_label,
+    );
+    setLatitude(
+      Number(location.latitude),
+    );
+    setLongitude(
+      Number(location.longitude),
+    );
+    setSuggestions([]);
+    setError(null);
+  }
+
 
   async function useCurrentLocation() {
     try {
@@ -286,6 +393,137 @@ export default function PickLocationScreen() {
               Pick an address, city, or current location and choose the search distance.
             </Text>
           </View>
+        </View>
+
+        <View style={styles.savedCard}>
+          <Pressable
+            onPress={() =>
+              setSavedLocationsOpen(
+                !savedLocationsOpen,
+              )
+            }
+            style={styles.savedHeader}
+          >
+            <View>
+              <Text style={styles.savedTitle}>
+                Saved Locations
+              </Text>
+              <Text style={styles.savedSubtitle}>
+                Choose one of your favorite areas
+              </Text>
+            </View>
+
+            {savedLocationsOpen ? (
+              <ChevronUp
+                size={20}
+                color="#69707C"
+              />
+            ) : (
+              <ChevronDown
+                size={20}
+                color="#69707C"
+              />
+            )}
+          </Pressable>
+
+          {savedLocationsOpen && (
+            <View style={styles.savedBody}>
+              {savedLocations.length === 0 ? (
+                <Text style={styles.savedEmpty}>
+                  You do not have any saved locations yet.
+                </Text>
+              ) : (
+                savedLocations.map(
+                  (location) => {
+                    const isSelected =
+                      locationsMatch(
+                        location,
+                        locationLabel,
+                        latitude,
+                        longitude,
+                      );
+
+                    return (
+                      <Pressable
+                        key={location.id}
+                        onPress={() =>
+                          selectSavedLocation(
+                            location,
+                          )
+                        }
+                        style={[
+                          styles.savedRow,
+                          isSelected
+                            && styles.savedRowSelected,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.savedLocationIcon,
+                            isSelected
+                              && styles.savedLocationIconSelected,
+                          ]}
+                        >
+                          {isSelected ? (
+                            <Check
+                              size={16}
+                              color="#FFFFFF"
+                              strokeWidth={3}
+                            />
+                          ) : (
+                            <MapPin
+                              size={18}
+                              color="#F3344A"
+                            />
+                          )}
+                        </View>
+
+                        <View style={{ flex: 1 }}>
+                          <View
+                            style={
+                              styles.savedNameRow
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.savedName,
+                                isSelected
+                                  && styles.savedNameSelected,
+                              ]}
+                            >
+                              {location.name}
+                            </Text>
+
+                            {isSelected && (
+                              <View
+                                style={
+                                  styles.selectedBadge
+                                }
+                              >
+                                <Text
+                                  style={
+                                    styles.selectedBadgeText
+                                  }
+                                >
+                                  Selected
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <Text
+                            style={styles.savedLabel}
+                          >
+                            {location.location_label}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  },
+                )
+              )}
+            </View>
+          )}
         </View>
 
         <Pressable
@@ -410,6 +648,99 @@ const styles = StyleSheet.create({
   introContent: { flex: 1 },
   introTitle: { fontSize: 17, fontWeight: "900", color: "#07111F" },
   introText: { marginTop: 4, fontSize: 13, lineHeight: 19, color: "#69707C" },
+  savedCard: {
+    marginTop: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#ECEDEF",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+  },
+  savedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 15,
+  },
+  savedTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+  savedSubtitle: {
+    marginTop: 3,
+    fontSize: 11,
+    color: "#69707C",
+  },
+  savedBody: {
+    borderTopWidth: 1,
+    borderTopColor: "#ECEDEF",
+  },
+  savedRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F2F4",
+  },
+  savedRowSelected: {
+    backgroundColor: "#EFFAF3",
+  },
+
+  savedLocationIcon: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 15,
+    backgroundColor: "#FFF0F2",
+  },
+
+  savedLocationIconSelected: {
+    backgroundColor: "#168B4F",
+  },
+
+  savedNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  savedNameSelected: {
+    color: "#116A3D",
+  },
+
+  selectedBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#DDF4E6",
+  },
+
+  selectedBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+
+  savedName: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+  savedLabel: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#69707C",
+  },
+  savedEmpty: {
+    padding: 15,
+    fontSize: 12,
+    color: "#69707C",
+  },
   locationButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, minHeight: 56, marginTop: 22, borderRadius: 17, backgroundColor: "#F3344A" },
   locationButtonText: { fontSize: 16, fontWeight: "900", color: "#FFFFFF" },
   disabled: { opacity: 0.6 },
