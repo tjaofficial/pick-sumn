@@ -275,3 +275,31 @@ class FeedbackSubmissionSerializer(
             )
 
         return cleaned
+
+
+class SocialLoginSerializer(serializers.Serializer):
+    provider = serializers.ChoiceField(
+        choices=(
+            "apple",
+            "google",
+        ),
+    )
+    identity_token = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+    )
+    display_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=100,
+    )
+    first_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+    )
+    last_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=150,
+    )

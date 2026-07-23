@@ -21,6 +21,7 @@ import {
   login as loginRequest,
   logout as logoutRequest,
   register as registerRequest,
+  socialLogin as socialLoginRequest,
 } from "./authService";
 import {
   clearTokens,
@@ -29,6 +30,7 @@ import {
 import type {
   LoginInput,
   RegisterInput,
+  SocialLoginInput,
   User,
 } from "./types";
 
@@ -42,6 +44,7 @@ type AuthContextValue = {
   biometricEnabled: boolean;
   login: (input: LoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
+  socialLogin: (input: SocialLoginInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   clearAuthenticatedSession: () => Promise<void>;
@@ -185,6 +188,25 @@ export function AuthProvider({
   ) {
     const authenticatedUser =
       await registerRequest(input);
+
+    setUser(
+      authenticatedUser,
+    );
+
+    setHasStoredSession(true);
+
+    await loadBiometricState(
+      authenticatedUser.id,
+    );
+  }
+
+  async function socialLogin(
+    input: SocialLoginInput,
+  ) {
+    const authenticatedUser =
+      await socialLoginRequest(
+        input,
+      );
 
     setUser(
       authenticatedUser,
@@ -349,6 +371,7 @@ export function AuthProvider({
       biometricEnabled,
       login,
       register,
+      socialLogin,
       logout,
       refreshUser,
       clearAuthenticatedSession,

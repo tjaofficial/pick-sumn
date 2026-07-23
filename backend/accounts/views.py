@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -12,6 +13,11 @@ from .models import (
     FriendshipStatus,
     UserAppSettings,
 )
+from .social_auth import (
+    SocialAuthError,
+    get_or_create_social_user,
+    verify_social_identity,
+)
 from .serializers import (
     BlockedUserSerializer,
     ChangePasswordSerializer,
@@ -23,6 +29,7 @@ from .serializers import (
     RegisterSerializer,
     UserAppSettingsSerializer,
     UserSerializer,
+    SocialLoginSerializer,
 )
 
 User = get_user_model()
@@ -779,4 +786,84 @@ class FeedbackSubmissionView(
     ):
         serializer.save(
             user=self.request.user,
+        )
+
+
+class SocialLoginView(APIView):
+    permission_classes = (
+        permissions.AllowAny,
+    )
+
+    def post(self, request):
+        serializer = SocialLoginSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        data = serializer.validated_data
+
+        try:
+            verified_identity = (
+                verify_social_identity(
+                    provider=data["provider"],
+                    identity_token=data[
+                        "identity_token"
+                    ],
+                )
+            )
+
+            user = get_or_create_social_user(
+                provider=data["provider"],
+                verified_identity=(
+                    verified_identity
+                ),
+                supplied_display_name=(
+                    data.get(
+                        "display_name",
+                        "",
+                    )
+                ),
+                supplied_first_name=(
+                    data.get(
+                        "first_name",
+                        "",
+                    )
+                ),
+                supplied_last_name=(
+                    data.get(
+                        "last_name",
+                        "",
+                    )
+                ),
+            )
+        except SocialAuthError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        refresh = RefreshToken.for_user(
+            user
+        )
+        update_last_login(
+            None,
+            user,
+        )
+
+        return Response(
+            {
+                "access": str(
+                    refresh.access_token
+                ),
+                "refresh": str(
+                    refresh
+                ),
+            },
+            status=status.HTTP_200_OK,
         )

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { useAuth } from "@/features/auth/AuthContext";
+import { SocialSignInButtons } from "@/features/auth/SocialSignInButtons";
 import { ApiError } from "@/services/api";
 import {
   createThemedStyleSheet,
@@ -145,6 +146,15 @@ export default function RegisterScreen() {
                   : "Create Account"}
               </Text>
             </Pressable>
+
+            <SocialSignInButtons
+              disabled={isSubmitting}
+              onError={(message) =>
+                setError(
+                  message || null,
+                )
+              }
+            />
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>

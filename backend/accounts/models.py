@@ -253,3 +253,62 @@ class FeedbackSubmission(models.Model):
             f"{self.user} - "
             f"{self.get_feedback_type_display()}"
         )
+
+
+class SocialAuthProvider(models.TextChoices):
+    APPLE = "apple", "Apple"
+    GOOGLE = "google", "Google"
+
+
+class SocialIdentity(models.Model):
+    """Verified third-party sign-in identity linked to one Pick Sum'N user."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="social_identities",
+    )
+    provider = models.CharField(
+        max_length=20,
+        choices=SocialAuthProvider.choices,
+    )
+    provider_user_id = models.CharField(
+        max_length=255,
+    )
+    provider_email = models.EmailField(
+        blank=True,
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = (
+            "user_id",
+            "provider",
+        )
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "provider",
+                    "provider_user_id",
+                ),
+                name="unique_social_provider_identity",
+            ),
+            models.UniqueConstraint(
+                fields=(
+                    "user",
+                    "provider",
+                ),
+                name="unique_social_provider_per_user",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user} - "
+            f"{self.get_provider_display()}"
+        )

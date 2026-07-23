@@ -250,3 +250,16 @@ if not DEBUG:
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+
+GOOGLE_OAUTH_CLIENT_IDS = env.list(
+    "GOOGLE_OAUTH_CLIENT_IDS",
+    default=[],
+)
+
+APPLE_SIGN_IN_AUDIENCES = env.list(
+    "APPLE_SIGN_IN_AUDIENCES",
+    default=[
+        "com.picksumn.app",
+    ],
+)

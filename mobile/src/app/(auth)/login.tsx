@@ -18,6 +18,7 @@ import {
   KeyboardAwareScrollView,
 } from "@/components/KeyboardAwareScrollView";
 import { useAuth } from "@/features/auth/AuthContext";
+import { SocialSignInButtons } from "@/features/auth/SocialSignInButtons";
 import { ApiError } from "@/services/api";
 import {
   createThemedStyleSheet,
@@ -142,6 +143,15 @@ export default function LoginScreen() {
               {isSubmitting ? "Signing In..." : "Sign In"}
             </Text>
           </Pressable>
+
+          <SocialSignInButtons
+            disabled={isSubmitting}
+            onError={(message) =>
+              setError(
+                message || null,
+              )
+            }
+          />
 
           {biometricEnabled
           && hasStoredSession && (

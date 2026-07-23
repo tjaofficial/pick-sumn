@@ -24,3 +24,15 @@ export type RegisterInput = {
   password: string;
   password_confirm: string;
 };
+
+export type SocialProvider =
+  | "apple"
+  | "google";
+
+export type SocialLoginInput = {
+  provider: SocialProvider;
+  identity_token: string;
+  display_name?: string;
+  first_name?: string;
+  last_name?: string;
+};

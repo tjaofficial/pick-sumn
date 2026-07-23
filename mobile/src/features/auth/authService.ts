@@ -5,6 +5,7 @@ import type {
   AuthTokens,
   LoginInput,
   RegisterInput,
+  SocialLoginInput,
   User,
 } from "./types";
 
@@ -57,4 +58,26 @@ export async function logout(): Promise<void> {
   } finally {
     await clearTokens();
   }
+}
+
+export async function socialLogin(
+  input: SocialLoginInput,
+): Promise<User> {
+  const tokens =
+    await apiRequest<AuthTokens>(
+      "/api/auth/social-login/",
+      {
+        method: "POST",
+        requiresAuth: false,
+        body: JSON.stringify(
+          input,
+        ),
+      },
+    );
+
+  await saveTokens(
+    tokens,
+  );
+
+  return getCurrentUser();
 }
