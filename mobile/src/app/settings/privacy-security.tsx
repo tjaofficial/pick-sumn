@@ -1,25 +1,37 @@
 import {
   router,
+  useFocusEffect,
 } from "expo-router";
 import {
   ArrowLeft,
   ChevronRight,
+  Fingerprint,
   KeyRound,
   MapPin,
+  ScanFace,
   ShieldBan,
   UserRoundCheck,
   UsersRound,
 } from "lucide-react-native";
 import {
+  Alert,
   Pressable,
   ScrollView,
-  StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
 import {
   SafeAreaView,
 } from "react-native-safe-area-context";
+import {
+  useCallback,
+  useState,
+} from "react";
+
+import {
+  useAuth,
+} from "@/features/auth/AuthContext";
 import {
   createThemedStyleSheet,
   themeColor,
@@ -28,14 +40,12 @@ import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
 
-
 type RowProps = {
   icon: React.ReactNode;
   title: string;
   subtitle: string;
   onPress: () => void;
 };
-
 
 function Row({
   icon,
@@ -48,8 +58,7 @@ function Row({
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
-        pressed
-          && styles.rowPressed,
+        pressed && styles.rowPressed,
       ]}
     >
       <View style={styles.rowIcon}>
@@ -60,6 +69,7 @@ function Row({
         <Text style={styles.rowTitle}>
           {title}
         </Text>
+
         <Text style={styles.rowSubtitle}>
           {subtitle}
         </Text>
@@ -73,9 +83,76 @@ function Row({
   );
 }
 
-
 export default function PrivacySecurityScreen() {
   useAppTheme();
+
+  const {
+    biometricAvailable,
+    biometricEnabled,
+    biometricLabel,
+    refreshBiometricStatus,
+    setBiometricEnabled,
+  } = useAuth();
+
+  const [
+    isUpdatingBiometrics,
+    setIsUpdatingBiometrics,
+  ] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshBiometricStatus();
+    }, [
+      refreshBiometricStatus,
+    ]),
+  );
+
+  async function toggleBiometricUnlock(
+    enabled: boolean,
+  ) {
+    if (isUpdatingBiometrics) {
+      return;
+    }
+
+    try {
+      setIsUpdatingBiometrics(
+        true,
+      );
+
+      const updated =
+        await setBiometricEnabled(
+          enabled,
+        );
+
+      if (
+        enabled
+        && !updated
+      ) {
+        Alert.alert(
+          `${biometricLabel} unavailable`,
+          (
+            "Set up Face ID, Touch ID, or a supported "
+            + "fingerprint on this phone first, then try again."
+          ),
+        );
+      }
+    } finally {
+      setIsUpdatingBiometrics(
+        false,
+      );
+    }
+  }
+
+  const biometricSubtitle =
+    biometricAvailable
+      ? (
+          `Use ${biometricLabel} to unlock Pick Sum’N `
+          + "when you already have a saved session"
+        )
+      : (
+          "Set up Face ID, Touch ID, or fingerprint "
+          + "in your phone settings to use quick unlock"
+        );
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -100,13 +177,101 @@ export default function PrivacySecurityScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={
-          styles.content
-        }
-        showsVerticalScrollIndicator={
-          false
-        }
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
+        <Text style={styles.sectionLabel}>
+          SIGN-IN SECURITY
+        </Text>
+
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowIcon}>
+              {biometricLabel === "Face ID" ? (
+                <ScanFace
+                  size={22}
+                  color={themeColor("#F3344A", "color")}
+                />
+              ) : (
+                <Fingerprint
+                  size={22}
+                  color={themeColor("#F3344A", "color")}
+                />
+              )}
+            </View>
+
+            <View style={styles.rowContent}>
+              <Text style={styles.rowTitle}>
+                {biometricLabel}
+              </Text>
+
+              <Text style={styles.rowSubtitle}>
+                {biometricSubtitle}
+              </Text>
+            </View>
+
+            <Switch
+              value={biometricEnabled}
+              onValueChange={
+                (enabled) =>
+                  void toggleBiometricUnlock(
+                    enabled,
+                  )
+              }
+              disabled={
+                isUpdatingBiometrics
+                || (
+                  !biometricAvailable
+                  && !biometricEnabled
+                )
+              }
+              trackColor={{
+                false: themeColor(
+                  "#D7DBE1",
+                  "backgroundColor",
+                ),
+                true: themeColor(
+                  "#F7A4AE",
+                  "backgroundColor",
+                ),
+              }}
+              thumbColor={
+                biometricEnabled
+                  ? themeColor(
+                      "#F3344A",
+                      "backgroundColor",
+                    )
+                  : themeColor(
+                      "#FFFFFF",
+                      "backgroundColor",
+                    )
+              }
+            />
+          </View>
+
+          <View style={styles.divider} />
+
+          <Row
+            icon={
+              <KeyRound
+                size={21}
+                color={themeColor("#F3344A", "color")}
+              />
+            }
+            title="Change Password"
+            subtitle="Update the password used to sign in"
+            onPress={() =>
+              router.push(
+                "/settings/change-password",
+              )
+            }
+          />
+        </View>
+
+        <Text style={styles.sectionLabel}>
+          PRIVACY
+        </Text>
+
         <View style={styles.card}>
           <Row
             icon={
@@ -185,30 +350,11 @@ export default function PrivacySecurityScreen() {
               )
             }
           />
-
-          <View style={styles.divider} />
-
-          <Row
-            icon={
-              <KeyRound
-                size={21}
-                color={themeColor("#F3344A", "color")}
-              />
-            }
-            title="Change Password"
-            subtitle="Update the password used to sign in"
-            onPress={() =>
-              router.push(
-                "/settings/change-password",
-              )
-            }
-          />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
-
 
 const styles = createThemedStyleSheet({
   screen: {
@@ -218,8 +364,7 @@ const styles = createThemedStyleSheet({
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     paddingHorizontal: 18,
     paddingVertical: 11,
     borderBottomWidth: 1,
@@ -245,8 +390,17 @@ const styles = createThemedStyleSheet({
     padding: 20,
     paddingBottom: 50,
   },
+  sectionLabel: {
+    marginTop: 8,
+    marginBottom: 8,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+    color: "#F3344A",
+  },
   card: {
     overflow: "hidden",
+    marginBottom: 17,
     borderWidth: 1,
     borderColor: "#ECEDEF",
     borderRadius: 22,

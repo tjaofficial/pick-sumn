@@ -11,6 +11,7 @@ from .models import (
     ParticipantStatus,
     PickSession,
     PickSessionNotification,
+    PickVisitFeedback,
     SelectionMethod,
     PickSessionParticipant,
     PickSessionRestaurantOption,
@@ -42,6 +43,8 @@ class PickSessionParticipantSerializer(
             "vetoes_used",
             "joined_at",
             "ready_at",
+            "visit_feedback",
+            "visit_feedback_at",
             "created_at",
         )
 
@@ -510,6 +513,14 @@ class SelectRestaurantSerializer(
 
     selection_method = serializers.ChoiceField(
         choices=SelectionMethod.choices,
+    )
+
+
+class PickVisitFeedbackSerializer(
+    serializers.Serializer
+):
+    feedback = serializers.ChoiceField(
+        choices=PickVisitFeedback.choices,
     )
 
 

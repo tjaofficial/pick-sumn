@@ -171,6 +171,14 @@ class FriendSearchResultSerializer(serializers.Serializer):
     relationship_status = serializers.CharField(
         allow_null=True,
     )
+    relationship_direction = serializers.CharField(
+        allow_null=True,
+        required=False,
+    )
+    friendship_id = serializers.UUIDField(
+        allow_null=True,
+        required=False,
+    )
 
 
 

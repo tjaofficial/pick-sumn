@@ -1,5 +1,6 @@
 import { router } from "expo-router";
 import {
+  ShieldCheck,
   UserPlus,
   Vote,
 } from "lucide-react-native";
@@ -176,6 +177,8 @@ export function LiveNotificationsProvider({
                   === "group_vote_invite"
                   || item.kind
                   === "restaurant_selected"
+                  || item.kind
+                  === "dietary_feedback"
                 )
                 && !dismissedVoteIds
                   .current
@@ -283,6 +286,43 @@ export function LiveNotificationsProvider({
           count - 1,
         ),
     );
+
+    if (
+      currentInvitation.kind
+      === "dietary_feedback"
+    ) {
+      const selectedData =
+        currentInvitation
+          .selected_restaurant_data;
+
+      const sourceUrl =
+        selectedData
+        && "external_id" in selectedData
+          ? (
+              selectedData.menu_uri
+              || selectedData.website_uri
+              || ""
+            )
+          : "";
+
+      router.push({
+        pathname:
+          "/restaurants/[placeId]/dietary",
+        params: {
+          placeId:
+            currentInvitation
+              .selected_restaurant_external_id,
+          dietarySlug:
+            currentInvitation.dietary_slug,
+          restaurantName:
+            currentInvitation
+              .selected_restaurant_name,
+          sourceUrl,
+        },
+      });
+
+      return;
+    }
 
     if (
       currentInvitation.kind
@@ -532,10 +572,18 @@ export function LiveNotificationsProvider({
               styles.modalCard
             }
           >
-            <Vote
-              size={34}
-              color={themeColor("#F3344A", "color")}
-            />
+            {invitation?.kind
+            === "dietary_feedback" ? (
+              <ShieldCheck
+                size={34}
+                color={themeColor("#168B4F", "color")}
+              />
+            ) : (
+              <Vote
+                size={34}
+                color={themeColor("#F3344A", "color")}
+              />
+            )}
 
             <Text
               style={
@@ -543,9 +591,12 @@ export function LiveNotificationsProvider({
               }
             >
               {invitation?.kind
-              === "restaurant_selected"
-                ? "Restaurant Selected"
-                : "Group Vote Invitation"}
+              === "dietary_feedback"
+                ? invitation.title
+                : invitation?.kind
+                  === "restaurant_selected"
+                  ? "Restaurant Selected"
+                  : "Group Vote Invitation"}
             </Text>
 
             <Text
@@ -570,9 +621,12 @@ export function LiveNotificationsProvider({
                 }
               >
                 {invitation?.kind
-                === "restaurant_selected"
-                  ? "View Restaurant"
-                  : "Open Vote"}
+                === "dietary_feedback"
+                  ? "Share Experience"
+                  : invitation?.kind
+                    === "restaurant_selected"
+                    ? "View Restaurant"
+                    : "Open Vote"}
               </Text>
             </Pressable>
 

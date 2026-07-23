@@ -219,27 +219,82 @@ class FriendSearchView(APIView):
 
     def get(self, request):
         query = request.query_params.get("q", "").strip()
-        if len(query) < 2:
-            return Response([])
+        raw_user_ids = request.query_params.get(
+            "user_ids",
+            "",
+        ).strip()
 
-        users = list(
-            User.objects.filter(
-                Q(first_name__icontains=query)
-                | Q(last_name__icontains=query)
-                | Q(display_name__icontains=query)
-                | Q(email__icontains=query)
-            ).exclude(id=request.user.id)[:50]
-        )
+        user_ids = []
+
+        if raw_user_ids:
+            for value in raw_user_ids.split(","):
+                try:
+                    user_id = int(value)
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+                if user_id != request.user.id:
+                    user_ids.append(user_id)
+
+        if user_ids:
+            users = list(
+                User.objects.filter(
+                    id__in=user_ids,
+                ).exclude(
+                    id=request.user.id,
+                )
+            )
+        else:
+            if len(query) < 2:
+                return Response([])
+
+            users = list(
+                User.objects.filter(
+                    Q(first_name__icontains=query)
+                    | Q(last_name__icontains=query)
+                    | Q(display_name__icontains=query)
+                    | Q(email__icontains=query)
+                ).exclude(id=request.user.id)[:50]
+            )
+
         users.sort(key=friend_sort_key)
 
         items = []
+
         for user in users:
-            relationship = friendship_between(request.user, user)
+            relationship = friendship_between(
+                request.user,
+                user,
+            )
+
+            direction = None
+
+            if relationship:
+                direction = (
+                    "outgoing"
+                    if relationship.from_user_id
+                    == request.user.id
+                    else "incoming"
+                )
+
             items.append(
                 {
                     "user": user,
                     "relationship_status": (
-                        relationship.status if relationship else None
+                        relationship.status
+                        if relationship
+                        else None
+                    ),
+                    "relationship_direction": (
+                        direction
+                    ),
+                    "friendship_id": (
+                        relationship.id
+                        if relationship
+                        else None
                     ),
                 }
             )
@@ -249,6 +304,7 @@ class FriendSearchView(APIView):
             many=True,
             context={"request": request},
         )
+
         return Response(serializer.data)
 
 

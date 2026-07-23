@@ -27,13 +27,17 @@ import {
   Alert,
   Image,
   Linking,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Location from "expo-location";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -45,7 +49,9 @@ import {
 } from "@/components/RestaurantMap";
 import {
   getCurrentPickSession,
+  getExploreNearbyRestaurants,
   getPickSessionMatches,
+  getRecentPickSessions,
   recordRestaurantDetailView,
   selectPickSessionRestaurant,
 } from "@/features/pickSessions/pickSessionsService";
@@ -56,6 +62,7 @@ import type {
 } from "@/features/pickSessions/types";
 import {
   getSavedRestaurantStatus,
+  getSavedRestaurants,
   removeSavedRestaurantByExternalId,
   saveRestaurant,
 } from "@/features/savedRestaurants/savedRestaurantsService";
@@ -266,11 +273,95 @@ function openDirections(restaurant: NearbyRestaurantMatch): void {
   ]);
 }
 
+const EXPLORE_BATCH_SIZE = 15;
+const EXPLORE_RADIUS_OPTIONS = [5, 10, 15, 25];
+
+function shuffleRestaurants(
+  restaurants: NearbyRestaurantMatch[],
+): NearbyRestaurantMatch[] {
+  const shuffled = [...restaurants];
+
+  for (
+    let index = shuffled.length - 1;
+    index > 0;
+    index -= 1
+  ) {
+    const randomIndex = Math.floor(
+      Math.random() * (index + 1),
+    );
+
+    [
+      shuffled[index],
+      shuffled[randomIndex],
+    ] = [
+      shuffled[randomIndex],
+      shuffled[index],
+    ];
+  }
+
+  return shuffled;
+}
+
+function getRestaurantPriceNumber(
+  restaurant: NearbyRestaurantMatch,
+): number | null {
+  if (
+    typeof restaurant.price_number
+    === "number"
+  ) {
+    return restaurant.price_number;
+  }
+
+  switch (restaurant.price_level) {
+    case "PRICE_LEVEL_FREE":
+      return 0;
+    case "PRICE_LEVEL_INEXPENSIVE":
+      return 1;
+    case "PRICE_LEVEL_MODERATE":
+      return 2;
+    case "PRICE_LEVEL_EXPENSIVE":
+      return 3;
+    case "PRICE_LEVEL_VERY_EXPENSIVE":
+      return 4;
+    default:
+      return null;
+  }
+}
+
+function pickExploreBatch(
+  candidates: NearbyRestaurantMatch[],
+  previousIds: Set<string>,
+): NearbyRestaurantMatch[] {
+  const unseen = candidates.filter(
+    (restaurant) =>
+      !previousIds.has(
+        restaurant.external_id,
+      ),
+  );
+
+  const source =
+    unseen.length >= Math.min(
+      EXPLORE_BATCH_SIZE,
+      candidates.length,
+    )
+      ? unseen
+      : candidates;
+
+  return shuffleRestaurants(source).slice(
+    0,
+    EXPLORE_BATCH_SIZE,
+  );
+}
+
+
 type MatchListCardProps = {
   restaurant: NearbyRestaurantMatch;
   index: number;
   isSelected: boolean;
   onPress: () => void;
+  exploreMode?: boolean;
+  isSaved?: boolean;
+  isInHistory?: boolean;
 };
 
 function MatchListCard({
@@ -278,6 +369,9 @@ function MatchListCard({
   index,
   isSelected,
   onPress,
+  exploreMode = false,
+  isSaved = false,
+  isInHistory = false,
 }: MatchListCardProps) {
   const photoUrl = restaurant.photo_url || "";
 
@@ -316,7 +410,28 @@ function MatchListCard({
             {restaurant.name}
           </Text>
 
-          <Text style={styles.matchScore}>{restaurant.match_score}%</Text>
+          {exploreMode ? (
+            <View style={styles.exploreCardBadges}>
+              {isSaved && (
+                <Heart
+                  size={15}
+                  color={themeColor("#F3344A", "color")}
+                  fill="#F3344A"
+                />
+              )}
+
+              {isInHistory && (
+                <Clock3
+                  size={15}
+                  color={themeColor("#69707C", "color")}
+                />
+              )}
+            </View>
+          ) : (
+            <Text style={styles.matchScore}>
+              {restaurant.match_score}%
+            </Text>
+          )}
         </View>
 
         <Text style={styles.restaurantMeta} numberOfLines={1}>
@@ -347,15 +462,49 @@ function MatchListCard({
             </Text>
           </View>
 
-          <View style={styles.stat}>
-            <Heart size={14} color={themeColor("#F3344A", "color")} />
+          {!exploreMode && (
+            <View style={styles.stat}>
+              <Heart
+                size={14}
+                color={themeColor("#F3344A", "color")}
+              />
 
-            <Text style={styles.statText}>Group fit</Text>
-          </View>
+              <Text style={styles.statText}>
+                Group fit
+              </Text>
+            </View>
+          )}
+
+          {exploreMode && isSaved && (
+            <View style={styles.stat}>
+              <Heart
+                size={14}
+                color={themeColor("#F3344A", "color")}
+                fill="#F3344A"
+              />
+
+              <Text style={styles.statText}>
+                Saved
+              </Text>
+            </View>
+          )}
+
+          {exploreMode && isInHistory && (
+            <View style={styles.stat}>
+              <Clock3
+                size={14}
+                color={themeColor("#69707C", "color")}
+              />
+
+              <Text style={styles.statText}>
+                Picked before
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.pillRow}>
-          {restaurant.match_reasons.slice(0, 2).map((reason) => (
+          {!exploreMode && restaurant.match_reasons.slice(0, 2).map((reason) => (
             <View key={reason} style={styles.reasonPill}>
               <Text style={styles.reasonPillText} numberOfLines={1}>
                 {reason}
@@ -424,6 +573,7 @@ type RestaurantDetailProps = {
   onSelect: () => void;
   isSelecting: boolean;
   allowSelection: boolean;
+  exploreMode?: boolean;
 };
 
 function RestaurantDetail({
@@ -433,6 +583,7 @@ function RestaurantDetail({
   onSelect,
   isSelecting,
   allowSelection,
+  exploreMode = false,
 }: RestaurantDetailProps) {
   const photoUrl = restaurant.photo_url || "";
 
@@ -596,23 +747,46 @@ function RestaurantDetail({
       </View>
 
       <View style={styles.detailScoreRow}>
-        <View style={styles.detailScoreBadge}>
-          <Text style={styles.detailScoreNumber}>
-            {restaurant.match_score}%
-          </Text>
+        {exploreMode ? (
+          <>
+            <View style={styles.exploreDetailIcon}>
+              <MapPin
+                size={25}
+                color={themeColor("#168B4F", "color")}
+              />
+            </View>
 
-          <Text style={styles.detailScoreLabel}>MATCH</Text>
-        </View>
+            <View style={styles.detailSummary}>
+              <Text style={styles.detailSummaryTitle}>
+                Explore nearby
+              </Text>
 
-        <View style={styles.detailSummary}>
-          <Text style={styles.detailSummaryTitle}>
-            Great match for your group
-          </Text>
+              <Text style={styles.detailSummaryText}>
+                Found near your current or saved location.
+              </Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.detailScoreBadge}>
+              <Text style={styles.detailScoreNumber}>
+                {restaurant.match_score}%
+              </Text>
 
-          <Text style={styles.detailSummaryText}>
-            Ranked using cuisine preferences, distance, and customer ratings.
-          </Text>
-        </View>
+              <Text style={styles.detailScoreLabel}>MATCH</Text>
+            </View>
+
+            <View style={styles.detailSummary}>
+              <Text style={styles.detailSummaryTitle}>
+                Great match for your group
+              </Text>
+
+              <Text style={styles.detailSummaryText}>
+                Ranked using cuisine preferences, distance, and customer ratings.
+              </Text>
+            </View>
+          </>
+        )}
       </View>
 
       <View style={styles.actionGrid}>
@@ -739,21 +913,23 @@ function RestaurantDetail({
         )}
       </View>
 
-      <View style={styles.detailSection}>
-        <Text style={styles.detailSectionTitle}>Why it matched</Text>
+      {!exploreMode && (
+        <View style={styles.detailSection}>
+          <Text style={styles.detailSectionTitle}>Why it matched</Text>
 
-        <View style={styles.detailReasonList}>
-          {restaurant.match_reasons.map((reason) => (
-            <View key={reason} style={styles.detailReasonRow}>
-              <View style={styles.detailCheckCircle}>
-                <Text style={styles.detailCheckText}>✓</Text>
+          <View style={styles.detailReasonList}>
+            {restaurant.match_reasons.map((reason) => (
+              <View key={reason} style={styles.detailReasonRow}>
+                <View style={styles.detailCheckCircle}>
+                  <Text style={styles.detailCheckText}>✓</Text>
+                </View>
+
+                <Text style={styles.detailReasonText}>{reason}</Text>
               </View>
-
-              <Text style={styles.detailReasonText}>{reason}</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
-      </View>
+      )}
 
       <View style={styles.detailPillRow}>
         <View style={styles.servicePill}>
@@ -843,6 +1019,51 @@ function RestaurantDetail({
   );
 }
 
+function FilterToggle({
+  label,
+  subtitle,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  subtitle?: string;
+  value: boolean;
+  onValueChange: (
+    value: boolean,
+  ) => void;
+}) {
+  return (
+    <View style={styles.filterToggleRow}>
+      <View style={styles.filterToggleText}>
+        <Text style={styles.filterToggleLabel}>
+          {label}
+        </Text>
+
+        {!!subtitle && (
+          <Text style={styles.filterToggleSubtitle}>
+            {subtitle}
+          </Text>
+        )}
+      </View>
+
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{
+          false: themeColor("#D8DCE2", "backgroundColor"),
+          true: themeColor("#F7A4AE", "backgroundColor"),
+        }}
+        thumbColor={
+          value
+            ? themeColor("#F3344A", "backgroundColor")
+            : themeColor("#FFFFFF", "backgroundColor")
+        }
+      />
+    </View>
+  );
+}
+
+
 export default function MapScreen() {
   useAppTheme();
 
@@ -868,6 +1089,32 @@ export default function MapScreen() {
     null,
   );
 
+  const [explorePool, setExplorePool] = useState<
+    NearbyRestaurantMatch[]
+  >([]);
+
+  const [exploreBatch, setExploreBatch] = useState<
+    NearbyRestaurantMatch[]
+  >([]);
+
+  const [exploreRadius, setExploreRadius] = useState(10);
+  const [explorePriceMin, setExplorePriceMin] = useState(0);
+  const [explorePriceMax, setExplorePriceMax] = useState(4);
+  const [exploreOpenNow, setExploreOpenNow] = useState(false);
+  const [exploreFavoritesOnly, setExploreFavoritesOnly] = useState(false);
+  const [exploreSomethingNew, setExploreSomethingNew] = useState(false);
+  const [exploreLocationLabel, setExploreLocationLabel] = useState("");
+  const [isExploreRefreshing, setIsExploreRefreshing] = useState(false);
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+
+  const [savedRestaurantIds, setSavedRestaurantIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const [historyRestaurantIds, setHistoryRestaurantIds] = useState<Set<string>>(
+    new Set(),
+  );
+
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<
     string | null
   >(null);
@@ -888,6 +1135,95 @@ export default function MapScreen() {
 
   const [error, setError] = useState<string | null>(null);
 
+  const getExploreCoordinates = useCallback(
+    async (): Promise<{
+      latitude: number | null;
+      longitude: number | null;
+    }> => {
+      try {
+        const permission =
+          await Location.requestForegroundPermissionsAsync();
+
+        if (permission.status !== "granted") {
+          return {
+            latitude: null,
+            longitude: null,
+          };
+        }
+
+        const current =
+          await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+
+        return {
+          latitude:
+            current.coords.latitude,
+          longitude:
+            current.coords.longitude,
+        };
+      } catch {
+        return {
+          latitude: null,
+          longitude: null,
+        };
+      }
+    },
+    [],
+  );
+
+  const loadExplore = useCallback(
+    async (
+      radiusMiles: number,
+    ) => {
+      const coordinates =
+        await getExploreCoordinates();
+
+      const [
+        exploreResponse,
+        savedRestaurants,
+        recentSessions,
+      ] = await Promise.all([
+        getExploreNearbyRestaurants({
+          latitude:
+            coordinates.latitude,
+          longitude:
+            coordinates.longitude,
+          radiusMiles,
+        }),
+        getSavedRestaurants(),
+        getRecentPickSessions(),
+      ]);
+
+      const savedIds = new Set(
+        savedRestaurants.map(
+          (restaurant) =>
+            restaurant.external_id,
+        ),
+      );
+
+      const historyIds = new Set(
+        recentSessions
+          .map(
+            (session) =>
+              session
+                .selected_restaurant_external_id,
+          )
+          .filter(Boolean),
+      );
+
+      setSavedRestaurantIds(savedIds);
+      setHistoryRestaurantIds(historyIds);
+      setExploreLocationLabel(
+        exploreResponse.location.label,
+      );
+      setExplorePool(
+        exploreResponse.restaurants,
+      );
+    },
+    [getExploreCoordinates],
+  );
+
   const loadMatches = useCallback(async () => {
     try {
       setError(null);
@@ -901,6 +1237,10 @@ export default function MapScreen() {
         setResponse(null);
         setSelectedRestaurantId(null);
         setDetailRestaurantId(null);
+
+        await loadExplore(
+          exploreRadius,
+        );
 
         return;
       }
@@ -918,7 +1258,10 @@ export default function MapScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [
+    exploreRadius,
+    loadExplore,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -926,7 +1269,138 @@ export default function MapScreen() {
     }, [loadMatches]),
   );
 
-  const matches = response?.matches ?? [];
+  const filteredExploreCandidates =
+    useMemo(() => {
+      return explorePool.filter(
+        (restaurant) => {
+          if (
+            exploreOpenNow
+            && restaurant.open_now
+            !== true
+          ) {
+            return false;
+          }
+
+          if (
+            exploreFavoritesOnly
+            && !savedRestaurantIds.has(
+              restaurant.external_id,
+            )
+          ) {
+            return false;
+          }
+
+          if (
+            exploreSomethingNew
+            && historyRestaurantIds.has(
+              restaurant.external_id,
+            )
+          ) {
+            return false;
+          }
+
+          const price =
+            getRestaurantPriceNumber(
+              restaurant,
+            );
+
+          if (
+            price !== null
+            && (
+              price < explorePriceMin
+              || price > explorePriceMax
+            )
+          ) {
+            return false;
+          }
+
+          return true;
+        },
+      );
+    }, [
+      exploreFavoritesOnly,
+      exploreOpenNow,
+      explorePool,
+      explorePriceMax,
+      explorePriceMin,
+      exploreSomethingNew,
+      historyRestaurantIds,
+      savedRestaurantIds,
+    ]);
+
+  useEffect(() => {
+    if (activeSession) {
+      return;
+    }
+
+    setExploreBatch(
+      (currentBatch) =>
+        pickExploreBatch(
+          filteredExploreCandidates,
+          new Set(
+            currentBatch.map(
+              (restaurant) =>
+                restaurant.external_id,
+            ),
+          ),
+        ),
+    );
+  }, [
+    activeSession,
+    filteredExploreCandidates,
+  ]);
+
+  const refreshExploreBatch =
+    useCallback(() => {
+      setExploreBatch(
+        (currentBatch) =>
+          pickExploreBatch(
+            filteredExploreCandidates,
+            new Set(
+              currentBatch.map(
+                (restaurant) =>
+                  restaurant.external_id,
+              ),
+            ),
+          ),
+      );
+    }, [
+      filteredExploreCandidates,
+    ]);
+
+  const applyExploreRadius =
+    useCallback(
+      async (
+        radiusMiles: number,
+      ) => {
+        try {
+          setIsExploreRefreshing(true);
+          setError(null);
+          setExploreRadius(
+            radiusMiles,
+          );
+
+          await loadExplore(
+            radiusMiles,
+          );
+        } catch (requestError) {
+          setError(
+            getApiErrorMessage(
+              requestError,
+              "Unable to explore nearby restaurants.",
+            ),
+          );
+        } finally {
+          setIsExploreRefreshing(false);
+        }
+      },
+      [loadExplore],
+    );
+
+  const matches =
+    activeSession
+      ? response?.matches ?? []
+      : exploreBatch;
 
   const selectedRestaurant =
     matches.find(
@@ -1017,23 +1491,6 @@ export default function MapScreen() {
           : "ranked_manual",
       );
 
-      Alert.alert(
-        "Restaurant Selected",
-        (
-          `${restaurant.name} is where `
-          + "you’re eating. Everyone in the "
-          + "session has been notified."
-        ),
-        [
-          {
-            text: "View Recent Picks",
-            onPress: () =>
-              router.replace(
-                "/pick/recent",
-              ),
-          },
-        ],
-      );
     } catch (requestError) {
       Alert.alert(
         "Unable to select restaurant",
@@ -1169,47 +1626,93 @@ export default function MapScreen() {
               === detailRestaurant.external_id
             }
             allowSelection={
-              activeSession?.decision_mode
-              !== "group_vote"
+              Boolean(activeSession)
+              && activeSession?.decision_mode
+                !== "group_vote"
             }
+            exploreMode={!activeSession}
           />
         ) : (
           <>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeading}>
                 <Text style={styles.sheetTitle}>
-                  {matches.length} Great Match
-                  {matches.length === 1 ? "" : "es"} ✨
+                  {activeSession
+                    ? `${matches.length} Great Match${
+                        matches.length === 1 ? "" : "es"
+                      } ✨`
+                    : "Explore restaurants around you."}
                 </Text>
 
                 <Text style={styles.sheetSubtitle}>
-                  Ranked by how well everyone will love it
+                  {activeSession
+                    ? "Ranked by how well everyone will love it"
+                    : exploreLocationLabel
+                      ? `${matches.length} nearby places · ${exploreLocationLabel}`
+                      : `${matches.length} nearby places`}
                 </Text>
               </View>
 
               <View style={styles.headerActions}>
-                <Pressable
-                  onPress={() =>
-                    router.push({
-                      pathname: "/(tabs)/matches",
-                      params: {
-                        sessionId: activeSession?.id,
-                        decisionMode: activeSession?.decision_mode,
-                      },
-                    })
-                  }
-                  style={styles.bestMatchButton}
-                >
-                  <Text style={styles.bestMatchText}>Best Match</Text>
+                {activeSession ? (
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: "/(tabs)/matches",
+                        params: {
+                          sessionId: activeSession.id,
+                          decisionMode: activeSession.decision_mode,
+                        },
+                      })
+                    }
+                    style={styles.bestMatchButton}
+                  >
+                    <Text style={styles.bestMatchText}>Best Match</Text>
 
-                  <ChevronDown size={12} color={themeColor("#F3344A", "color")} />
-                </Pressable>
+                    <ChevronDown
+                      size={12}
+                      color={themeColor("#F3344A", "color")}
+                    />
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={refreshExploreBatch}
+                    disabled={isExploreRefreshing}
+                    style={styles.bestMatchButton}
+                  >
+                    {isExploreRefreshing ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={themeColor("#F3344A", "color")}
+                      />
+                    ) : (
+                      <RefreshCw
+                        size={13}
+                        color={themeColor("#F3344A", "color")}
+                      />
+                    )}
+
+                    <Text style={styles.bestMatchText}>
+                      Refresh Places
+                    </Text>
+                  </Pressable>
+                )}
 
                 <Pressable
-                  onPress={() => router.push("/pick/setup")}
+                  onPress={() => {
+                    if (activeSession) {
+                      router.push("/pick/setup");
+                      return;
+                    }
+
+                    setIsFilterModalVisible(true);
+                  }}
                   style={styles.roundFilterButton}
                 >
-                  <Filter size={16} color={themeColor("#07111F", "color")} />
+                  <Filter
+                    size={16}
+                    color={themeColor("#07111F", "color")}
+                  />
                 </Pressable>
               </View>
             </View>
@@ -1231,34 +1734,37 @@ export default function MapScreen() {
               </View>
             )}
 
-            {!error && !activeSession && (
+            {!error && matches.length === 0 && (
               <View style={styles.emptyCard}>
-                <Sparkles size={32} color={themeColor("#F3344A", "color")} />
+                <Store
+                  size={32}
+                  color={themeColor("#F3344A", "color")}
+                />
 
-                <Text style={styles.emptyTitle}>Start a Pick Sum’N first</Text>
-
-                <Text style={styles.emptyText}>
-                  The map displays restaurants from your active session.
+                <Text style={styles.emptyTitle}>
+                  {activeSession
+                    ? "No matches found"
+                    : "No nearby places match these filters"}
                 </Text>
 
-                <Pressable
-                  onPress={() => router.replace("/(tabs)/pick")}
-                  style={styles.startButton}
-                >
-                  <Text style={styles.startText}>Go to Pick Sum’N</Text>
-                </Pressable>
-              </View>
-            )}
-
-            {!error && activeSession && matches.length === 0 && (
-              <View style={styles.emptyCard}>
-                <Store size={32} color={themeColor("#F3344A", "color")} />
-
-                <Text style={styles.emptyTitle}>No matches found</Text>
-
                 <Text style={styles.emptyText}>
-                  Change your filters and try again.
+                  {activeSession
+                    ? "Change your filters and try again."
+                    : "Try widening the radius or turning off a quick filter."}
                 </Text>
+
+                {!activeSession && (
+                  <Pressable
+                    onPress={() =>
+                      setIsFilterModalVisible(true)
+                    }
+                    style={styles.startButton}
+                  >
+                    <Text style={styles.startText}>
+                      Adjust Filters
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             )}
 
@@ -1272,15 +1778,250 @@ export default function MapScreen() {
                     key={restaurant.external_id}
                     restaurant={restaurant}
                     index={index}
-                    isSelected={restaurant.external_id === selectedRestaurantId}
-                    onPress={() => openRestaurantDetails(restaurant)}
+                    isSelected={
+                      restaurant.external_id
+                      === selectedRestaurantId
+                    }
+                    onPress={() =>
+                      openRestaurantDetails(
+                        restaurant,
+                      )
+                    }
+                    exploreMode={
+                      !activeSession
+                    }
+                    isSaved={
+                      savedRestaurantIds.has(
+                        restaurant.external_id,
+                      )
+                    }
+                    isInHistory={
+                      historyRestaurantIds.has(
+                        restaurant.external_id,
+                      )
+                    }
                   />
                 ))}
+
+                {!activeSession && (
+                  <View style={styles.exploreCta}>
+                    <Sparkles
+                      size={25}
+                      color={themeColor("#F3344A", "color")}
+                    />
+
+                    <Text style={styles.exploreCtaTitle}>
+                      Can’t decide?
+                    </Text>
+
+                    <Text style={styles.exploreCtaText}>
+                      Let Pick Sum’N narrow it down for you.
+                    </Text>
+
+                    <Pressable
+                      onPress={() =>
+                        router.replace(
+                          "/(tabs)/pick",
+                        )
+                      }
+                      style={styles.exploreCtaButton}
+                    >
+                      <Text
+                        style={
+                          styles.exploreCtaButtonText
+                        }
+                      >
+                        PICK SUM’N
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
               </BottomSheetScrollView>
             )}
           </>
         )}
       </BottomSheet>
+
+      <Modal
+        visible={
+          isFilterModalVisible
+        }
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setIsFilterModalVisible(false)
+        }
+      >
+        <View style={styles.filterOverlay}>
+          <View style={styles.filterCard}>
+            <View style={styles.filterHeader}>
+              <View>
+                <Text style={styles.filterTitle}>
+                  Explore Filters
+                </Text>
+
+                <Text style={styles.filterSubtitle}>
+                  Keep discovery broad or narrow it down.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() =>
+                  setIsFilterModalVisible(false)
+                }
+                style={styles.filterClose}
+              >
+                <X
+                  size={20}
+                  color={themeColor("#07111F", "color")}
+                />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.filterLabel}>
+                Radius
+              </Text>
+
+              <View style={styles.filterOptionRow}>
+                {EXPLORE_RADIUS_OPTIONS.map(
+                  (radius) => (
+                    <Pressable
+                      key={radius}
+                      onPress={() => {
+                        void applyExploreRadius(
+                          radius,
+                        );
+                      }}
+                      style={[
+                        styles.filterChip,
+                        exploreRadius === radius
+                          && styles.filterChipSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          exploreRadius === radius
+                            && styles.filterChipTextSelected,
+                        ]}
+                      >
+                        {radius} mi
+                      </Text>
+                    </Pressable>
+                  ),
+                )}
+              </View>
+
+              <Text style={styles.filterLabel}>
+                Price
+              </Text>
+
+              <View style={styles.priceFilterRow}>
+                {[1, 2, 3, 4].map(
+                  (price) => {
+                    const selected =
+                      price >= explorePriceMin
+                      && price <= explorePriceMax;
+
+                    return (
+                      <Pressable
+                        key={price}
+                        onPress={() => {
+                          if (
+                            explorePriceMin === price
+                            && explorePriceMax === price
+                          ) {
+                            setExplorePriceMin(0);
+                            setExplorePriceMax(4);
+                            return;
+                          }
+
+                          setExplorePriceMin(price);
+                          setExplorePriceMax(price);
+                        }}
+                        style={[
+                          styles.filterChip,
+                          selected
+                            && styles.filterChipSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            selected
+                              && styles.filterChipTextSelected,
+                          ]}
+                        >
+                          {"$".repeat(price)}
+                        </Text>
+                      </Pressable>
+                    );
+                  },
+                )}
+              </View>
+
+              <FilterToggle
+                label="Open Now"
+                value={exploreOpenNow}
+                onValueChange={
+                  setExploreOpenNow
+                }
+              />
+
+              <FilterToggle
+                label="Favorites Only"
+                value={
+                  exploreFavoritesOnly
+                }
+                onValueChange={
+                  setExploreFavoritesOnly
+                }
+              />
+
+              <FilterToggle
+                label="Something New"
+                subtitle="Hide restaurants from your Recent History"
+                value={
+                  exploreSomethingNew
+                }
+                onValueChange={
+                  setExploreSomethingNew
+                }
+              />
+
+              <Pressable
+                onPress={() => {
+                  setExplorePriceMin(0);
+                  setExplorePriceMax(4);
+                  setExploreOpenNow(false);
+                  setExploreFavoritesOnly(false);
+                  setExploreSomethingNew(false);
+                }}
+                style={styles.clearFiltersButton}
+              >
+                <Text style={styles.clearFiltersText}>
+                  Clear Quick Filters
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setIsFilterModalVisible(false);
+                  refreshExploreBatch();
+                }}
+                style={styles.doneFiltersButton}
+              >
+                <Text style={styles.doneFiltersText}>
+                  Done
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2075,6 +2816,210 @@ const styles = createThemedStyleSheet({
 
   selectRestaurantButtonText: {
     fontSize: 15,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  exploreCardBadges: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  exploreDetailIcon: {
+    width: 54,
+    height: 54,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 17,
+    backgroundColor: "#E0F5E9",
+  },
+
+  exploreCta: {
+    alignItems: "center",
+    marginTop: 8,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "#F3C5C5",
+    borderRadius: 20,
+    backgroundColor: "#FFF7F8",
+  },
+
+  exploreCtaTitle: {
+    marginTop: 8,
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  exploreCtaText: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#69707C",
+    textAlign: "center",
+  },
+
+  exploreCtaButton: {
+    minWidth: 160,
+    minHeight: 45,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+    borderRadius: 14,
+    backgroundColor: "#F3344A",
+  },
+
+  exploreCtaButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  filterOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(7, 17, 31, 0.55)",
+  },
+
+  filterCard: {
+    maxHeight: "82%",
+    padding: 20,
+    paddingBottom: 28,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    backgroundColor: "#FFFFFF",
+  },
+
+  filterHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 14,
+    marginBottom: 18,
+  },
+
+  filterTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  filterSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: "#69707C",
+  },
+
+  filterClose: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 13,
+    backgroundColor: "#F1F2F4",
+  },
+
+  filterLabel: {
+    marginTop: 15,
+    marginBottom: 9,
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  filterOptionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  priceFilterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  filterChip: {
+    minWidth: 61,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#DDE1E7",
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+  },
+
+  filterChipSelected: {
+    borderColor: "#F3344A",
+    backgroundColor: "#FFF0F2",
+  },
+
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#4F5662",
+  },
+
+  filterChipTextSelected: {
+    color: "#F3344A",
+  },
+
+  filterToggleRow: {
+    minHeight: 62,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 14,
+    marginTop: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECEDEF",
+  },
+
+  filterToggleText: {
+    flex: 1,
+  },
+
+  filterToggleLabel: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#07111F",
+  },
+
+  filterToggleSubtitle: {
+    marginTop: 3,
+    fontSize: 10,
+    lineHeight: 15,
+    color: "#69707C",
+  },
+
+  clearFiltersButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    marginTop: 18,
+  },
+
+  clearFiltersText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#69707C",
+  },
+
+  doneFiltersButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 50,
+    marginTop: 8,
+    borderRadius: 16,
+    backgroundColor: "#F3344A",
+  },
+
+  doneFiltersText: {
+    fontSize: 14,
     fontWeight: "900",
     color: "#FFFFFF",
   },

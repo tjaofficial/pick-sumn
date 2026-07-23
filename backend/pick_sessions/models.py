@@ -66,6 +66,12 @@ class ParticipantStatus(models.TextChoices):
     LEFT = "left", "Left"
 
 
+class PickVisitFeedback(models.TextChoices):
+    GOOD_PICK = "good_pick", "Good Pick"
+    NOT_FOR_ME = "not_for_me", "Not For Me"
+    DIDNT_GO = "didnt_go", "Didn't Go"
+
+
 class PickSession(models.Model):
     """One attempt by a user or group to choose somewhere to eat."""
 
@@ -255,6 +261,18 @@ class PickSessionParticipant(models.Model):
     vetoes_used = models.PositiveSmallIntegerField(default=0)
     joined_at = models.DateTimeField(blank=True, null=True)
     ready_at = models.DateTimeField(blank=True, null=True)
+
+    visit_feedback = models.CharField(
+        max_length=20,
+        choices=PickVisitFeedback.choices,
+        blank=True,
+    )
+
+    visit_feedback_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -478,6 +496,11 @@ class PickSessionNotificationKind(models.TextChoices):
         "Restaurant Selected",
     )
 
+    DIETARY_FEEDBACK = (
+        "dietary_feedback",
+        "Dietary Experience Feedback",
+    )
+
 
 class PickSessionNotification(models.Model):
     """An in-app notification tied to a Pick Session."""
@@ -513,6 +536,12 @@ class PickSessionNotification(models.Model):
         max_length=255,
     )
 
+    dietary_slug = models.SlugField(
+        max_length=120,
+        blank=True,
+        default="",
+    )
+
     is_read = models.BooleanField(
         default=False,
     )
@@ -537,6 +566,7 @@ class PickSessionNotification(models.Model):
                     "user",
                     "session",
                     "kind",
+                    "dietary_slug",
                 ),
                 name=(
                     "unique_pick_session_notification"
@@ -577,6 +607,14 @@ class PickSessionAnalyticsEventType(
     SESSION_COMPLETED = (
         "session_completed",
         "Session Completed",
+    )
+    RESTAURANT_FEEDBACK = (
+        "restaurant_feedback",
+        "Restaurant Feedback",
+    )
+    CONFIRMED_VISIT = (
+        "confirmed_visit",
+        "Confirmed Visit",
     )
 
 

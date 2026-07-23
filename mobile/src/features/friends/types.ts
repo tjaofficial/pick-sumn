@@ -28,6 +28,11 @@ export type FriendSearchResult = {
     | "declined"
     | "blocked"
     | null;
+  relationship_direction?:
+    | "incoming"
+    | "outgoing"
+    | null;
+  friendship_id?: string | null;
 };
 
 

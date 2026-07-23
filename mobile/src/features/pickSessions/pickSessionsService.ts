@@ -12,8 +12,12 @@ import type {
   PickSessionNotificationList,
   GroupVoteState,
   PickSessionMatchesResponse,
+  ExploreNearbyResponse,
   PickSessionStatus,
+  PickVisitFeedback,
+  PickVisitFeedbackPromptResponse,
   SelectionMethod,
+  SubmitPickVisitFeedbackResponse,
   UpdateParticipantStatusResponse,
   RestaurantDietaryCommunityReport,
   RestaurantDietaryDetailResponse,
@@ -145,6 +149,43 @@ export async function getPickSessionMatches(
     {
       method: "POST",
     },
+  );
+}
+
+
+
+export async function getExploreNearbyRestaurants(
+  input: {
+    latitude?: number | null;
+    longitude?: number | null;
+    radiusMiles: number;
+  },
+): Promise<ExploreNearbyResponse> {
+  const params = new URLSearchParams();
+
+  params.set(
+    "radius_miles",
+    String(input.radiusMiles),
+  );
+
+  if (
+    input.latitude !== null
+    && input.latitude !== undefined
+    && input.longitude !== null
+    && input.longitude !== undefined
+  ) {
+    params.set(
+      "latitude",
+      String(input.latitude),
+    );
+    params.set(
+      "longitude",
+      String(input.longitude),
+    );
+  }
+
+  return apiRequest<ExploreNearbyResponse>(
+    `/api/pick-sessions/explore/?${params.toString()}`,
   );
 }
 
@@ -305,6 +346,32 @@ export async function selectPickSessionRestaurant(
     },
   );
 }
+
+
+export async function getPickVisitFeedbackPrompt(): Promise<
+  PickVisitFeedbackPromptResponse
+> {
+  return apiRequest<PickVisitFeedbackPromptResponse>(
+    "/api/pick-sessions/visit-feedback-prompt/",
+  );
+}
+
+
+export async function submitPickVisitFeedback(
+  sessionId: string,
+  feedback: PickVisitFeedback,
+): Promise<SubmitPickVisitFeedbackResponse> {
+  return apiRequest<SubmitPickVisitFeedbackResponse>(
+    `/api/pick-sessions/${sessionId}/visit-feedback/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        feedback,
+      }),
+    },
+  );
+}
+
 
 
 export async function recordRestaurantDetailView(

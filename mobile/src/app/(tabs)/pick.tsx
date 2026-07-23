@@ -22,6 +22,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -46,13 +47,17 @@ import {
 import {
   createPickSession,
   getActivePickSessions,
+  getPickVisitFeedbackPrompt,
   getRecentPickSessions,
   prepareGroupVote,
   startPickSessionMatching,
+  submitPickVisitFeedback,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
   DecisionMode,
   PickSession,
+  PickVisitFeedback,
+  PickVisitFeedbackPrompt,
 } from "@/features/pickSessions/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 import {
@@ -104,7 +109,24 @@ export default function PickScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [creatingMode, setCreatingMode] = useState<DecisionMode | null>(null);
+  const [
+    groupVoteLoadingText,
+    setGroupVoteLoadingText,
+  ] = useState(
+    "Starting your group vote...",
+  );
   const [error, setError] = useState<string | null>(null);
+  const [
+    visitFeedbackPrompt,
+    setVisitFeedbackPrompt,
+  ] = useState<PickVisitFeedbackPrompt | null>(
+    null,
+  );
+  const [
+    isSubmittingVisitFeedback,
+    setIsSubmittingVisitFeedback,
+  ] = useState(false);
+
   const loadSessions = useCallback(async () => {
     try {
       setError(null);
@@ -112,13 +134,18 @@ export default function PickScreen() {
       const [
         active,
         recent,
+        feedbackPromptResponse,
       ] = await Promise.all([
         getActivePickSessions(),
         getRecentPickSessions(),
+        getPickVisitFeedbackPrompt(),
       ]);
 
       setActiveSessions(active);
       setRecentSessions(recent);
+      setVisitFeedbackPrompt(
+        feedbackPromptResponse.prompt,
+      );
 
       await refreshNotifications();
     } catch (requestError) {
@@ -214,6 +241,12 @@ export default function PickScreen() {
       setCreatingMode(decisionMode);
       setError(null);
 
+      if (decisionMode === "group_vote") {
+        setGroupVoteLoadingText(
+          "Starting your group vote...",
+        );
+      }
+
       const session = await createPickSession({
         title: draft.isJustMe ? "My Pick Session" : `${draft.groupName} Pick`,
         group_id: draft.groupId || null,
@@ -232,7 +265,15 @@ export default function PickScreen() {
       });
 
       if (decisionMode === "group_vote") {
+        setGroupVoteLoadingText(
+          "Finding restaurants and preparing the best options...",
+        );
+
         await prepareGroupVote(session.id);
+
+        setGroupVoteLoadingText(
+          "Your group vote is ready.",
+        );
 
         resetDraft();
 
@@ -258,11 +299,63 @@ export default function PickScreen() {
         },
       });
     } catch (requestError) {
-      setError(
-        getApiErrorMessage(requestError, "Unable to start matching."),
+      const message = getApiErrorMessage(
+        requestError,
+        decisionMode === "group_vote"
+          ? "Unable to start the group vote."
+          : "Unable to start matching.",
+      );
+
+      setError(null);
+
+      Alert.alert(
+        decisionMode === "group_vote"
+          ? "Unable to start Group Vote"
+          : "Unable to start matching",
+        message,
       );
     } finally {
       setCreatingMode(null);
+    }
+  }
+
+  async function handleVisitFeedback(
+    feedback: PickVisitFeedback,
+  ) {
+    if (!visitFeedbackPrompt) {
+      return;
+    }
+
+    try {
+      setIsSubmittingVisitFeedback(
+        true,
+      );
+
+      const response =
+        await submitPickVisitFeedback(
+          visitFeedbackPrompt.session_id,
+          feedback,
+        );
+
+      setVisitFeedbackPrompt(null);
+
+      if (
+        response.dietary_follow_up_created
+      ) {
+        await refreshNotifications();
+      }
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to save feedback",
+        getApiErrorMessage(
+          requestError,
+          "Your last-pick feedback could not be saved.",
+        ),
+      );
+    } finally {
+      setIsSubmittingVisitFeedback(
+        false,
+      );
     }
   }
 
@@ -454,9 +547,159 @@ export default function PickScreen() {
           />
         </View>
 
-        {error && (
+        {error && creatingMode === null && (
           <View style={styles.errorCard}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text
+              style={styles.errorText}
+              numberOfLines={4}
+            >
+              {error}
+            </Text>
+          </View>
+        )}
+
+        {visitFeedbackPrompt && (
+          <View
+            style={[
+              styles.lastPickCard,
+              {
+                backgroundColor:
+                  colors.surface,
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
+            <View style={styles.lastPickHeader}>
+              <View style={styles.lastPickIcon}>
+                <Dices
+                  size={23}
+                  color={themeColor("#F3344A", "color")}
+                />
+              </View>
+
+              <View style={styles.lastPickHeading}>
+                <Text
+                  style={[
+                    styles.lastPickTitle,
+                    {
+                      color: colors.text,
+                    },
+                  ]}
+                >
+                  How was your last pick?
+                </Text>
+
+                <Text
+                  style={[
+                    styles.lastPickRestaurant,
+                    {
+                      color:
+                        colors.textSecondary,
+                    },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {
+                    visitFeedbackPrompt
+                      .restaurant_name
+                  }
+                </Text>
+              </View>
+            </View>
+
+            <Text
+              style={[
+                styles.lastPickHelpText,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              Help Pick Sum’N make your next matches even better.
+            </Text>
+
+            <View style={styles.lastPickActions}>
+              <Pressable
+                disabled={
+                  isSubmittingVisitFeedback
+                }
+                onPress={() =>
+                  void handleVisitFeedback(
+                    "good_pick",
+                  )
+                }
+                style={[
+                  styles.feedbackButton,
+                  styles.feedbackGood,
+                  isSubmittingVisitFeedback
+                    && styles.feedbackDisabled,
+                ]}
+              >
+                <Text
+                  style={
+                    styles.feedbackGoodText
+                  }
+                >
+                  👍 Good Pick
+                </Text>
+              </Pressable>
+
+              <Pressable
+                disabled={
+                  isSubmittingVisitFeedback
+                }
+                onPress={() =>
+                  void handleVisitFeedback(
+                    "not_for_me",
+                  )
+                }
+                style={[
+                  styles.feedbackButton,
+                  styles.feedbackNotForMe,
+                  isSubmittingVisitFeedback
+                    && styles.feedbackDisabled,
+                ]}
+              >
+                <Text
+                  style={
+                    styles.feedbackNotForMeText
+                  }
+                >
+                  👎 Not For Me
+                </Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              disabled={
+                isSubmittingVisitFeedback
+              }
+              onPress={() =>
+                void handleVisitFeedback(
+                  "didnt_go",
+                )
+              }
+              style={[
+                styles.didntGoButton,
+                isSubmittingVisitFeedback
+                  && styles.feedbackDisabled,
+              ]}
+            >
+              {isSubmittingVisitFeedback ? (
+                <ActivityIndicator
+                  size="small"
+                  color={themeColor("#777E89", "color")}
+                />
+              ) : (
+                <Text
+                  style={styles.didntGoText}
+                >
+                  Didn’t Go
+                </Text>
+              )}
+            </Pressable>
           </View>
         )}
 
@@ -486,6 +729,94 @@ export default function PickScreen() {
           <Text style={styles.refreshText}>Refresh sessions</Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        visible={
+          creatingMode === "group_vote"
+        }
+        animationType="fade"
+        presentationStyle="fullScreen"
+      >
+        <SafeAreaView
+          style={[
+            styles.groupVoteLoadingScreen,
+            {
+              backgroundColor:
+                colors.backgroundAlt,
+            },
+          ]}
+        >
+          <View
+            style={
+              styles.groupVoteLoadingContent
+            }
+          >
+            <Image
+              source={require("../../../assets/images/pick-sumn-logo.png")}
+              style={
+                styles.groupVoteLoadingLogo
+              }
+              resizeMode="contain"
+            />
+
+            <View
+              style={
+                styles.groupVoteLoadingIcon
+              }
+            >
+              <Vote
+                size={46}
+                color={themeColor("#F3344A", "color")}
+                strokeWidth={2.4}
+              />
+            </View>
+
+            <Text
+              style={[
+                styles.groupVoteLoadingTitle,
+                {
+                  color:
+                    colors.text,
+                },
+              ]}
+            >
+              Setting up your vote...
+            </Text>
+
+            <Text
+              style={[
+                styles.groupVoteLoadingText,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              {groupVoteLoadingText}
+            </Text>
+
+            <ActivityIndicator
+              size="large"
+              color={themeColor("#F3344A", "color")}
+              style={
+                styles.groupVoteLoadingSpinner
+              }
+            />
+
+            <Text
+              style={[
+                styles.groupVoteLoadingHint,
+                {
+                  color:
+                    colors.textSecondary,
+                },
+              ]}
+            >
+              This may take a moment while Pick Sum’N builds the ballot.
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -687,8 +1018,98 @@ const styles = createThemedStyleSheet({
   pickInner: { width: 129, height: 129, alignItems: "center", justifyContent: "center", borderRadius: 65, backgroundColor: "#A7ADB6" },
   pickInnerReady: { backgroundColor: "#F3344A" },
   pickText: { marginTop: 7, fontSize: 18, fontWeight: "900", color: "#FFFFFF" },
-  errorCard: { marginTop: 15, padding: 13, borderWidth: 1, borderColor: "#F3C5C5", borderRadius: 17, backgroundColor: "#FFF1F1" },
-  errorText: { fontSize: 13, fontWeight: "700", color: "#9F2424", textAlign: "center" },
+  errorCard: {
+    alignSelf: "stretch",
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 110,
+    marginTop: 15,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: "#F3C5C5",
+    borderRadius: 17,
+    backgroundColor: "#FFF1F1",
+  },
+  errorText: {
+    flexShrink: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: "#9F2424",
+    textAlign: "center",
+  },
+  groupVoteLoadingScreen: {
+    flex: 1,
+    backgroundColor: "#FFFDFB",
+  },
+  groupVoteLoadingContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 34,
+    paddingBottom: 60,
+  },
+  groupVoteLoadingLogo: {
+    width: 230,
+    height: 126,
+    marginBottom: 6,
+  },
+  groupVoteLoadingIcon: {
+    width: 94,
+    height: 94,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    borderWidth: 2,
+    borderColor: "#F7C5CB",
+    borderRadius: 30,
+    backgroundColor: "#FFF0F2",
+  },
+  groupVoteLoadingTitle: {
+    marginTop: 24,
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: "900",
+    color: "#07111F",
+    textAlign: "center",
+  },
+  groupVoteLoadingText: {
+    maxWidth: 320,
+    marginTop: 10,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "700",
+    color: "#69707C",
+    textAlign: "center",
+  },
+  groupVoteLoadingSpinner: {
+    marginTop: 25,
+  },
+  groupVoteLoadingHint: {
+    maxWidth: 310,
+    marginTop: 18,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#69707C",
+    textAlign: "center",
+  },
+  lastPickCard: { marginTop: 22, padding: 16, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 22, backgroundColor: "#FFFFFF" },
+  lastPickHeader: { flexDirection: "row", alignItems: "center" },
+  lastPickIcon: { width: 45, height: 45, alignItems: "center", justifyContent: "center", borderRadius: 15, backgroundColor: "#FFF0F2" },
+  lastPickHeading: { flex: 1, marginLeft: 11 },
+  lastPickTitle: { fontSize: 16, fontWeight: "900", color: "#07111F" },
+  lastPickRestaurant: { marginTop: 3, fontSize: 12, lineHeight: 17, fontWeight: "700", color: "#69707C" },
+  lastPickHelpText: { marginTop: 12, fontSize: 12, lineHeight: 18, color: "#69707C" },
+  lastPickActions: { flexDirection: "row", gap: 9, marginTop: 14 },
+  feedbackButton: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 10, borderRadius: 14 },
+  feedbackGood: { backgroundColor: "#E8F7EF" },
+  feedbackGoodText: { fontSize: 12, fontWeight: "900", color: "#168B4F" },
+  feedbackNotForMe: { backgroundColor: "#FFF0F2" },
+  feedbackNotForMeText: { fontSize: 12, fontWeight: "900", color: "#C62828" },
+  feedbackDisabled: { opacity: 0.55 },
+  didntGoButton: { alignItems: "center", justifyContent: "center", minHeight: 38, marginTop: 7 },
+  didntGoText: { fontSize: 11, fontWeight: "800", color: "#777E89" },
   bottomRow: { flexDirection: "row", gap: 11, marginTop: 22 },
   shortcut: { flex: 1, minHeight: 90, padding: 14, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 21, backgroundColor: "#FFFFFF" },
   shortcutHeading: { flexDirection: "row", alignItems: "center", gap: 7 },

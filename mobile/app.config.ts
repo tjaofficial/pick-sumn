@@ -87,6 +87,16 @@ export default ({
       ],
       "expo-secure-store",
       [
+        "expo-local-authentication",
+        {
+          faceIDPermission:
+            (
+              "Allow Pick Sum’N to use Face ID "
+              + "to securely unlock your saved session."
+            ),
+        },
+      ],
+      [
         "expo-image-picker",
         {
           photosPermission:

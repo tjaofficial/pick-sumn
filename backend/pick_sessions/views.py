@@ -1,7 +1,10 @@
 import logging
+from datetime import timedelta
+import random
 from concurrent.futures import ThreadPoolExecutor
 
 from accounts.models import UserAppSettings
+from preferences.models import UserDietaryPreference
 
 from django.core.cache import cache
 from django.db import transaction
@@ -39,6 +42,7 @@ from .models import (
     PickSession,
     PickSessionNotification,
     PickSessionAnalyticsEventType,
+    PickVisitFeedback,
     PickSessionNotificationKind,
     PickSessionParticipant,
     PickSessionRestaurantOption,
@@ -56,6 +60,7 @@ from .serializers import (
     GroupVoteOptionSerializer,
     PickSessionListSerializer,
     PickSessionNotificationSerializer,
+    PickVisitFeedbackSerializer,
     SelectRestaurantSerializer,
     SubmitGroupVoteSerializer,
     UpdateParticipantStatusSerializer,
@@ -84,6 +89,9 @@ ACTIVE_SESSION_STATUSES = (
 
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
 MATCH_SEARCH_CACHE_VERSION = "v7"
+
+EXPLORE_CACHE_SECONDS = 15 * 60
+EXPLORE_MAX_CANDIDATES = 60
 
 
 def _get_session_search_cache_key(
@@ -654,6 +662,65 @@ def _create_restaurant_selected_notifications(
     )
 
 
+def _create_dietary_feedback_notifications(
+    *,
+    session,
+    user,
+):
+    if not _notification_enabled(
+        user=user,
+        field_name="notification_general",
+    ):
+        return
+
+    preferences = (
+        UserDietaryPreference.objects
+        .filter(
+            user=user,
+        )
+        .select_related(
+            "dietary_tag",
+        )
+    )
+
+    for preference in preferences:
+        dietary_slug = (
+            preference.dietary_tag.slug
+            .strip()
+            .lower()
+        )
+
+        if not dietary_slug:
+            continue
+
+        dietary_label = (
+            preference.dietary_tag.name
+            or dietary_slug
+                .replace("-", " ")
+                .title()
+        )
+
+        PickSessionNotification.objects.get_or_create(
+            user=user,
+            session=session,
+            kind=(
+                PickSessionNotificationKind
+                .DIETARY_FEEDBACK
+            ),
+            dietary_slug=dietary_slug,
+            defaults={
+                "title": (
+                    f"How was the {dietary_label} experience?"
+                ),
+                "message": (
+                    f"Share how {session.selected_restaurant_name} "
+                    f"handled your {dietary_label} needs. "
+                    "Your experience can help other diners."
+                ),
+            },
+        )
+
+
 def _record_search_and_impressions(
     *,
     session,
@@ -892,6 +959,35 @@ def _serialize_group_vote_state(
         "winner_option_id": (
             winner_option_id
         ),
+    }
+
+
+
+def _explore_price_number(price_level):
+    return {
+        "PRICE_LEVEL_FREE": 0,
+        "PRICE_LEVEL_INEXPENSIVE": 1,
+        "PRICE_LEVEL_MODERATE": 2,
+        "PRICE_LEVEL_EXPENSIVE": 3,
+        "PRICE_LEVEL_VERY_EXPENSIVE": 4,
+    }.get(str(price_level or ""), None)
+
+
+def _serialize_explore_restaurant(restaurant):
+    data = restaurant.to_dict()
+
+    return {
+        **data,
+        "price_number": _explore_price_number(
+            data.get("price_level")
+        ),
+        "dietary_tags": [],
+        "dietary_evidence": [],
+        "match_score": 0,
+        "match_reasons": [],
+        "match_warnings": [],
+        "dietary_priority_tier": 0,
+        "dietary_priority_score": 0,
     }
 
 
@@ -1750,6 +1846,247 @@ class PickSessionViewSet(viewsets.ModelViewSet):
         )
 
     @action(
+        detail=False,
+        methods=("get",),
+        url_path="visit-feedback-prompt",
+    )
+    def visit_feedback_prompt(
+        self,
+        request,
+    ):
+        eligible_before = (
+            timezone.now()
+            - timedelta(hours=2)
+        )
+
+        participant = (
+            PickSessionParticipant.objects
+            .filter(
+                user=request.user,
+                visit_feedback="",
+                session__status=(
+                    PickSessionStatus.COMPLETED
+                ),
+                session__selected_at__isnull=False,
+                session__selected_at__lte=(
+                    eligible_before
+                ),
+            )
+            .exclude(
+                status__in=(
+                    ParticipantStatus.DECLINED,
+                    ParticipantStatus.LEFT,
+                ),
+            )
+            .select_related("session")
+            .order_by(
+                "-session__selected_at"
+            )
+            .first()
+        )
+
+        if participant is None:
+            return Response(
+                {
+                    "prompt": None,
+                }
+            )
+
+        session = participant.session
+
+        return Response(
+            {
+                "prompt": {
+                    "session_id": str(
+                        session.id
+                    ),
+                    "restaurant_name": (
+                        session
+                        .selected_restaurant_name
+                    ),
+                    "restaurant_external_id": (
+                        session
+                        .selected_restaurant_external_id
+                    ),
+                    "selected_at": (
+                        session.selected_at
+                    ),
+                    "selection_method": (
+                        session.selection_method
+                    ),
+                },
+            },
+        )
+
+    @action(
+        detail=True,
+        methods=("post",),
+        url_path="visit-feedback",
+    )
+    @transaction.atomic
+    def visit_feedback(
+        self,
+        request,
+        id=None,
+    ):
+        session = self.get_object()
+
+        if (
+            session.status
+            != PickSessionStatus.COMPLETED
+            or not session
+                .selected_restaurant_external_id
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "Feedback is only available after "
+                        "a restaurant is selected."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        participant = get_object_or_404(
+            PickSessionParticipant,
+            session=session,
+            user=request.user,
+        )
+
+        if participant.status in (
+            ParticipantStatus.DECLINED,
+            ParticipantStatus.LEFT,
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "You are no longer an active participant "
+                        "in this session."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        serializer = (
+            PickVisitFeedbackSerializer(
+                data=request.data,
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        feedback = (
+            serializer.validated_data[
+                "feedback"
+            ]
+        )
+
+        participant.visit_feedback = feedback
+        participant.visit_feedback_at = (
+            timezone.now()
+        )
+
+        participant.save(
+            update_fields=(
+                "visit_feedback",
+                "visit_feedback_at",
+                "updated_at",
+            ),
+        )
+
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .RESTAURANT_FEEDBACK
+            ),
+            restaurant_external_id=(
+                session
+                .selected_restaurant_external_id
+            ),
+            restaurant_name=(
+                session
+                .selected_restaurant_name
+            ),
+            event_data={
+                "feedback": feedback,
+                "selection_method": (
+                    session.selection_method
+                ),
+            },
+            dedupe_key=(
+                f"session:{session.id}:"
+                f"participant:{participant.id}:"
+                "restaurant-feedback"
+            ),
+        )
+
+        confirmed_visit = feedback in (
+            PickVisitFeedback.GOOD_PICK,
+            PickVisitFeedback.NOT_FOR_ME,
+        )
+
+        if confirmed_visit:
+            record_pick_session_event(
+                session=session,
+                user=request.user,
+                event_type=(
+                    PickSessionAnalyticsEventType
+                    .CONFIRMED_VISIT
+                ),
+                restaurant_external_id=(
+                    session
+                    .selected_restaurant_external_id
+                ),
+                restaurant_name=(
+                    session
+                    .selected_restaurant_name
+                ),
+                event_data={
+                    "feedback": feedback,
+                    "selection_method": (
+                        session.selection_method
+                    ),
+                },
+                dedupe_key=(
+                    f"session:{session.id}:"
+                    f"participant:{participant.id}:"
+                    "confirmed-visit"
+                ),
+            )
+
+            _create_dietary_feedback_notifications(
+                session=session,
+                user=request.user,
+            )
+
+        return Response(
+            {
+                "feedback": (
+                    participant.visit_feedback
+                ),
+                "visit_feedback_at": (
+                    participant.visit_feedback_at
+                ),
+                "dietary_follow_up_created": (
+                    confirmed_visit
+                    and UserDietaryPreference.objects
+                        .filter(
+                            user=request.user,
+                        )
+                        .exists()
+                ),
+            },
+        )
+
+    @action(
         detail=True,
         methods=("post",),
         url_path="prepare-vote",
@@ -2414,6 +2751,151 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 "detail": (
                     "All notifications marked read."
                 ),
+            },
+        )
+
+    @action(
+        detail=False,
+        methods=("get",),
+        url_path="explore",
+    )
+    def explore(self, request):
+        try:
+            radius_miles = int(
+                request.query_params.get(
+                    "radius_miles",
+                    10,
+                )
+            )
+        except (TypeError, ValueError):
+            radius_miles = 10
+
+        radius_miles = min(
+            max(radius_miles, 1),
+            25,
+        )
+
+        raw_latitude = request.query_params.get(
+            "latitude"
+        )
+        raw_longitude = request.query_params.get(
+            "longitude"
+        )
+
+        latitude = None
+        longitude = None
+        location_label = ""
+
+        if (
+            raw_latitude is not None
+            and raw_longitude is not None
+        ):
+            try:
+                latitude = float(raw_latitude)
+                longitude = float(raw_longitude)
+                location_label = "Current location"
+            except (TypeError, ValueError):
+                latitude = None
+                longitude = None
+
+        if latitude is None or longitude is None:
+            profile = request.user.profile
+
+            if (
+                profile.default_location_latitude is not None
+                and profile.default_location_longitude is not None
+            ):
+                latitude = float(
+                    profile.default_location_latitude
+                )
+                longitude = float(
+                    profile.default_location_longitude
+                )
+                location_label = (
+                    profile.location_display
+                    or "Default location"
+                )
+
+        if latitude is None or longitude is None:
+            return Response(
+                {
+                    "detail": (
+                        "Choose a default profile location "
+                        "or allow location access to explore "
+                        "nearby restaurants."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cache_key = (
+            "pick-sumn:explore:"
+            f"{round(latitude, 3)}:"
+            f"{round(longitude, 3)}:"
+            f"{radius_miles}"
+        )
+
+        cached_restaurants = cache.get(cache_key)
+
+        if cached_restaurants is None:
+            try:
+                nearby_restaurants = search_nearby_restaurants(
+                    latitude=latitude,
+                    longitude=longitude,
+                    radius_miles=radius_miles,
+                    preferred_primary_types=[],
+                    open_now=False,
+                    include_delivery=False,
+                    include_drive_through=False,
+                    max_results_per_type=20,
+                    include_generic_fallback=True,
+                )
+            except GooglePlacesError as error:
+                return Response(
+                    {"detail": str(error)},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            nearby_restaurants = [
+                restaurant
+                for restaurant in nearby_restaurants
+                if (
+                    restaurant.distance_miles is None
+                    or restaurant.distance_miles
+                    <= radius_miles
+                )
+            ]
+
+            random.shuffle(nearby_restaurants)
+
+            cached_restaurants = [
+                _serialize_explore_restaurant(
+                    restaurant
+                )
+                for restaurant
+                in nearby_restaurants[
+                    :EXPLORE_MAX_CANDIDATES
+                ]
+            ]
+
+            cache.set(
+                cache_key,
+                cached_restaurants,
+                timeout=EXPLORE_CACHE_SECONDS,
+            )
+
+        return Response(
+            {
+                "location": {
+                    "label": location_label,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "radius_miles": radius_miles,
+                },
+                "candidate_count": len(
+                    cached_restaurants
+                ),
+                "restaurants": cached_restaurants,
             },
         )
 

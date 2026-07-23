@@ -27,6 +27,33 @@ export type SelectionMethod =
   | "elimination";
 
 
+export type PickVisitFeedback =
+  | "good_pick"
+  | "not_for_me"
+  | "didnt_go";
+
+
+export type PickVisitFeedbackPrompt = {
+  session_id: string;
+  restaurant_name: string;
+  restaurant_external_id: string;
+  selected_at: string;
+  selection_method: SelectionMethod | "";
+};
+
+
+export type PickVisitFeedbackPromptResponse = {
+  prompt: PickVisitFeedbackPrompt | null;
+};
+
+
+export type SubmitPickVisitFeedbackResponse = {
+  feedback: PickVisitFeedback;
+  visit_feedback_at: string;
+  dietary_follow_up_created: boolean;
+};
+
+
 export type PickSession = {
   id: string;
   title: string;
@@ -122,6 +149,8 @@ export type PickSessionParticipant = {
   vetoes_used: number;
   joined_at: string | null;
   ready_at: string | null;
+  visit_feedback: PickVisitFeedback | "";
+  visit_feedback_at: string | null;
   created_at: string;
 };
 
@@ -270,6 +299,18 @@ export type PickSessionMatchesResponse = {
 };
 
 
+export type ExploreNearbyResponse = {
+  location: {
+    label: string;
+    latitude: number;
+    longitude: number;
+    radius_miles: number;
+  };
+  candidate_count: number;
+  restaurants: NearbyRestaurantMatch[];
+};
+
+
 
 export type GroupVoteOption = {
   id: string;
@@ -299,7 +340,8 @@ export type PickSessionNotificationKind =
   | "group_vote_invite"
   | "group_vote_started"
   | "group_vote_completed"
-  | "restaurant_selected";
+  | "restaurant_selected"
+  | "dietary_feedback";
 
 
 export type PickSessionNotification = {
@@ -307,6 +349,7 @@ export type PickSessionNotification = {
   kind: PickSessionNotificationKind;
   title: string;
   message: string;
+  dietary_slug: string;
   is_read: boolean;
   created_at: string;
   read_at: string | null;

@@ -22,6 +22,31 @@ export async function searchFriends(query: string): Promise<FriendSearchResult[]
   );
 }
 
+export async function getFriendRelationships(
+  userIds: number[],
+): Promise<FriendSearchResult[]> {
+  const uniqueIds = [
+    ...new Set(userIds),
+  ].filter(
+    (userId) =>
+      Number.isInteger(userId)
+      && userId > 0,
+  );
+
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  return apiRequest<FriendSearchResult[]>(
+    (
+      "/api/auth/friends/search/?user_ids="
+      + encodeURIComponent(
+        uniqueIds.join(","),
+      )
+    ),
+  );
+}
+
 export async function sendFriendRequest(input: {
   user_id?: number;
   friend_code?: string;

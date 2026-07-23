@@ -1,4 +1,8 @@
 import { Link } from "expo-router";
+import {
+  Fingerprint,
+  ScanFace,
+} from "lucide-react-native";
 import { useState } from "react";
 import {
   Image,
@@ -26,12 +30,36 @@ import {
 export default function LoginScreen() {
   useAppTheme();
 
-  const { login } = useAuth();
+  const {
+    biometricEnabled,
+    biometricLabel,
+    hasStoredSession,
+    login,
+    unlockWithBiometrics,
+  } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleBiometricLogin() {
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      const unlocked =
+        await unlockWithBiometrics();
+
+      if (!unlocked) {
+        setError(
+          `${biometricLabel} authentication was not completed.`,
+        );
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   async function handleLogin() {
     try {
@@ -115,6 +143,47 @@ export default function LoginScreen() {
             </Text>
           </Pressable>
 
+          {biometricEnabled
+          && hasStoredSession && (
+            <>
+              <View style={styles.orRow}>
+                <View style={styles.orLine} />
+                <Text style={styles.orText}>
+                  OR
+                </Text>
+                <View style={styles.orLine} />
+              </View>
+
+              <Pressable
+                onPress={() =>
+                  void handleBiometricLogin()
+                }
+                disabled={isSubmitting}
+                style={[
+                  styles.biometricButton,
+                  isSubmitting
+                    && styles.buttonDisabled,
+                ]}
+              >
+                {biometricLabel === "Face ID" ? (
+                  <ScanFace
+                    size={23}
+                    color={themeColor("#07111F", "color")}
+                  />
+                ) : (
+                  <Fingerprint
+                    size={23}
+                    color={themeColor("#07111F", "color")}
+                  />
+                )}
+
+                <Text style={styles.biometricButtonText}>
+                  Unlock with {biometricLabel}
+                </Text>
+              </Pressable>
+            </>
+          )}
+
           <View style={styles.footer}>
             <Text style={styles.footerText}>
               New to Pick Sum’N?
@@ -195,6 +264,38 @@ const styles = createThemedStyleSheet({
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "800",
+  },
+  orRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginVertical: 4,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#D9DDE3",
+  },
+  orText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#9298A2",
+  },
+  biometricButton: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    borderWidth: 1.5,
+    borderColor: "#D9DDE3",
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+  },
+  biometricButtonText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#07111F",
   },
   footer: {
     flexDirection: "row",

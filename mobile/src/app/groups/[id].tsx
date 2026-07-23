@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Camera,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
@@ -18,6 +19,7 @@ import {
   Share2,
   Trash2,
   User,
+  UserCheck,
   UserPlus,
   Users,
 } from "lucide-react-native";
@@ -38,8 +40,18 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Avatar } from "@/components/ui/Avatar";
-import { getFriends } from "@/features/friends/friendsService";
-import type { FriendListItem, FriendUser } from "@/features/friends/types";
+import { useAuth } from "@/features/auth/AuthContext";
+import {
+  getFriendRelationships,
+  getFriends,
+  respondToFriendRequest,
+  sendFriendRequest,
+} from "@/features/friends/friendsService";
+import type {
+  FriendListItem,
+  FriendSearchResult,
+  FriendUser,
+} from "@/features/friends/types";
 import {
   inviteFriendsToGroup,
   deleteGroup,
@@ -81,6 +93,8 @@ function friendName(user: FriendUser): string {
 export default function GroupDetailScreen() {
   useAppTheme();
 
+  const { user } = useAuth();
+
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const groupId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -98,6 +112,16 @@ export default function GroupDetailScreen() {
     setRemovingMemberId,
   ] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [
+    memberRelationships,
+    setMemberRelationships,
+  ] = useState<Map<number, FriendSearchResult>>(
+    new Map(),
+  );
+  const [
+    friendActionUserId,
+    setFriendActionUserId,
+  ] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!groupId) return;
@@ -106,8 +130,26 @@ export default function GroupDetailScreen() {
         getGroup(groupId),
         getFriends(),
       ]);
+
+      const relationships =
+        await getFriendRelationships(
+          loadedGroup.members.map(
+            (member) => member.user.id,
+          ),
+        );
+
       setGroup(loadedGroup);
       setFriends(loadedFriends);
+      setMemberRelationships(
+        new Map(
+          relationships.map(
+            (relationship) => [
+              relationship.user.id,
+              relationship,
+            ],
+          ),
+        ),
+      );
     } catch (requestError) {
       Alert.alert(
         "Unable to load group",
@@ -192,6 +234,123 @@ export default function GroupDetailScreen() {
       );
     } finally {
       setIsAdding(false);
+    }
+  }
+
+  async function handleMemberFriendAction(
+    member: DiningGroupMember,
+  ) {
+    const relationship =
+      memberRelationships.get(
+        member.user.id,
+      );
+
+    try {
+      setFriendActionUserId(
+        member.user.id,
+      );
+
+      if (
+        relationship?.relationship_status
+        === "pending"
+        && relationship.relationship_direction
+        === "incoming"
+        && relationship.friendship_id
+      ) {
+        await respondToFriendRequest(
+          relationship.friendship_id,
+          "accept",
+        );
+
+        setMemberRelationships(
+          (current) => {
+            const next = new Map(
+              current,
+            );
+
+            next.set(
+              member.user.id,
+              {
+                ...relationship,
+                relationship_status:
+                  "accepted",
+              },
+            );
+
+            return next;
+          },
+        );
+
+        const refreshedFriends =
+          await getFriends();
+
+        setFriends(
+          refreshedFriends,
+        );
+
+        return;
+      }
+
+      await sendFriendRequest({
+        user_id: member.user.id,
+      });
+
+      setMemberRelationships(
+        (current) => {
+          const next = new Map(
+            current,
+          );
+
+          next.set(
+            member.user.id,
+            {
+              user: {
+                id: member.user.id,
+                email: member.user.email,
+                display_name:
+                  member.user.display_name,
+                first_name:
+                  member.user.first_name,
+                last_name:
+                  member.user.last_name,
+                avatar:
+                  member.user.avatar,
+                date_joined:
+                  member.user.date_joined,
+              },
+              relationship_status:
+                relationship
+                ?.relationship_status
+                === "pending"
+                && relationship
+                  .relationship_direction
+                  === "incoming"
+                  ? "accepted"
+                  : "pending",
+              relationship_direction:
+                "outgoing",
+              friendship_id:
+                relationship
+                  ?.friendship_id
+                  ?? null,
+            },
+          );
+
+          return next;
+        },
+      );
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to update friendship",
+        getApiErrorMessage(
+          requestError,
+          "This friendship could not be updated.",
+        ),
+      );
+    } finally {
+      setFriendActionUserId(
+        null,
+      );
     }
   }
 
@@ -672,6 +831,148 @@ export default function GroupDetailScreen() {
                   </Text>
                 </View>
 
+                {(() => {
+                  const relationship =
+                    memberRelationships.get(
+                      member.user.id,
+                    );
+
+                  const isProcessingFriend =
+                    friendActionUserId
+                    === member.user.id;
+
+                  if (
+                    user?.id
+                    === member.user.id
+                  ) {
+                    return null;
+                  }
+
+                  if (
+                    relationship
+                      ?.relationship_status
+                    === "accepted"
+                  ) {
+                    return (
+                      <View
+                        style={
+                          styles.friendStatusPill
+                        }
+                      >
+                        <UserCheck
+                          size={15}
+                          color={themeColor("#168B4F", "color")}
+                        />
+
+                        <Text
+                          style={
+                            styles.friendStatusText
+                          }
+                        >
+                          Friends
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  if (
+                    relationship
+                      ?.relationship_status
+                    === "pending"
+                    && relationship
+                      .relationship_direction
+                      === "outgoing"
+                  ) {
+                    return (
+                      <View
+                        style={
+                          styles.requestedPill
+                        }
+                      >
+                        <CheckCircle2
+                          size={15}
+                          color={themeColor("#69707C", "color")}
+                        />
+
+                        <Text
+                          style={
+                            styles.requestedText
+                          }
+                        >
+                          Requested
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  if (
+                    relationship
+                      ?.relationship_status
+                    === "blocked"
+                  ) {
+                    return null;
+                  }
+
+                  return (
+                    <Pressable
+                      onPress={() =>
+                        void handleMemberFriendAction(
+                          member,
+                        )
+                      }
+                      disabled={
+                        isProcessingFriend
+                      }
+                      style={({ pressed }) => [
+                        styles.memberFriendButton,
+                        pressed
+                          && styles
+                            .memberFriendButtonPressed,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        relationship
+                          ?.relationship_status
+                          === "pending"
+                          && relationship
+                            .relationship_direction
+                            === "incoming"
+                          ? `Accept friend request from ${memberName(member)}`
+                          : `Add ${memberName(member)} as a friend`
+                      }
+                    >
+                      {isProcessingFriend ? (
+                        <ActivityIndicator
+                          size="small"
+                          color={themeColor("#F3344A", "color")}
+                        />
+                      ) : (
+                        <>
+                          <UserPlus
+                            size={17}
+                            color={themeColor("#F3344A", "color")}
+                          />
+
+                          <Text
+                            style={
+                              styles.memberFriendButtonText
+                            }
+                          >
+                            {relationship
+                              ?.relationship_status
+                              === "pending"
+                              && relationship
+                                .relationship_direction
+                                === "incoming"
+                              ? "Accept"
+                              : "Add"}
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+                  );
+                })()}
+
                 {removingMemberId
                 === member.id ? (
                   <ActivityIndicator
@@ -842,6 +1143,55 @@ const styles = createThemedStyleSheet({
     color: "#FFFFFF",
   },
   memberInfo: { flex: 1 },
+  memberFriendButton: {
+    minWidth: 64,
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    borderWidth: 1.5,
+    borderColor: "#F3344A",
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+  },
+  memberFriendButtonPressed: {
+    opacity: 0.7,
+  },
+  memberFriendButtonText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#F3344A",
+  },
+  friendStatusPill: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: "#E8F7EF",
+  },
+  friendStatusText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#168B4F",
+  },
+  requestedPill: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: "#F1F2F4",
+  },
+  requestedText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#69707C",
+  },
   memberNameRow: {
     flexDirection: "row",
     alignItems: "center",
