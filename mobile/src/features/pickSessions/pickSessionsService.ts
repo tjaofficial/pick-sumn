@@ -13,6 +13,7 @@ import type {
   GroupVoteState,
   PickSessionMatchesResponse,
   PickSessionStatus,
+  SelectionMethod,
   UpdateParticipantStatusResponse,
   RestaurantDietaryCommunityReport,
   RestaurantDietaryDetailResponse,
@@ -281,6 +282,48 @@ export async function submitRestaurantDietaryReport(
     {
       method: "POST",
       body: JSON.stringify(input),
+    },
+  );
+}
+
+
+
+export async function selectPickSessionRestaurant(
+  sessionId: string,
+  externalId: string,
+  selectionMethod: SelectionMethod,
+): Promise<PickSessionDetail> {
+  return apiRequest<PickSessionDetail>(
+    `/api/pick-sessions/${sessionId}/select-restaurant/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        external_id: externalId,
+        selection_method:
+          selectionMethod,
+      }),
+    },
+  );
+}
+
+
+export async function recordRestaurantDetailView(
+  sessionId: string,
+  restaurant: {
+    external_id: string;
+    name: string;
+  },
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/pick-sessions/${sessionId}/restaurant-detail-view/`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        external_id:
+          restaurant.external_id,
+        restaurant_name:
+          restaurant.name,
+      }),
     },
   );
 }

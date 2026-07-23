@@ -18,12 +18,14 @@ import {
   Alert,
   Pressable,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import {
   useCallback,
   useEffect,
@@ -43,6 +45,13 @@ import type {
   PickSessionParticipant,
 } from "@/features/pickSessions/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 function handleBack() {
   if (router.canGoBack()) {
@@ -94,6 +103,8 @@ function getStatusStyle(
 }
 
 export default function PickSessionDetailScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{
     id?: string | string[];
   }>();
@@ -344,7 +355,7 @@ export default function PickSessionDetailScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.stateText}>
@@ -373,7 +384,7 @@ export default function PickSessionDetailScreen() {
           >
             <RefreshCw
               size={18}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
 
             <Text style={styles.retryButtonText}>
@@ -398,7 +409,7 @@ export default function PickSessionDetailScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -415,7 +426,7 @@ export default function PickSessionDetailScreen() {
         >
           <RefreshCw
             size={20}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
       </View>
@@ -429,7 +440,7 @@ export default function PickSessionDetailScreen() {
             <View style={styles.statusBadge}>
               <Clock3
                 size={15}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
 
               <Text style={styles.statusText}>
@@ -441,7 +452,7 @@ export default function PickSessionDetailScreen() {
               <View style={styles.hostBadge}>
                 <Crown
                   size={14}
-                  color="#9A6C00"
+                  color={themeColor("#9A6C00", "color")}
                 />
 
                 <Text style={styles.hostBadgeText}>
@@ -466,7 +477,7 @@ export default function PickSessionDetailScreen() {
             <View style={styles.metaItem}>
               <Users
                 size={17}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
 
               <Text style={styles.metaText}>
@@ -478,7 +489,7 @@ export default function PickSessionDetailScreen() {
               <View style={styles.metaItem}>
                 <MapPin
                   size={17}
-                  color="#69707C"
+                  color={themeColor("#69707C", "color")}
                 />
 
                 <Text style={styles.metaText}>
@@ -556,7 +567,7 @@ export default function PickSessionDetailScreen() {
                       {participant.is_host && (
                         <Crown
                           size={15}
-                          color="#D99A00"
+                          color={themeColor("#D99A00", "color")}
                           fill="#FFE18A"
                         />
                       )}
@@ -629,12 +640,12 @@ export default function PickSessionDetailScreen() {
               {isUpdating ? (
                 <ActivityIndicator
                   size="small"
-                  color="#FFFFFF"
+                  color={themeColor("#FFFFFF", "color")}
                 />
               ) : (
                 <Check
                   size={22}
-                  color="#FFFFFF"
+                  color={themeColor("#FFFFFF", "color")}
                   strokeWidth={3}
                 />
               )}
@@ -670,7 +681,7 @@ export default function PickSessionDetailScreen() {
             >
               <Rocket
                 size={22}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
 
               <Text style={styles.startButtonText}>
@@ -687,7 +698,7 @@ export default function PickSessionDetailScreen() {
             >
               <LogOut
                 size={20}
-                color="#C62828"
+                color={themeColor("#C62828", "color")}
               />
 
               <Text style={styles.cancelButtonText}>
@@ -701,7 +712,7 @@ export default function PickSessionDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

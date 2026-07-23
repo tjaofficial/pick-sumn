@@ -32,9 +32,18 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 export default function PhotoCropPreviewScreen() {
+  useAppTheme();
+
   const {
     refreshUser,
   } = useAuth();
@@ -166,7 +175,7 @@ export default function PhotoCropPreviewScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -212,12 +221,12 @@ export default function PhotoCropPreviewScreen() {
           {isSaving ? (
             <ActivityIndicator
               size="small"
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           ) : (
             <Check
               size={21}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
               strokeWidth={3}
             />
           )}
@@ -255,7 +264,7 @@ export default function PhotoCropPreviewScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

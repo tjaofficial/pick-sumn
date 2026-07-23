@@ -3,7 +3,12 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 
-from accounts.models import Friendship, FriendshipStatus
+from accounts.models import (
+    Friendship,
+    FriendshipStatus,
+    GroupInvitePrivacy,
+    UserAppSettings,
+)
 from rest_framework import parsers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -27,6 +32,22 @@ from .serializers import (
     DiningGroupListSerializer,
     JoinGroupSerializer,
 )
+
+
+
+def can_receive_group_invite(
+    user,
+) -> bool:
+    settings_object, _ = (
+        UserAppSettings.objects.get_or_create(
+            user=user,
+        )
+    )
+
+    return (
+        settings_object.group_invite_privacy
+        != GroupInvitePrivacy.NOBODY
+    )
 
 
 class DiningGroupViewSet(viewsets.ModelViewSet):
@@ -346,10 +367,35 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        invited_users = {
+            user.id: user
+            for user in (
+                type(request.user)
+                .objects
+                .filter(
+                    id__in=accepted_friend_ids,
+                )
+            )
+        }
+
+        blocked_invite_ids = {
+            user_id
+            for user_id, invited_user
+            in invited_users.items()
+            if not can_receive_group_invite(
+                invited_user
+            )
+        }
+
+        allowed_friend_ids = (
+            accepted_friend_ids
+            - blocked_invite_ids
+        )
+
         existing_member_ids = set(
             DiningGroupMember.objects.filter(
                 group=group,
-                user_id__in=accepted_friend_ids,
+                user_id__in=allowed_friend_ids,
                 is_active=True,
             ).values_list(
                 "user_id",
@@ -360,7 +406,8 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
         invited_count = 0
 
         for user_id in (
-            accepted_friend_ids - existing_member_ids
+            allowed_friend_ids
+            - existing_member_ids
         ):
             invitation = (
                 DiningGroupInvitation.objects.filter(
@@ -394,13 +441,35 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
 
             invited_count += 1
 
+        skipped_count = len(
+            blocked_invite_ids
+        )
+
+        if invited_count and skipped_count:
+            detail = (
+                f"Sent {invited_count} group "
+                f"invitation{'s' if invited_count != 1 else ''}. "
+                f"{skipped_count} "
+                f"user{'s' if skipped_count != 1 else ''} "
+                "do not allow group invitations."
+            )
+        elif skipped_count:
+            detail = (
+                f"{skipped_count} "
+                f"user{'s' if skipped_count != 1 else ''} "
+                "do not allow group invitations."
+            )
+        else:
+            detail = (
+                f"Sent {invited_count} group "
+                f"invitation{'s' if invited_count != 1 else ''}."
+            )
+
         return Response(
             {
-                "detail": (
-                    f"Sent {invited_count} group "
-                    f"invitation{'s' if invited_count != 1 else ''}."
-                ),
+                "detail": detail,
                 "invited_count": invited_count,
+                "skipped_count": skipped_count,
             }
         )
 

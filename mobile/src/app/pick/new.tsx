@@ -29,6 +29,13 @@ import type {
 } from "@/features/groups/types";
 import { usePickDraft } from "@/features/pickSessions/PickDraftContext";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 function friendName(user: FriendUser): string {
   const fullName = [user.first_name, user.last_name]
@@ -47,6 +54,8 @@ function memberName(member: DiningGroupMember): string {
 }
 
 export default function PickPeopleScreen() {
+  useAppTheme();
+
   const { user } = useAuth();
   const { draft, updatePeople } = usePickDraft();
 
@@ -217,7 +226,7 @@ export default function PickPeopleScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color="#F3344A" />
+          <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} />
           <Text style={styles.loadingText}>Loading your people...</Text>
         </View>
       </SafeAreaView>
@@ -228,7 +237,7 @@ export default function PickPeopleScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={23} color="#07111F" />
+          <ArrowLeft size={23} color={themeColor("#07111F", "color")} />
         </Pressable>
         <View style={styles.topBarCenter}>
           <Text style={styles.topBarTitle}>Who’s Eating?</Text>
@@ -240,7 +249,7 @@ export default function PickPeopleScreen() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.intro}>
           <View style={styles.introIcon}>
-            <Users size={31} color="#F3344A" />
+            <Users size={31} color={themeColor("#F3344A", "color")} />
           </View>
           <Text style={styles.heading}>Who are you eating with?</Text>
           <Text style={styles.description}>
@@ -321,7 +330,7 @@ export default function PickPeopleScreen() {
                       selected && styles.checkCircleSelected,
                     ]}
                   >
-                    {selected && <Check size={16} color="#FFFFFF" />}
+                    {selected && <Check size={16} color={themeColor("#FFFFFF", "color")} />}
                   </View>
                 </Pressable>
               );
@@ -357,7 +366,7 @@ export default function PickPeopleScreen() {
                         selected && styles.checkCircleSelected,
                       ]}
                     >
-                      {selected && <Check size={16} color="#FFFFFF" />}
+                      {selected && <Check size={16} color={themeColor("#FFFFFF", "color")} />}
                     </View>
                   </Pressable>
                 );
@@ -379,7 +388,7 @@ export default function PickPeopleScreen() {
             !canSave && styles.saveButtonDisabled,
           ]}
         >
-          <Check size={21} color="#FFFFFF" />
+          <Check size={21} color={themeColor("#FFFFFF", "color")} />
           <Text style={styles.saveText}>Save People</Text>
         </Pressable>
       </ScrollView>
@@ -440,13 +449,13 @@ function ChoiceCard({
           selected && styles.checkCircleSelected,
         ]}
       >
-        {selected && <Check size={16} color="#FFFFFF" />}
+        {selected && <Check size={16} color={themeColor("#FFFFFF", "color")} />}
       </View>
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#FFF9F2" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: "#ECEDEF" },
   backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFFFFF" },

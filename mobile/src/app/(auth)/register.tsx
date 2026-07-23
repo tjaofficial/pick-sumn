@@ -14,8 +14,17 @@ import {
 
 import { useAuth } from "@/features/auth/AuthContext";
 import { ApiError } from "@/services/api";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 export default function RegisterScreen() {
+  useAppTheme();
+
   const { register } = useAuth();
 
   const [displayName, setDisplayName] = useState("");
@@ -85,7 +94,7 @@ export default function RegisterScreen() {
               value={displayName}
               onChangeText={setDisplayName}
               placeholder="Display name"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               style={styles.input}
             />
 
@@ -93,7 +102,7 @@ export default function RegisterScreen() {
               value={email}
               onChangeText={setEmail}
               placeholder="Email address"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -104,7 +113,7 @@ export default function RegisterScreen() {
               value={password}
               onChangeText={setPassword}
               placeholder="Password"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               secureTextEntry
               style={styles.input}
             />
@@ -113,7 +122,7 @@ export default function RegisterScreen() {
               value={passwordConfirm}
               onChangeText={setPasswordConfirm}
               placeholder="Confirm password"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               secureTextEntry
               style={styles.input}
             />
@@ -155,7 +164,7 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

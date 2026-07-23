@@ -14,12 +14,14 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import {
   useCallback,
   useState,
@@ -32,6 +34,13 @@ import type {
   PickSession,
 } from "@/features/pickSessions/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 function formatDateLabel(
@@ -92,13 +101,27 @@ function RecentPickCard({
   return (
     <Pressable
       onPress={() =>
-        router.push({
-          pathname:
-            "/pick-sessions/[id]",
-          params: {
-            id: session.id,
-          },
-        })
+        router.push(
+          session.status === "completed"
+          && session.selected_restaurant_external_id
+            ? {
+                pathname:
+                  "/restaurants/[sessionId]/[optionId]",
+                params: {
+                  sessionId:
+                    session.id,
+                  optionId:
+                    "selected",
+                },
+              }
+            : {
+                pathname:
+                  "/pick-sessions/[id]",
+                params: {
+                  id: session.id,
+                },
+              },
+        )
       }
       style={({ pressed }) => [
         styles.card,
@@ -109,7 +132,7 @@ function RecentPickCard({
         <View style={styles.iconBox}>
           <Store
             size={22}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
         </View>
 
@@ -140,7 +163,7 @@ function RecentPickCard({
         <View style={styles.metaItem}>
           <MapPin
             size={16}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text
@@ -154,7 +177,7 @@ function RecentPickCard({
         <View style={styles.metaItem}>
           <Search
             size={16}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text style={styles.metaText}>
@@ -165,7 +188,7 @@ function RecentPickCard({
         <View style={styles.metaItem}>
           <CalendarClock
             size={16}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text style={styles.metaText}>
@@ -182,7 +205,9 @@ function RecentPickCard({
 }
 
 
-export default function RecentPicksScreen() {
+export default function RecentHistoryScreen() {
+  useAppTheme();
+
   const [
     recentSessions,
     setRecentSessions,
@@ -216,7 +241,7 @@ export default function RecentPicksScreen() {
         setError(
           getApiErrorMessage(
             requestError,
-            "Unable to load recent picks.",
+            "Unable to load recent history.",
           ),
         );
       } finally {
@@ -244,11 +269,11 @@ export default function RecentPicksScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.loadingTitle}>
-            Loading recent picks...
+            Loading recent history...
           </Text>
         </View>
       </SafeAreaView>
@@ -266,12 +291,12 @@ export default function RecentPicksScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
         <Text style={styles.topBarTitle}>
-          Recent Picks
+          Recent History
         </Text>
 
         <Pressable
@@ -282,7 +307,7 @@ export default function RecentPicksScreen() {
         >
           <RefreshCw
             size={20}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
       </View>
@@ -294,24 +319,24 @@ export default function RecentPicksScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
       >
         <View style={styles.hero}>
           <Text style={styles.heroTitle}>
-            Your Food History
+            Your Recent History
           </Text>
 
           <Text style={styles.heroText}>
-            Every completed, cancelled, or expired Pick Sum’N session shows up here.
+            Your 20 most recent completed restaurant choices show up here.
           </Text>
         </View>
 
         {error && (
           <View style={styles.errorCard}>
             <Text style={styles.errorTitle}>
-              Couldn’t load recent picks
+              Couldn’t load recent history
             </Text>
 
             <Text style={styles.errorText}>
@@ -336,16 +361,16 @@ export default function RecentPicksScreen() {
             <View style={styles.emptyIcon}>
               <Store
                 size={34}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             </View>
 
             <Text style={styles.emptyTitle}>
-              No recent picks yet
+              No recent history yet
             </Text>
 
             <Text style={styles.emptyText}>
-              Start a Pick Sum’N session and older active sessions will move here automatically.
+              Complete a Pick Sum’N choice and it will show up here.
             </Text>
 
             <Pressable
@@ -377,7 +402,7 @@ export default function RecentPicksScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

@@ -1,0 +1,344 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  .analytics-wrap { display: grid; gap: 20px; }
+  .analytics-filter {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(160px, 1fr)) auto;
+    gap: 12px;
+    align-items: end;
+    padding: 16px;
+    border: 1px solid var(--hairline-color);
+    border-radius: 10px;
+    background: var(--body-bg);
+  }
+  .analytics-filter label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .analytics-filter input,
+  .analytics-filter select {
+    width: 100%;
+    min-height: 36px;
+    box-sizing: border-box;
+  }
+  .analytics-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(150px, 1fr));
+    gap: 14px;
+  }
+  .metric-card {
+    padding: 18px;
+    border: 1px solid var(--hairline-color);
+    border-radius: 10px;
+    background: var(--body-bg);
+  }
+  .metric-label {
+    margin-bottom: 7px;
+    color: var(--body-quiet-color);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .metric-value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .metric-note {
+    margin-top: 8px;
+    color: var(--body-quiet-color);
+    font-size: 12px;
+  }
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 18px;
+  }
+  .analytics-panel {
+    overflow: hidden;
+    border: 1px solid var(--hairline-color);
+    border-radius: 10px;
+    background: var(--body-bg);
+  }
+  .analytics-panel h2 {
+    margin: 0;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--hairline-color);
+    font-size: 15px;
+  }
+  .analytics-panel table {
+    width: 100%;
+  }
+  .analytics-panel th,
+  .analytics-panel td {
+    padding: 10px 14px;
+  }
+  .analytics-panel .empty {
+    padding: 18px;
+    color: var(--body-quiet-color);
+  }
+  .recent-panel { overflow-x: auto; }
+  .small-muted {
+    color: var(--body-quiet-color);
+    font-size: 12px;
+  }
+  @media (max-width: 1100px) {
+    .analytics-filter {
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+    }
+    .metric-grid {
+      grid-template-columns: repeat(2, minmax(150px, 1fr));
+    }
+  }
+  @media (max-width: 760px) {
+    .analytics-filter,
+    .metric-grid,
+    .analytics-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo;
+  <a href="{% url 'admin:app_list' app_label=opts.app_label %}">
+    {{ opts.app_config.verbose_name }}
+  </a>
+  &rsaquo;
+  Pick Sum’N Analytics
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-wrap">
+  <form method="get" class="analytics-filter">
+    <div>
+      <label for="id_start_date">Start date</label>
+      <input id="id_start_date" type="date" name="start_date" value="{{ start_date }}">
+    </div>
+
+    <div>
+      <label for="id_end_date">End date</label>
+      <input id="id_end_date" type="date" name="end_date" value="{{ end_date }}">
+    </div>
+
+    <div>
+      <label for="id_restaurant">Restaurant</label>
+      <input
+        id="id_restaurant"
+        type="text"
+        name="restaurant"
+        value="{{ restaurant_query }}"
+        placeholder="Search restaurant name"
+      >
+    </div>
+
+    <div>
+      <label for="id_event_type">Event type</label>
+      <select id="id_event_type" name="event_type">
+        <option value="">All events</option>
+        {% for value, label in event_type_choices %}
+          <option
+            value="{{ value }}"
+            {% if event_type_filter == value %}selected{% endif %}
+          >
+            {{ label }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="analytics-actions">
+      <button type="submit" class="button">Apply</button>
+      <a href="." class="button">Reset</a>
+    </div>
+  </form>
+
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-label">Searches</div>
+      <div class="metric-value">{{ searches }}</div>
+      <div class="metric-note">Unique session searches recorded.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Restaurant Impressions</div>
+      <div class="metric-value">{{ impressions }}</div>
+      <div class="metric-note">Restaurants shown in results.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Detail Views</div>
+      <div class="metric-value">{{ detail_views }}</div>
+      <div class="metric-note">Restaurant detail opens.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Selections</div>
+      <div class="metric-value">{{ selections }}</div>
+      <div class="metric-note">Final restaurant decisions.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Confirmed Visits</div>
+      <div class="metric-value">{{ confirmed_visits }}</div>
+      <div class="metric-note">People who later rated the pick.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Represented Diners</div>
+      <div class="metric-value">{{ represented_diners }}</div>
+      <div class="metric-note">People represented by selected sessions.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Confirmed Visit Rate</div>
+      <div class="metric-value">{{ visit_rate }}%</div>
+      <div class="metric-note">Confirmed visits ÷ represented diners.</div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Average Group Size</div>
+      <div class="metric-value">{{ average_group_size }}</div>
+      <div class="metric-note">Average diners per final selection.</div>
+    </div>
+  </div>
+
+  <div class="analytics-grid">
+    <section class="analytics-panel">
+      <h2>Top Selected Restaurants</h2>
+      {% if top_restaurants %}
+        <table>
+          <thead>
+            <tr><th>Restaurant</th><th>Selections</th></tr>
+          </thead>
+          <tbody>
+            {% for item in top_restaurants %}
+              <tr>
+                <td>
+                  {{ item.restaurant_name }}
+                  <div class="small-muted">{{ item.restaurant_external_id }}</div>
+                </td>
+                <td>{{ item.selections }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty">No restaurant selections in this range.</div>
+      {% endif %}
+    </section>
+
+    <section class="analytics-panel">
+      <h2>Top Searched Cuisines</h2>
+      {% if top_cuisines %}
+        <table>
+          <thead>
+            <tr><th>Cuisine</th><th>Searches</th></tr>
+          </thead>
+          <tbody>
+            {% for item in top_cuisines %}
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ item.searches }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty">No cuisine search data in this range.</div>
+      {% endif %}
+    </section>
+
+    <section class="analytics-panel">
+      <h2>Selection Method Breakdown</h2>
+      {% if selection_methods %}
+        <table>
+          <thead>
+            <tr><th>Method</th><th>Selections</th></tr>
+          </thead>
+          <tbody>
+            {% for item in selection_methods %}
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ item.count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty">No selections in this range.</div>
+      {% endif %}
+    </section>
+
+    <section class="analytics-panel">
+      <h2>Last Pick Feedback</h2>
+      {% if feedback_breakdown %}
+        <table>
+          <thead>
+            <tr><th>Response</th><th>People</th></tr>
+          </thead>
+          <tbody>
+            {% for item in feedback_breakdown %}
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ item.count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty">No last-pick feedback in this range.</div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="analytics-panel recent-panel">
+    <h2>Recent Analytics Activity</h2>
+    {% if recent_events %}
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Event</th>
+            <th>Restaurant</th>
+            <th>User</th>
+            <th>Session</th>
+            <th>Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in recent_events %}
+            <tr>
+              <td>{{ event.created_at|date:"M j, Y g:i A" }}</td>
+              <td>{{ event.get_event_type_display }}</td>
+              <td>{{ event.restaurant_name|default:"—" }}</td>
+              <td>{{ event.user|default:"—" }}</td>
+              <td>{{ event.session }}</td>
+              <td><code>{{ event.event_data }}</code></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty">No analytics events match these filters.</div>
+    {% endif %}
+  </section>
+
+  <div class="small-muted">
+    Dashboard generated {{ generated_at|date:"M j, Y g:i A" }}.
+  </div>
+</div>
+{% endblock %}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from typing import Iterable
@@ -23,6 +24,8 @@ from .models import (
 
 User = get_user_model()
 
+logger = logging.getLogger(__name__)
+
 
 GOOGLE_TYPE_TO_CUISINE_SLUGS = {
     "african_restaurant": {
@@ -30,8 +33,6 @@ GOOGLE_TYPE_TO_CUISINE_SLUGS = {
     },
     "american_restaurant": {
         "american",
-        "southern",
-        "soul-food",
     },
     "barbecue_restaurant": {
         "barbecue",
@@ -185,12 +186,8 @@ CUISINE_SLUG_TO_GOOGLE_TYPES = {
     "seafood": {
         "seafood_restaurant",
     },
-    "soul-food": {
-        "american_restaurant",
-    },
-    "southern": {
-        "american_restaurant",
-    },
+    "soul-food": set(),
+    "southern": set(),
     "spanish": {
         "spanish_restaurant",
     },
@@ -274,6 +271,51 @@ CUISINE_RANK_SCORES = {
 }
 
 
+CUISINE_NAME_KEYWORDS = {
+    "mexican": (
+        " mexican ",
+        " taqueria",
+        " taco ",
+        " tacos ",
+        " birrieria",
+        " cantina",
+    ),
+    "italian": (
+        " italian ",
+        " trattoria",
+        " ristorante",
+    ),
+    "chinese": (
+        " chinese ",
+        " wonton",
+        " szechuan",
+        " sichuan",
+    ),
+    "japanese": (
+        " japanese ",
+        " sushi ",
+        " ramen ",
+        " hibachi",
+    ),
+    "soul-food": (
+        " soul food",
+        " soulfood",
+    ),
+    "southern": (
+        " southern kitchen",
+        " southern cooking",
+        " southern cuisine",
+    ),
+    "african": (
+        " african ",
+        " nigerian",
+        " ethiopian",
+        " ghanaian",
+        " senegalese",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class ParticipantPreferenceSnapshot:
     user_id: int
@@ -330,6 +372,22 @@ def _normalize_slug(value: str) -> str:
         .replace("_", "-")
         .replace(" ", "-")
     )
+
+
+def _canonical_dining_style_slug(
+    value: str,
+) -> str:
+    normalized = _normalize_slug(
+        value
+    )
+
+    if normalized in {
+        "bar-tavern",
+        "local-restaurant-bar-tavern",
+    }:
+        return "local-restaurant-bar-tavern"
+
+    return normalized
 
 
 def _display_slug(value: str) -> str:
@@ -662,6 +720,28 @@ def _get_restaurant_cuisine_slugs(
             )
         )
 
+    normalized_name = (
+        " "
+        + " ".join(
+            restaurant.name
+            .strip()
+            .lower()
+            .split()
+        )
+        + " "
+    )
+
+    for cuisine_slug, keywords in (
+        CUISINE_NAME_KEYWORDS.items()
+    ):
+        if any(
+            keyword in normalized_name
+            for keyword in keywords
+        ):
+            slugs.add(
+                cuisine_slug
+            )
+
     normalized_place_types = {
         _normalize_slug(
             place_type
@@ -670,17 +750,23 @@ def _get_restaurant_cuisine_slugs(
         if place_type
     }
 
-    if normalized_place_types.intersection(
-        {
-            _normalize_slug(
-                google_type
-            )
-            for google_type
-            in (
-                LOCAL_RESTAURANT_BAR_TAVERN_TYPES
-                | BAR_TAVERN_TYPES
-            )
-        }
+    explicit_american_type = (
+        "american-restaurant"
+        in normalized_place_types
+        or "hamburger-restaurant"
+        in normalized_place_types
+    )
+
+    generic_bar_tavern_fallback = bool(
+        _restaurant_matches_merged_bar_tavern_style(
+            restaurant
+        )
+        and not slugs
+    )
+
+    if (
+        explicit_american_type
+        or generic_bar_tavern_fallback
     ):
         slugs.add(
             "american"
@@ -1834,11 +1920,402 @@ def _restaurant_is_coffee_cafe(
 
 
 
+
+
+BAR_TAVERN_NAME_KEYWORDS = (
+    " bar ",
+    " tavern",
+    " pub ",
+    " public house",
+    " saloon",
+    " taproom",
+    " tap room",
+    " tap house",
+    " taphouse",
+    " bar & grill",
+    " bar and grill",
+    " sports bar",
+    " brewpub",
+    " brew haus",
+    " brewhaus",
+    " brewhouse",
+    " brew house",
+    " alehouse",
+    " ale house",
+    " beer garden",
+    " whiskey lounge",
+    " whisky lounge",
+)
+
+FOOD_TRUCK_NAME_KEYWORDS = (
+    "food truck",
+    "foodtruck",
+)
+
+
+def _normalized_restaurant_name(
+    restaurant: NearbyRestaurant,
+) -> str:
+    return (
+        " "
+        + " ".join(
+            restaurant.name
+            .strip()
+            .lower()
+            .replace("&", " & ")
+            .split()
+        )
+        + " "
+    )
+
+
+def _restaurant_name_has_bar_signal(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    normalized_name = (
+        _normalized_restaurant_name(
+            restaurant
+        )
+    )
+
+    return any(
+        keyword in normalized_name
+        for keyword
+        in BAR_TAVERN_NAME_KEYWORDS
+    )
+
+
+def _restaurant_name_is_food_truck(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    normalized_name = (
+        _normalized_restaurant_name(
+            restaurant
+        )
+    )
+
+    return any(
+        keyword in normalized_name
+        for keyword
+        in FOOD_TRUCK_NAME_KEYWORDS
+    )
+
+
+def _restaurant_serves_alcohol(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    return any(
+        value is True
+        for value in (
+            getattr(
+                restaurant,
+                "serves_beer",
+                None,
+            ),
+            getattr(
+                restaurant,
+                "serves_wine",
+                None,
+            ),
+            getattr(
+                restaurant,
+                "serves_cocktails",
+                None,
+            ),
+        )
+    )
+
+
+def _restaurant_is_takeout_only(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    return bool(
+        restaurant.dine_in is False
+        and restaurant.takeout is True
+    )
+
+
+def _restaurant_is_low_confidence_listing(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    rating = (
+        restaurant.rating
+        if restaurant.rating is not None
+        else 0.0
+    )
+
+    return bool(
+        restaurant.user_rating_count <= 2
+        and rating > 0
+        and rating <= 2.5
+        and not restaurant.website_uri
+        and not restaurant.phone_number
+    )
+
+
+def _bar_tavern_search_match_count(
+    restaurant: NearbyRestaurant,
+) -> int:
+    counts = (
+        restaurant
+        .dining_style_search_match_counts
+        or {}
+    )
+
+    return max(
+        int(
+            counts.get(
+                "local-restaurant-bar-tavern",
+                0,
+            )
+            or 0
+        ),
+        int(
+            counts.get(
+                "bar-tavern",
+                0,
+            )
+            or 0
+        ),
+    )
+
+
+def _restaurant_matches_merged_bar_tavern_style(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    normalized_types = (
+        _get_normalized_place_types(
+            restaurant
+        )
+    )
+
+    if (
+        "food-truck"
+        in normalized_types
+        or _restaurant_name_is_food_truck(
+            restaurant
+        )
+    ):
+        return False
+
+    if _restaurant_is_takeout_only(
+        restaurant
+    ):
+        return False
+
+    if (
+        getattr(
+            restaurant,
+            "business_status",
+            "",
+        )
+        == "CLOSED_PERMANENTLY"
+    ):
+        return False
+
+    if _restaurant_is_low_confidence_listing(
+        restaurant
+    ):
+        return False
+
+    strong_evidence = bool(
+        _restaurant_has_bar_tavern_type(
+            restaurant
+        )
+        or _restaurant_name_has_bar_signal(
+            restaurant
+        )
+        or _restaurant_serves_alcohol(
+            restaurant
+        )
+    )
+
+    if strong_evidence:
+        return (
+            restaurant.dine_in
+            is not False
+        )
+
+    search_match_count = (
+        _bar_tavern_search_match_count(
+            restaurant
+        )
+    )
+
+    if (
+        restaurant.dine_in is True
+        and search_match_count >= 3
+    ):
+        return True
+
+    if (
+        restaurant.dine_in is None
+        and search_match_count >= 5
+    ):
+        return True
+
+    return False
+
+def _restaurant_matches_selected_dining_styles(
+    restaurant: NearbyRestaurant,
+    dining_style_slugs: set[str],
+) -> bool:
+    """
+    Dining styles are hard eligibility filters.
+
+    Bar / Tavern and Local Restaurant / Bar / Tavern are treated as one
+    merged style. Text Search provenance is candidate evidence, not
+    automatic proof of style eligibility.
+    """
+
+    if not dining_style_slugs:
+        return True
+
+    canonical_styles = {
+        _canonical_dining_style_slug(
+            style_slug
+        )
+        for style_slug
+        in dining_style_slugs
+    }
+
+    normalized_types = (
+        _get_normalized_place_types(
+            restaurant
+        )
+    )
+
+    supported_style_seen = False
+
+    for style_slug in canonical_styles:
+        if (
+            style_slug
+            == "local-restaurant-bar-tavern"
+        ):
+            supported_style_seen = True
+
+            if (
+                _restaurant_matches_merged_bar_tavern_style(
+                    restaurant
+                )
+            ):
+                return True
+
+        elif style_slug == "coffee-shop-cafe":
+            supported_style_seen = True
+
+            if _restaurant_is_coffee_cafe(
+                restaurant
+            ):
+                return True
+
+        elif style_slug == "delivery":
+            supported_style_seen = True
+
+            if restaurant.delivery is True:
+                return True
+
+        elif style_slug == "carryout":
+            supported_style_seen = True
+
+            if restaurant.takeout is True:
+                return True
+
+        elif style_slug in {
+            "dine-in",
+            "casual-dining",
+        }:
+            supported_style_seen = True
+
+            if restaurant.dine_in is True:
+                return True
+
+        elif style_slug in {
+            "fast-food",
+            "fast-casual",
+        }:
+            supported_style_seen = True
+
+            if (
+                "fast-food-restaurant"
+                in normalized_types
+            ):
+                return True
+
+        elif style_slug == "drive-through":
+            supported_style_seen = True
+
+            if (
+                "drive-through"
+                in normalized_types
+            ):
+                return True
+
+        elif style_slug == "buffet":
+            supported_style_seen = True
+
+            if (
+                "buffet-restaurant"
+                in normalized_types
+            ):
+                return True
+
+        elif style_slug == "food-truck":
+            supported_style_seen = True
+
+            if (
+                "food-truck"
+                in normalized_types
+                or _restaurant_name_is_food_truck(
+                    restaurant
+                )
+            ):
+                return True
+
+        elif style_slug == "fine-dining":
+            supported_style_seen = True
+
+            if (
+                PRICE_LEVEL_MAP.get(
+                    restaurant.price_level,
+                    0,
+                )
+                >= 3
+                and restaurant.dine_in is True
+            ):
+                return True
+
+        elif style_slug == "local-restaurant":
+            supported_style_seen = True
+
+            if (
+                "restaurant"
+                in normalized_types
+                and not _restaurant_name_is_food_truck(
+                    restaurant
+                )
+            ):
+                return True
+
+    if not supported_style_seen:
+        return True
+
+    return False
+
+
 def _get_dining_style_adjustment(
     restaurant: NearbyRestaurant,
     dining_style_slugs: set[str],
 ) -> float:
     """Give restaurants a session-specific dining-style boost."""
+
+    dining_style_slugs = {
+        _canonical_dining_style_slug(
+            style_slug
+        )
+        for style_slug
+        in dining_style_slugs
+    }
 
     normalized_types = (
         _get_normalized_place_types(
@@ -2028,6 +2505,14 @@ def _get_dining_style_reasons(
             }
         )
 
+    dining_style_slugs = {
+        _canonical_dining_style_slug(
+            style_slug
+        )
+        for style_slug
+        in dining_style_slugs
+    }
+
     normalized_types = (
         _get_normalized_place_types(
             restaurant
@@ -2053,19 +2538,12 @@ def _get_dining_style_reasons(
             "food-truck"
         )
 
-    if _restaurant_has_bar_tavern_type(
+    if _restaurant_matches_merged_bar_tavern_style(
         restaurant
     ):
         available_styles.add(
-            "bar-tavern"
+            "local-restaurant-bar-tavern"
         )
-
-        if _restaurant_is_food_forward_bar(
-            restaurant
-        ):
-            available_styles.add(
-                "local-restaurant-bar-tavern"
-            )
 
     if _restaurant_is_coffee_cafe(
         restaurant
@@ -2078,6 +2556,16 @@ def _get_dining_style_reasons(
         available_styles.add(
             "local-restaurant"
         )
+
+    available_styles.update(
+        {
+            _normalize_slug(style_slug)
+            for style_slug in (
+                restaurant.dining_style_search_slugs
+                or []
+            )
+        }
+    )
 
     matching_styles = (
         available_styles
@@ -2119,6 +2607,15 @@ def _deduplicate_strings(
     return result
 
 
+def _is_don_jose_target(
+    restaurant: NearbyRestaurant,
+) -> bool:
+    return (
+        "don jose"
+        in restaurant.name.strip().lower()
+    )
+
+
 def score_restaurant_for_session(
     *,
     restaurant: NearbyRestaurant,
@@ -2128,11 +2625,55 @@ def score_restaurant_for_session(
     ],
     dining_style_slugs: set[str],
 ) -> ScoredRestaurant | None:
+    style_match = (
+        _restaurant_matches_selected_dining_styles(
+            restaurant,
+            dining_style_slugs,
+        )
+    )
+
+    if _is_don_jose_target(
+        restaurant
+    ):
+        logger.warning(
+            (
+                "[DON-JOSE-MATCHING] STYLE "
+                "name=%r styles=%s result=%s "
+                "takeout=%s dine_in=%s types=%s"
+            ),
+            restaurant.name,
+            sorted(dining_style_slugs),
+            style_match,
+            restaurant.takeout,
+            restaurant.dine_in,
+            restaurant.types,
+        )
+
+    if not style_match:
+        return None
+
     restaurant_cuisines = (
         _get_restaurant_cuisine_slugs(
             restaurant
         )
     )
+
+    if _is_don_jose_target(
+        restaurant
+    ):
+        logger.warning(
+            (
+                "[DON-JOSE-MATCHING] CUISINES "
+                "name=%r primary_type=%r types=%s "
+                "inferred=%s"
+            ),
+            restaurant.name,
+            restaurant.primary_type,
+            restaurant.types,
+            sorted(
+                restaurant_cuisines
+            ),
+        )
 
     if not restaurant_cuisines:
         return None
@@ -2145,6 +2686,21 @@ def score_restaurant_for_session(
         restaurant_cuisines,
         participants,
     )
+
+    if _is_don_jose_target(
+        restaurant
+    ):
+        logger.warning(
+            (
+                "[DON-JOSE-MATCHING] CUISINE-SCORE "
+                "name=%r score=%s reasons=%s "
+                "warnings=%s"
+            ),
+            restaurant.name,
+            cuisine_score,
+            cuisine_reasons,
+            cuisine_warnings,
+        )
 
     if cuisine_score is None:
         return None
@@ -2273,6 +2829,23 @@ def score_restaurant_for_session(
         ]
     )[:4]
 
+    if _is_don_jose_target(
+        restaurant
+    ):
+        logger.warning(
+            (
+                "[DON-JOSE-MATCHING] FINAL "
+                "name=%r match=%s cuisine=%s "
+                "distance=%s rating=%s reasons=%s"
+            ),
+            restaurant.name,
+            final_score,
+            cuisine_score,
+            distance_score,
+            rating_score,
+            reasons,
+        )
+
     return ScoredRestaurant(
         restaurant=restaurant,
         match_score=final_score,
@@ -2340,22 +2913,47 @@ def score_and_sort_restaurants(
             scored_restaurant
         )
 
-    scored_restaurants.sort(
-        key=lambda item: (
-            item.dietary_priority_tier,
-            -item.dietary_priority_score,
-            -item.match_score,
-            -item.cuisine_score,
-            (
-                item.restaurant.distance_miles
-                if item.restaurant.distance_miles
-                is not None
-                else math.inf
-            ),
-            -item.rating_score,
-            -item.restaurant.user_rating_count,
-            item.restaurant.name.lower(),
+    required_dietary_slugs: set[str] = set()
+
+    for participant in participants:
+        required_dietary_slugs.update(
+            participant.required_dietary_slugs
         )
-    )
+
+    if required_dietary_slugs:
+        scored_restaurants.sort(
+            key=lambda item: (
+                item.dietary_priority_tier,
+                -item.dietary_priority_score,
+                -item.match_score,
+                -item.cuisine_score,
+                (
+                    item.restaurant.distance_miles
+                    if item.restaurant.distance_miles
+                    is not None
+                    else math.inf
+                ),
+                -item.rating_score,
+                -item.restaurant.user_rating_count,
+                item.restaurant.name.lower(),
+            )
+        )
+    else:
+        scored_restaurants.sort(
+            key=lambda item: (
+                -item.match_score,
+                -item.cuisine_score,
+                -item.dietary_priority_score,
+                (
+                    item.restaurant.distance_miles
+                    if item.restaurant.distance_miles
+                    is not None
+                    else math.inf
+                ),
+                -item.rating_score,
+                -item.restaurant.user_rating_count,
+                item.restaurant.name.lower(),
+            )
+        )
 
     return scored_restaurants

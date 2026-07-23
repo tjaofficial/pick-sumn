@@ -18,6 +18,15 @@ export type DecisionMode =
   | "elimination";
 
 
+export type SelectionMethod =
+  | "ranked_manual"
+  | "surprise_me"
+  | "group_vote"
+  | "roulette"
+  | "swipe"
+  | "elimination";
+
+
 export type PickSession = {
   id: string;
   title: string;
@@ -36,7 +45,12 @@ export type PickSession = {
   price_max: number;
   open_now: boolean;
   something_new: boolean;
+  selected_restaurant_external_id: string;
   selected_restaurant_name: string;
+  selected_restaurant_data: NearbyRestaurantMatch | Record<string, never>;
+  selection_method: SelectionMethod | "";
+  selected_by: number | null;
+  selected_at: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -283,7 +297,9 @@ export type GroupVoteState = {
 
 export type PickSessionNotificationKind =
   | "group_vote_invite"
-  | "group_vote_completed";
+  | "group_vote_started"
+  | "group_vote_completed"
+  | "restaurant_selected";
 
 
 export type PickSessionNotification = {
@@ -297,6 +313,9 @@ export type PickSessionNotification = {
   session_id: string;
   session_status: PickSessionStatus;
   decision_mode: DecisionMode;
+  selected_restaurant_external_id: string;
+  selected_restaurant_name: string;
+  selected_restaurant_data: NearbyRestaurantMatch | Record<string, never>;
 };
 
 

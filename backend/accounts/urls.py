@@ -2,7 +2,13 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
+    BlockedUserListView,
+    BlockUserView,
+    ChangePasswordView,
+    CurrentAppSettingsView,
     CurrentUserView,
+    DeleteAccountView,
+    FeedbackSubmissionView,
     FriendDetailView,
     FriendListView,
     FriendRequestActionView,
@@ -12,6 +18,7 @@ from .views import (
     MyFriendCodeView,
     RegisterView,
     SendFriendRequestView,
+    UnblockUserView,
 )
 
 app_name = "accounts"
@@ -37,4 +44,39 @@ urlpatterns = [
         name="friend-detail",
     ),
     path("friends/me/code/", MyFriendCodeView.as_view(), name="my-friend-code"),
+    path(
+        "friends/blocked/",
+        BlockedUserListView.as_view(),
+        name="blocked-users",
+    ),
+    path(
+        "friends/block/",
+        BlockUserView.as_view(),
+        name="block-user",
+    ),
+    path(
+        "friends/blocked/<int:user_id>/",
+        UnblockUserView.as_view(),
+        name="unblock-user",
+    ),
+    path(
+        "settings/",
+        CurrentAppSettingsView.as_view(),
+        name="app-settings",
+    ),
+    path(
+        "change-password/",
+        ChangePasswordView.as_view(),
+        name="change-password",
+    ),
+    path(
+        "delete-account/",
+        DeleteAccountView.as_view(),
+        name="delete-account",
+    ),
+    path(
+        "feedback/",
+        FeedbackSubmissionView.as_view(),
+        name="feedback",
+    ),
 ]

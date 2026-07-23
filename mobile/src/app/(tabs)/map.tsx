@@ -46,6 +46,8 @@ import {
 import {
   getCurrentPickSession,
   getPickSessionMatches,
+  recordRestaurantDetailView,
+  selectPickSessionRestaurant,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
   NearbyRestaurantMatch,
@@ -58,6 +60,13 @@ import {
   saveRestaurant,
 } from "@/features/savedRestaurants/savedRestaurantsService";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 const pickSumnLogo = require("../../../assets/images/pick-sumn-logo.png");
 
@@ -292,7 +301,7 @@ function MatchListCard({
           />
         ) : (
           <View style={styles.imageFallback}>
-            <Store size={30} color="#F3344A" />
+            <Store size={30} color={themeColor("#F3344A", "color")} />
           </View>
         )}
 
@@ -319,7 +328,7 @@ function MatchListCard({
 
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            <Star size={14} color="#E3A008" fill="#E3A008" />
+            <Star size={14} color={themeColor("#E3A008", "color")} fill="#E3A008" />
 
             <Text style={styles.statText}>
               {restaurant.rating !== null
@@ -329,7 +338,7 @@ function MatchListCard({
           </View>
 
           <View style={styles.stat}>
-            <Navigation size={14} color="#168B4F" />
+            <Navigation size={14} color={themeColor("#168B4F", "color")} />
 
             <Text style={styles.statText}>
               {restaurant.distance_miles !== null
@@ -339,7 +348,7 @@ function MatchListCard({
           </View>
 
           <View style={styles.stat}>
-            <Heart size={14} color="#F3344A" />
+            <Heart size={14} color={themeColor("#F3344A", "color")} />
 
             <Text style={styles.statText}>Group fit</Text>
           </View>
@@ -412,12 +421,18 @@ type RestaurantDetailProps = {
   restaurant: NearbyRestaurantMatch;
   rank: number;
   onClose: () => void;
+  onSelect: () => void;
+  isSelecting: boolean;
+  allowSelection: boolean;
 };
 
 function RestaurantDetail({
   restaurant,
   rank,
   onClose,
+  onSelect,
+  isSelecting,
+  allowSelection,
 }: RestaurantDetailProps) {
   const photoUrl = restaurant.photo_url || "";
 
@@ -558,11 +573,11 @@ function RestaurantDetail({
             ]}
           >
             {isSaving || isCheckingSaved ? (
-              <ActivityIndicator size="small" color="#F3344A" />
+              <ActivityIndicator size="small" color={themeColor("#F3344A", "color")} />
             ) : (
               <Heart
                 size={21}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
                 fill={isSaved ? "#F3344A" : "transparent"}
               />
             )}
@@ -575,7 +590,7 @@ function RestaurantDetail({
               pressed && styles.pressed,
             ]}
           >
-            <X size={21} color="#07111F" />
+            <X size={21} color={themeColor("#07111F", "color")} />
           </Pressable>
         </View>
       </View>
@@ -603,7 +618,7 @@ function RestaurantDetail({
       <View style={styles.actionGrid}>
         <DetailAction
           label="Directions"
-          icon={<Navigation size={21} color="#F3344A" />}
+          icon={<Navigation size={21} color={themeColor("#F3344A", "color")} />}
           onPress={() => openDirections(restaurant)}
         />
 
@@ -638,7 +653,7 @@ function RestaurantDetail({
         {!!restaurant.menu_uri && (
           <DetailAction
             label="Menu"
-            icon={<Menu size={21} color="#F3344A" />}
+            icon={<Menu size={21} color={themeColor("#F3344A", "color")} />}
             onPress={() => {
               void openExternalUrl(restaurant.menu_uri);
             }}
@@ -668,7 +683,7 @@ function RestaurantDetail({
         <View style={styles.detailDivider} />
 
         <View style={styles.detailStat}>
-          <Star size={18} color="#E3A008" fill="#E3A008" />
+          <Star size={18} color={themeColor("#E3A008", "color")} fill="#E3A008" />
 
           <Text style={styles.detailStatLabel}>Ratings</Text>
 
@@ -684,7 +699,7 @@ function RestaurantDetail({
         <View style={styles.detailDivider} />
 
         <View style={styles.detailStat}>
-          <Navigation size={18} color="#168B4F" />
+          <Navigation size={18} color={themeColor("#168B4F", "color")} />
 
           <Text style={styles.detailStatLabel}>Distance</Text>
 
@@ -697,7 +712,7 @@ function RestaurantDetail({
       </View>
 
       <View style={styles.detailAddress}>
-        <MapPin size={18} color="#69707C" />
+        <MapPin size={18} color={themeColor("#69707C", "color")} />
 
         <Text style={styles.detailAddressText}>
           {restaurant.formatted_address || "Address unavailable"}
@@ -715,7 +730,7 @@ function RestaurantDetail({
           />
         ) : (
           <View style={styles.detailPhotoFallback}>
-            <Store size={42} color="#F3344A" />
+            <Store size={42} color={themeColor("#F3344A", "color")} />
 
             <Text style={styles.detailPhotoFallbackText}>
               Photo unavailable
@@ -742,7 +757,7 @@ function RestaurantDetail({
 
       <View style={styles.detailPillRow}>
         <View style={styles.servicePill}>
-          <Utensils size={14} color="#4F5662" />
+          <Utensils size={14} color={themeColor("#4F5662", "color")} />
 
           <Text style={styles.servicePillText}>
             {getServiceText(restaurant)}
@@ -751,7 +766,7 @@ function RestaurantDetail({
 
         {restaurant.delivery === true && (
           <View style={styles.detailDeliveryPill}>
-            <Truck size={14} color="#7C4DCC" />
+            <Truck size={14} color={themeColor("#7C4DCC", "color")} />
 
             <Text style={styles.detailDeliveryText}>Delivery</Text>
           </View>
@@ -777,6 +792,36 @@ function RestaurantDetail({
         ))}
       </View>
 
+      {allowSelection && (
+      <Pressable
+        onPress={onSelect}
+        disabled={isSelecting}
+        style={[
+          styles.selectRestaurantButton,
+          isSelecting
+            && styles.selectRestaurantButtonDisabled,
+        ]}
+      >
+        {isSelecting ? (
+          <ActivityIndicator
+            size="small"
+            color={themeColor("#FFFFFF", "color")}
+          />
+        ) : (
+          <Sparkles
+            size={19}
+            color={themeColor("#FFFFFF", "color")}
+          />
+        )}
+
+        <Text style={styles.selectRestaurantButtonText}>
+          {isSelecting
+            ? "Selecting..."
+            : "Select This Restaurant"}
+        </Text>
+      </Pressable>
+      )}
+
       {!!restaurant.website_uri && (
         <Pressable
           onPress={() => {
@@ -787,7 +832,7 @@ function RestaurantDetail({
             pressed && styles.pressed,
           ]}
         >
-          <ExternalLink size={18} color="#FFFFFF" />
+          <ExternalLink size={18} color={themeColor("#FFFFFF", "color")} />
 
           <Text style={styles.fullWebsiteButtonText}>
             Visit Restaurant Website
@@ -799,6 +844,8 @@ function RestaurantDetail({
 }
 
 export default function MapScreen() {
+  useAppTheme();
+
   const mapRef = useRef<RestaurantMapHandle | null>(null);
 
   const bottomSheetRef = useRef<BottomSheet | null>(null);
@@ -830,6 +877,14 @@ export default function MapScreen() {
   );
 
   const [isLoading, setIsLoading] = useState(true);
+
+
+  const [
+    selectingRestaurantId,
+    setSelectingRestaurantId,
+  ] = useState<string | null>(
+    null,
+  );
 
   const [error, setError] = useState<string | null>(null);
 
@@ -921,11 +976,18 @@ export default function MapScreen() {
 
       setDetailRestaurantId(restaurant.external_id);
 
+      if (activeSession) {
+        void recordRestaurantDetailView(
+          activeSession.id,
+          restaurant,
+        );
+      }
+
       mapRef.current?.focusRestaurant(restaurant);
 
       bottomSheetRef.current?.snapToIndex(2);
     },
-    [],
+    [activeSession],
   );
 
   function closeRestaurantDetails() {
@@ -934,10 +996,99 @@ export default function MapScreen() {
     bottomSheetRef.current?.snapToIndex(1);
   }
 
+  async function completeSelection(
+    restaurant: NearbyRestaurantMatch,
+  ) {
+    if (!activeSession) {
+      return;
+    }
+
+    try {
+      setSelectingRestaurantId(
+        restaurant.external_id,
+      );
+
+      await selectPickSessionRestaurant(
+        activeSession.id,
+        restaurant.external_id,
+        activeSession.decision_mode
+        === "pick_for_us"
+          ? "surprise_me"
+          : "ranked_manual",
+      );
+
+      Alert.alert(
+        "Restaurant Selected",
+        (
+          `${restaurant.name} is where `
+          + "you’re eating. Everyone in the "
+          + "session has been notified."
+        ),
+        [
+          {
+            text: "View Recent Picks",
+            onPress: () =>
+              router.replace(
+                "/pick/recent",
+              ),
+          },
+        ],
+      );
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to select restaurant",
+        getApiErrorMessage(
+          requestError,
+          "This restaurant could not be selected.",
+        ),
+      );
+    } finally {
+      setSelectingRestaurantId(
+        null,
+      );
+    }
+  }
+
+
+  function confirmSelection(
+    restaurant: NearbyRestaurantMatch,
+  ) {
+    Alert.alert(
+      `Choose ${restaurant.name}?`,
+      (
+        activeSession?.decision_mode
+        === "pick_for_us"
+          ? (
+              "Pick Sum’N chose this restaurant. "
+              + "Are you going with this pick?"
+            )
+          : (
+              "This will complete the Pick Session "
+              + "and notify everyone that this is "
+              + "where the group is eating."
+            )
+      ),
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Yes, Pick This Place",
+          onPress: () =>
+            void completeSelection(
+              restaurant,
+            ),
+        },
+      ],
+    );
+  }
+
+
   if (isLoading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#F3344A" />
+        <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} />
 
         <Text style={styles.loadingText}>Loading your map...</Text>
       </View>
@@ -968,7 +1119,7 @@ export default function MapScreen() {
           }}
           style={({ pressed }) => [styles.mapButton, pressed && styles.pressed]}
         >
-          <LocateFixed size={20} color="#F3344A" />
+          <LocateFixed size={20} color={themeColor("#F3344A", "color")} />
         </Pressable>
 
         <Pressable
@@ -981,7 +1132,7 @@ export default function MapScreen() {
           }}
           style={({ pressed }) => [styles.mapButton, pressed && styles.pressed]}
         >
-          <List size={20} color="#F3344A" />
+          <List size={20} color={themeColor("#F3344A", "color")} />
         </Pressable>
       </Animated.View>
 
@@ -1008,6 +1159,19 @@ export default function MapScreen() {
               ) + 1
             }
             onClose={closeRestaurantDetails}
+            onSelect={() =>
+              confirmSelection(
+                detailRestaurant,
+              )
+            }
+            isSelecting={
+              selectingRestaurantId
+              === detailRestaurant.external_id
+            }
+            allowSelection={
+              activeSession?.decision_mode
+              !== "group_vote"
+            }
           />
         ) : (
           <>
@@ -1038,14 +1202,14 @@ export default function MapScreen() {
                 >
                   <Text style={styles.bestMatchText}>Best Match</Text>
 
-                  <ChevronDown size={12} color="#F3344A" />
+                  <ChevronDown size={12} color={themeColor("#F3344A", "color")} />
                 </Pressable>
 
                 <Pressable
                   onPress={() => router.push("/pick/setup")}
                   style={styles.roundFilterButton}
                 >
-                  <Filter size={16} color="#07111F" />
+                  <Filter size={16} color={themeColor("#07111F", "color")} />
                 </Pressable>
               </View>
             </View>
@@ -1060,7 +1224,7 @@ export default function MapScreen() {
                   onPress={() => void loadMatches()}
                   style={styles.retryButton}
                 >
-                  <RefreshCw size={16} color="#FFFFFF" />
+                  <RefreshCw size={16} color={themeColor("#FFFFFF", "color")} />
 
                   <Text style={styles.retryText}>Try Again</Text>
                 </Pressable>
@@ -1069,7 +1233,7 @@ export default function MapScreen() {
 
             {!error && !activeSession && (
               <View style={styles.emptyCard}>
-                <Sparkles size={32} color="#F3344A" />
+                <Sparkles size={32} color={themeColor("#F3344A", "color")} />
 
                 <Text style={styles.emptyTitle}>Start a Pick Sum’N first</Text>
 
@@ -1088,7 +1252,7 @@ export default function MapScreen() {
 
             {!error && activeSession && matches.length === 0 && (
               <View style={styles.emptyCard}>
-                <Store size={32} color="#F3344A" />
+                <Store size={32} color={themeColor("#F3344A", "color")} />
 
                 <Text style={styles.emptyTitle}>No matches found</Text>
 
@@ -1121,7 +1285,7 @@ export default function MapScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#E9EEF5",
@@ -1893,5 +2057,25 @@ const styles = StyleSheet.create({
         scale: 0.98,
       },
     ],
+  },
+  selectRestaurantButton: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 18,
+    borderRadius: 17,
+    backgroundColor: "#F3344A",
+  },
+
+  selectRestaurantButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  selectRestaurantButtonText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
 });

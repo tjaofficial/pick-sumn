@@ -41,6 +41,7 @@ import {
 import {
   deleteProfileAvatar,
   getProfile,
+  updateProfile,
 } from "@/features/profile/profileService";
 import type {
   Profile,
@@ -51,6 +52,16 @@ import {
 import {
   choosePhotoForCrop,
 } from "@/services/photoPicker";
+import {
+  useTheme,
+} from "@/hooks/use-theme";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 type ProfileRowProps = {
@@ -69,18 +80,30 @@ function ProfileRow({
   onPress,
   danger = false,
 }: ProfileRowProps) {
+  const colors = useTheme();
+
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
-        pressed && styles.rowPressed,
+        {
+          backgroundColor:
+            pressed
+              ? colors.surfaceMuted
+              : colors.surface,
+        },
       ]}
     >
       <View
         style={[
           styles.rowIcon,
-          danger && styles.dangerIcon,
+          {
+            backgroundColor:
+              danger
+                ? colors.dangerSoft
+                : colors.primarySoft,
+          },
         ]}
       >
         {icon}
@@ -90,13 +113,26 @@ function ProfileRow({
         <Text
           style={[
             styles.rowTitle,
-            danger && styles.dangerText,
+            {
+              color:
+                danger
+                  ? colors.danger
+                  : colors.text,
+            },
           ]}
         >
           {title}
         </Text>
 
-        <Text style={styles.rowSubtitle}>
+        <Text
+          style={[
+            styles.rowSubtitle,
+            {
+              color:
+                colors.textSecondary,
+            },
+          ]}
+        >
           {subtitle}
         </Text>
       </View>
@@ -104,7 +140,7 @@ function ProfileRow({
       {!danger && (
         <ChevronRight
           size={21}
-          color="#9298A2"
+          color={colors.textMuted}
         />
       )}
     </Pressable>
@@ -113,6 +149,10 @@ function ProfileRow({
 
 
 export default function ProfileScreen() {
+  useAppTheme();
+
+  const colors = useTheme();
+
   const {
     user,
     logout,
@@ -194,6 +234,30 @@ export default function ProfileScreen() {
     );
   }
 
+  async function dismissCompletionCard() {
+    if (!profile) {
+      return;
+    }
+
+    try {
+      const updatedProfile =
+        await updateProfile({
+          profile_completion_card_dismissed:
+            true,
+        });
+
+      setProfile(updatedProfile);
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to dismiss progress",
+        getApiErrorMessage(
+          requestError,
+          "The profile progress card could not be dismissed.",
+        ),
+      );
+    }
+  }
+
   function chooseProfilePhoto() {
     Alert.alert(
       profile?.avatar
@@ -270,11 +334,11 @@ export default function ProfileScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.loadingText}>
@@ -287,7 +351,7 @@ export default function ProfileScreen() {
 
   if (error || !profile) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
         <View style={styles.centerState}>
           <Text style={styles.errorTitle}>
             Profile unavailable
@@ -323,7 +387,7 @@ export default function ProfileScreen() {
     || "Pick Sum’N User";
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
       <ScrollView
         contentContainerStyle={
           styles.content
@@ -352,7 +416,7 @@ export default function ProfileScreen() {
             <View style={styles.cameraBadge}>
               <Camera
                 size={17}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
             </View>
           </Pressable>
@@ -367,11 +431,11 @@ export default function ProfileScreen() {
             </Text>
           </Pressable>
 
-          <Text style={styles.name}>
+          <Text style={[styles.name, { color: colors.text }]}>
             {displayName}
           </Text>
 
-          <Text style={styles.email}>
+          <Text style={[styles.email, { color: colors.textSecondary }]}>
             {profile.email}
           </Text>
 
@@ -381,11 +445,11 @@ export default function ProfileScreen() {
             >
               <MapPin
                 size={15}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
 
               <Text
-                style={styles.location}
+                style={[styles.location, { color: colors.textSecondary }]}
               >
                 {profile.location_display}
               </Text>
@@ -393,7 +457,7 @@ export default function ProfileScreen() {
           )}
 
           {!!profile.bio && (
-            <Text style={styles.bio}>
+            <Text style={[styles.bio, { color: colors.textSecondary }]}>
               {profile.bio}
             </Text>
           )}
@@ -404,11 +468,17 @@ export default function ProfileScreen() {
                 "/profile/edit",
               )
             }
-            style={styles.editButton}
+            style={[
+              styles.editButton,
+              {
+                backgroundColor:
+                  colors.surface,
+              },
+            ]}
           >
             <UserCircle
               size={18}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text
@@ -421,30 +491,35 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
-        <ProfileCompletionCard
-          percentage={
-            profile.completion_percentage
-          }
-          missingSections={
-            profile.missing_sections
-          }
-          onPress={() =>
-            router.push(
-              "/preferences",
-            )
-          }
-        />
+        {!profile.profile_completion_card_dismissed && (
+          <ProfileCompletionCard
+            percentage={
+              profile.completion_percentage
+            }
+            missingSections={
+              profile.missing_sections
+            }
+            onPress={() =>
+              router.push(
+                "/preferences",
+              )
+            }
+            onDismiss={() =>
+              void dismissCompletionCard()
+            }
+          />
+        )}
 
-        <Text style={styles.sectionTitle}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
           Social
         </Text>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <ProfileRow
             icon={
               <UserRoundPlus
                 size={21}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             }
             title="Friends"
@@ -453,16 +528,16 @@ export default function ProfileScreen() {
           />
         </View>
 
-        <Text style={styles.sectionTitle}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
           Food & Matching
         </Text>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <ProfileRow
             icon={
               <Utensils
                 size={21}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             }
             title="Food Preferences"
@@ -474,13 +549,13 @@ export default function ProfileScreen() {
             }
           />
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <ProfileRow
             icon={
               <SlidersHorizontal
                 size={21}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             }
             title="Default Search Settings"
@@ -496,13 +571,13 @@ export default function ProfileScreen() {
             }
           />
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <ProfileRow
             icon={
               <Heart
                 size={21}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             }
             title="Saved Restaurants"
@@ -514,13 +589,13 @@ export default function ProfileScreen() {
             }
           />
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <ProfileRow
             icon={
               <MapPin
                 size={21}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             }
             title="Saved Locations"
@@ -533,35 +608,34 @@ export default function ProfileScreen() {
           />
         </View>
 
-        <Text style={styles.sectionTitle}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>
           Account
         </Text>
 
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <ProfileRow
             icon={
               <Settings
                 size={21}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
             }
             title="App Settings"
             subtitle="Notifications, privacy, and appearance"
-            onPress={() => {
-              Alert.alert(
-                "Coming soon",
-                "App settings will be added later.",
-              );
-            }}
+            onPress={() =>
+              router.push(
+                "/settings",
+              )
+            }
           />
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <ProfileRow
             icon={
               <LogOut
                 size={21}
-                color="#C62828"
+                color={themeColor("#C62828", "color")}
               />
             }
             title="Log Out"
@@ -576,7 +650,7 @@ export default function ProfileScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

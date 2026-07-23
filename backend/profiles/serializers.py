@@ -111,6 +111,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "updated_at",
             "dietary_section_completed",
             "dislikes_section_completed",
+            "profile_completion_card_dismissed",
         )
 
         read_only_fields = (

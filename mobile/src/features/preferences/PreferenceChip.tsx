@@ -8,6 +8,10 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type PreferenceChipProps = {
   label: string;
@@ -49,7 +53,7 @@ export function PreferenceChip({
         {selected && rank == null && (
           <Check
             size={16}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
             strokeWidth={3}
           />
         )}
@@ -99,7 +103,7 @@ export function PreferenceChip({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   wrapper: {
     alignItems: "flex-start",
   },

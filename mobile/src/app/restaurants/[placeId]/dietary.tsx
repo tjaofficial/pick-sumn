@@ -42,6 +42,13 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 type BooleanReportField =
@@ -189,6 +196,8 @@ async function openExternalUrl(
 
 
 export default function RestaurantDietaryScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{
     placeId?: string | string[];
     dietarySlug?: string | string[];
@@ -445,7 +454,7 @@ export default function RestaurantDietaryScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.loadingText}>
@@ -467,7 +476,7 @@ export default function RestaurantDietaryScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -500,7 +509,7 @@ export default function RestaurantDietaryScreen() {
           <View style={styles.heroIcon}>
             <ShieldCheck
               size={32}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           </View>
 
@@ -518,7 +527,7 @@ export default function RestaurantDietaryScreen() {
             <View style={styles.sectionHeading}>
               <ShieldCheck
                 size={21}
-                color="#168B4F"
+                color={themeColor("#168B4F", "color")}
               />
 
               <Text style={styles.sectionTitle}>
@@ -543,7 +552,7 @@ export default function RestaurantDietaryScreen() {
               <View style={styles.evidenceRow}>
                 <CheckCircle2
                   size={16}
-                  color="#168B4F"
+                  color={themeColor("#168B4F", "color")}
                 />
 
                 <Text style={styles.evidenceText}>
@@ -560,7 +569,7 @@ export default function RestaurantDietaryScreen() {
                 >
                   <CheckCircle2
                     size={16}
-                    color="#168B4F"
+                    color={themeColor("#168B4F", "color")}
                   />
 
                   <Text style={styles.evidenceText}>
@@ -613,7 +622,7 @@ export default function RestaurantDietaryScreen() {
               >
                 <ExternalLink
                   size={17}
-                  color="#F3344A"
+                  color={themeColor("#F3344A", "color")}
                 />
 
                 <Text style={styles.sourceButtonText}>
@@ -638,7 +647,7 @@ export default function RestaurantDietaryScreen() {
           <View style={styles.sectionHeading}>
             <Users
               size={21}
-              color="#7C4DCC"
+              color={themeColor("#7C4DCC", "color")}
             />
 
             <Text style={styles.sectionTitle}>
@@ -738,7 +747,7 @@ export default function RestaurantDietaryScreen() {
           <View style={styles.sectionHeading}>
             <MessageSquarePlus
               size={21}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text style={styles.sectionTitle}>
@@ -850,7 +859,7 @@ export default function RestaurantDietaryScreen() {
                     {selected && (
                       <Check
                         size={15}
-                        color="#FFFFFF"
+                        color={themeColor("#FFFFFF", "color")}
                         strokeWidth={3}
                       />
                     )}
@@ -863,7 +872,7 @@ export default function RestaurantDietaryScreen() {
                   {option.concern && (
                     <AlertTriangle
                       size={17}
-                      color="#A66B00"
+                      color={themeColor("#A66B00", "color")}
                     />
                   )}
                 </Pressable>
@@ -880,7 +889,7 @@ export default function RestaurantDietaryScreen() {
             multiline
             maxLength={500}
             placeholder="Add a short, factual note about your experience."
-            placeholderTextColor="#9298A2"
+            placeholderTextColor={themeColor("#9298A2", "color")}
             style={styles.notesInput}
             textAlignVertical="top"
           />
@@ -919,12 +928,12 @@ export default function RestaurantDietaryScreen() {
             {isSubmitting ? (
               <ActivityIndicator
                 size="small"
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
             ) : (
               <Check
                 size={20}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
                 strokeWidth={3}
               />
             )}
@@ -942,7 +951,7 @@ export default function RestaurantDietaryScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

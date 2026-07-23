@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Clock3,
   ExternalLink,
+  Heart,
   MapPin,
   Navigation,
   RefreshCw,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react-native";
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Modal,
   Pressable,
@@ -38,18 +40,32 @@ import {
 } from "react-native";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import {
   getPickSessionMatches,
+  selectPickSessionRestaurant,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
   NearbyRestaurantMatch,
   PickSessionMatchesResponse,
 } from "@/features/pickSessions/types";
+import {
+  getSavedRestaurantStatus,
+  removeSavedRestaurantByExternalId,
+  saveRestaurant,
+} from "@/features/savedRestaurants/savedRestaurantsService";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 type SortOption =
@@ -475,7 +491,7 @@ function SortSelect({
 
         <ChevronDown
           size={16}
-          color="#69707C"
+          color={themeColor("#69707C", "color")}
         />
       </Pressable>
 
@@ -533,7 +549,7 @@ function SortSelect({
               >
                 <X
                   size={20}
-                  color="#07111F"
+                  color={themeColor("#07111F", "color")}
                 />
               </Pressable>
             </View>
@@ -587,7 +603,7 @@ function SortSelect({
                         >
                           <Check
                             size={15}
-                            color="#FFFFFF"
+                            color={themeColor("#FFFFFF", "color")}
                             strokeWidth={3}
                           />
                         </View>
@@ -642,6 +658,9 @@ type RestaurantCardProps = {
   restaurant: NearbyRestaurantMatch;
   rank: number;
   requestedDietarySlugs: string[];
+  onSelect: () => void;
+  isSelecting: boolean;
+  allowSelection: boolean;
 };
 
 
@@ -649,6 +668,9 @@ function RestaurantCard({
   restaurant,
   rank,
   requestedDietarySlugs,
+  onSelect,
+  isSelecting,
+  allowSelection,
 }: RestaurantCardProps) {
   const placeType =
     restaurant.primary_type_display_name
@@ -689,6 +711,126 @@ function RestaurantCard({
     setDietaryExpanded,
   ] = useState(false);
 
+  const [
+    isSaved,
+    setIsSaved,
+  ] = useState(false);
+
+  const [
+    isCheckingSaved,
+    setIsCheckingSaved,
+  ] = useState(true);
+
+  const [
+    isSaving,
+    setIsSaving,
+  ] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSavedStatus() {
+      try {
+        setIsCheckingSaved(true);
+
+        const status =
+          await getSavedRestaurantStatus(
+            restaurant.external_id,
+          );
+
+        if (isMounted) {
+          setIsSaved(status.is_saved);
+        }
+      } catch {
+        if (isMounted) {
+          setIsSaved(false);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingSaved(false);
+        }
+      }
+    }
+
+    void loadSavedStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [restaurant.external_id]);
+
+  async function toggleSavedRestaurant() {
+    if (isSaving || isCheckingSaved) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      if (isSaved) {
+        await removeSavedRestaurantByExternalId(
+          restaurant.external_id,
+        );
+
+        setIsSaved(false);
+        return;
+      }
+
+      await saveRestaurant({
+        external_id:
+          restaurant.external_id,
+        name:
+          restaurant.name,
+        formatted_address:
+          restaurant.formatted_address || "",
+        latitude:
+          restaurant.latitude,
+        longitude:
+          restaurant.longitude,
+        primary_type:
+          restaurant.primary_type || "",
+        primary_type_display_name:
+          restaurant.primary_type_display_name || "",
+        rating:
+          restaurant.rating,
+        user_rating_count:
+          restaurant.user_rating_count,
+        price_level:
+          restaurant.price_level || "",
+        phone_number:
+          restaurant.phone_number || "",
+        website_uri:
+          restaurant.website_uri || "",
+        google_maps_uri:
+          restaurant.google_maps_uri || "",
+        menu_uri:
+          restaurant.menu_uri || "",
+        photo_url:
+          restaurant.photo_url || "",
+        delivery:
+          restaurant.delivery,
+        dine_in:
+          restaurant.dine_in,
+        takeout:
+          restaurant.takeout,
+      });
+
+      setIsSaved(true);
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to update favorites",
+        getApiErrorMessage(
+          requestError,
+          isSaved
+            ? "Unable to remove this restaurant from your saved restaurants."
+            : "Unable to save this restaurant.",
+        ),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <View style={styles.restaurantCard}>
       <View style={styles.cardTopRow}>
@@ -715,18 +857,60 @@ function RestaurantCard({
           </Text>
         </View>
 
-        <View style={styles.scoreBadge}>
-          <Text
-            style={styles.scoreNumber}
+        <View style={styles.cardRightActions}>
+          <Pressable
+            disabled={
+              isSaving
+              || isCheckingSaved
+            }
+            onPress={() =>
+              void toggleSavedRestaurant()
+            }
+            style={({ pressed }) => [
+              styles.favoriteButton,
+              isSaved
+                && styles.favoriteButtonSaved,
+              pressed
+                && styles.buttonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isSaved
+                ? `Remove ${restaurant.name} from favorites`
+                : `Add ${restaurant.name} to favorites`
+            }
           >
-            {restaurant.match_score}%
-          </Text>
+            {isSaving || isCheckingSaved ? (
+              <ActivityIndicator
+                size="small"
+                color={themeColor("#F3344A", "color")}
+              />
+            ) : (
+              <Heart
+                size={19}
+                color={themeColor("#F3344A", "color")}
+                fill={
+                  isSaved
+                    ? "#F3344A"
+                    : "transparent"
+                }
+              />
+            )}
+          </Pressable>
 
-          <Text
-            style={styles.scoreLabel}
-          >
-            MATCH
-          </Text>
+          <View style={styles.scoreBadge}>
+            <Text
+              style={styles.scoreNumber}
+            >
+              {restaurant.match_score}%
+            </Text>
+
+            <Text
+              style={styles.scoreLabel}
+            >
+              MATCH
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -740,7 +924,7 @@ function RestaurantCard({
         <View style={styles.detailRow}>
           <MapPin
             size={17}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text
@@ -759,7 +943,7 @@ function RestaurantCard({
         <View style={styles.statItem}>
           <Star
             size={17}
-            color="#E3A008"
+            color={themeColor("#E3A008", "color")}
             fill="#E3A008"
           />
 
@@ -789,7 +973,7 @@ function RestaurantCard({
         <View style={styles.statItem}>
           <Navigation
             size={17}
-            color="#168B4F"
+            color={themeColor("#168B4F", "color")}
           />
 
           <Text style={styles.statText}>
@@ -805,7 +989,7 @@ function RestaurantCard({
         <View style={styles.statItem}>
           <Store
             size={17}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.statText}>
@@ -819,7 +1003,7 @@ function RestaurantCard({
       <View style={styles.serviceRow}>
         <Utensils
           size={16}
-          color="#69707C"
+          color={themeColor("#69707C", "color")}
         />
 
         <Text
@@ -853,7 +1037,7 @@ function RestaurantCard({
                 >
                   <CheckCircle2
                     size={16}
-                    color="#168B4F"
+                    color={themeColor("#168B4F", "color")}
                   />
 
                   <Text
@@ -902,7 +1086,7 @@ function RestaurantCard({
             >
               <ShieldCheck
                 size={18}
-                color="#168B4F"
+                color={themeColor("#168B4F", "color")}
               />
 
               <View
@@ -935,12 +1119,12 @@ function RestaurantCard({
             {dietaryExpanded ? (
               <ChevronUp
                 size={20}
-                color="#168B4F"
+                color={themeColor("#168B4F", "color")}
               />
             ) : (
               <ChevronDown
                 size={20}
-                color="#168B4F"
+                color={themeColor("#168B4F", "color")}
               />
             )}
           </Pressable>
@@ -1006,7 +1190,7 @@ function RestaurantCard({
                       >
                         <CheckCircle2
                           size={15}
-                          color="#168B4F"
+                          color={themeColor("#168B4F", "color")}
                         />
 
                         <Text
@@ -1067,7 +1251,7 @@ function RestaurantCard({
                       >
                         <AlertTriangle
                           size={15}
-                          color="#A66B00"
+                          color={themeColor("#A66B00", "color")}
                         />
 
                         <Text
@@ -1092,7 +1276,7 @@ function RestaurantCard({
                     >
                       <ShieldQuestion
                         size={15}
-                        color="#69707C"
+                        color={themeColor("#69707C", "color")}
                       />
 
                       <Text
@@ -1255,7 +1439,7 @@ function RestaurantCard({
             >
               <ShieldQuestion
                 size={18}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
 
               <View
@@ -1288,12 +1472,12 @@ function RestaurantCard({
             {dietaryExpanded ? (
               <ChevronUp
                 size={20}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
             ) : (
               <ChevronDown
                 size={20}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
             )}
           </Pressable>
@@ -1435,7 +1619,7 @@ function RestaurantCard({
           >
             <Truck
               size={14}
-              color="#7C4DCC"
+              color={themeColor("#7C4DCC", "color")}
             />
 
             <Text
@@ -1469,7 +1653,7 @@ function RestaurantCard({
             >
               <Navigation
                 size={18}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
 
               <Text
@@ -1497,7 +1681,7 @@ function RestaurantCard({
             >
               <ExternalLink
                 size={18}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
 
               <Text
@@ -1511,12 +1695,45 @@ function RestaurantCard({
           )}
         </View>
       )}
+
+      {allowSelection && (
+        <Pressable
+          onPress={onSelect}
+          disabled={isSelecting}
+          style={[
+            styles.selectRestaurantButton,
+            isSelecting
+              && styles.selectRestaurantButtonDisabled,
+          ]}
+        >
+          {isSelecting ? (
+            <ActivityIndicator
+              size="small"
+              color={themeColor("#FFFFFF", "color")}
+            />
+          ) : (
+            <Check
+              size={19}
+              color={themeColor("#FFFFFF", "color")}
+              strokeWidth={3}
+            />
+          )}
+
+          <Text style={styles.selectRestaurantButtonText}>
+            {isSelecting
+              ? "Selecting..."
+              : "Select This Restaurant"}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
 
 
 export default function MatchesScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{
     sessionId?: string | string[];
     decisionMode?: string | string[];
@@ -1558,6 +1775,88 @@ export default function MatchesScreen() {
   ] = useState<SortOption>(
     "best_match",
   );
+
+
+  const [
+    selectingRestaurantId,
+    setSelectingRestaurantId,
+  ] = useState<string | null>(
+    null,
+  );
+
+
+  async function completeSelection(
+    restaurant: NearbyRestaurantMatch,
+  ) {
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      setSelectingRestaurantId(
+        restaurant.external_id,
+      );
+
+      await selectPickSessionRestaurant(
+        sessionId,
+        restaurant.external_id,
+        decisionMode === "pick_for_us"
+          ? "surprise_me"
+          : "ranked_manual",
+      );
+
+    } catch (requestError) {
+      Alert.alert(
+        "Unable to select restaurant",
+        getApiErrorMessage(
+          requestError,
+          "This restaurant could not be selected.",
+        ),
+      );
+    } finally {
+      setSelectingRestaurantId(
+        null,
+      );
+    }
+  }
+
+
+  function confirmSelection(
+    restaurant: NearbyRestaurantMatch,
+  ) {
+    const message =
+      decisionMode === "pick_for_us"
+        ? (
+            "Pick Sum’N chose this restaurant. "
+            + "Are you going with this pick?"
+          )
+        : (
+            "This will complete the Pick Session "
+            + "and notify everyone that this is "
+            + "where the group is eating."
+          );
+
+    Alert.alert(
+      `Choose ${restaurant.name}?`,
+      message,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text:
+            decisionMode === "pick_for_us"
+              ? "Choose This Restaurant"
+              : "Yes, Pick This Place",
+          onPress: () =>
+            void completeSelection(
+              restaurant,
+            ),
+        },
+      ],
+    );
+  }
 
   const loadMatches = useCallback(
     async () => {
@@ -1671,13 +1970,13 @@ export default function MatchesScreen() {
           >
             <Sparkles
               size={35}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
           </View>
 
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text
@@ -1710,7 +2009,7 @@ export default function MatchesScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -1726,7 +2025,7 @@ export default function MatchesScreen() {
         >
           <RefreshCw
             size={20}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
       </View>
@@ -1742,7 +2041,7 @@ export default function MatchesScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
       >
@@ -1750,7 +2049,7 @@ export default function MatchesScreen() {
           <View style={styles.heroIcon}>
             <Sparkles
               size={30}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           </View>
 
@@ -1777,7 +2076,7 @@ export default function MatchesScreen() {
               >
                 <MapPin
                   size={16}
-                  color="#F7A4AE"
+                  color={themeColor("#F7A4AE", "color")}
                 />
 
                 <Text
@@ -1800,7 +2099,7 @@ export default function MatchesScreen() {
               >
                 <Navigation
                   size={16}
-                  color="#F7A4AE"
+                  color={themeColor("#F7A4AE", "color")}
                 />
 
                 <Text
@@ -1835,22 +2134,38 @@ export default function MatchesScreen() {
             </Text>
 
             <Pressable
-              onPress={() =>
-                void loadMatches()
-              }
+              onPress={() => {
+                if (!sessionId) {
+                  router.replace(
+                    "/(tabs)/pick",
+                  );
+                  return;
+                }
+
+                void loadMatches();
+              }}
               style={styles.retryButton}
             >
-              <RefreshCw
-                size={18}
-                color="#FFFFFF"
-              />
+              {sessionId ? (
+                <RefreshCw
+                  size={18}
+                  color={themeColor("#FFFFFF", "color")}
+                />
+              ) : (
+                <Sparkles
+                  size={18}
+                  color={themeColor("#FFFFFF", "color")}
+                />
+              )}
 
               <Text
                 style={
                   styles.retryButtonText
                 }
               >
-                Try Again
+                {sessionId
+                  ? "Try Again"
+                  : "Go Pick Sum’N"}
               </Text>
             </Pressable>
           </View>
@@ -1865,7 +2180,7 @@ export default function MatchesScreen() {
             >
               <Store
                 size={34}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             </View>
 
@@ -1958,6 +2273,19 @@ export default function MatchesScreen() {
                         .requested_dietary_slugs
                       ?? []
                     }
+                    onSelect={() =>
+                      confirmSelection(
+                        restaurant,
+                      )
+                    }
+                    isSelecting={
+                      selectingRestaurantId
+                      === restaurant.external_id
+                    }
+                    allowSelection={
+                      decisionMode
+                      !== "group_vote"
+                    }
                   />
                 ),
               )}
@@ -1970,7 +2298,7 @@ export default function MatchesScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",
@@ -2249,6 +2577,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     color: "#69707C",
+  },
+
+  cardRightActions: {
+    alignItems: "center",
+    gap: 7,
+  },
+
+  favoriteButton: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#F7C8CE",
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+  },
+
+  favoriteButtonSaved: {
+    borderColor: "#F3344A",
+    backgroundColor: "#FFF0F2",
   },
 
   scoreBadge: {
@@ -2837,5 +3186,25 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     color: "#69707C",
     textAlign: "center",
+  },
+  selectRestaurantButton: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 17,
+    borderRadius: 16,
+    backgroundColor: "#F3344A",
+  },
+
+  selectRestaurantButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  selectRestaurantButtonText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
 });

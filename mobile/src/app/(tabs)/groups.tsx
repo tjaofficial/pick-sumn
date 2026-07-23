@@ -32,8 +32,17 @@ import type {
   DiningGroupInvitation,
 } from "@/features/groups/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 export default function GroupsScreen() {
+  useAppTheme();
+
   const [groups, setGroups] = useState<DiningGroup[]>([]);
   const [invitations, setInvitations] = useState<
     DiningGroupInvitation[]
@@ -155,7 +164,7 @@ export default function GroupsScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.stateText}>
@@ -184,7 +193,7 @@ export default function GroupsScreen() {
         <View style={styles.headerIcon}>
           <Users
             size={27}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
         </View>
       </View>
@@ -196,7 +205,7 @@ export default function GroupsScreen() {
         >
           <Plus
             size={21}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
             strokeWidth={2.5}
           />
 
@@ -211,7 +220,7 @@ export default function GroupsScreen() {
         >
           <UserRoundPlus
             size={21}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
             strokeWidth={2.4}
           />
 
@@ -256,7 +265,7 @@ export default function GroupsScreen() {
               >
                 <Check
                   size={18}
-                  color="#FFFFFF"
+                  color={themeColor("#FFFFFF", "color")}
                 />
               </Pressable>
 
@@ -271,7 +280,7 @@ export default function GroupsScreen() {
               >
                 <X
                   size={18}
-                  color="#C62828"
+                  color={themeColor("#C62828", "color")}
                 />
               </Pressable>
             </View>
@@ -289,7 +298,7 @@ export default function GroupsScreen() {
           >
             <RefreshCw
               size={17}
-              color="#C62828"
+              color={themeColor("#C62828", "color")}
             />
 
             <Text style={styles.retryText}>Try again</Text>
@@ -327,7 +336,7 @@ export default function GroupsScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={handleRefresh}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
         ListEmptyComponent={
@@ -335,7 +344,7 @@ export default function GroupsScreen() {
             <View style={styles.emptyIcon}>
               <Users
                 size={42}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
                 strokeWidth={1.8}
               />
             </View>
@@ -354,7 +363,7 @@ export default function GroupsScreen() {
             >
               <Plus
                 size={20}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
 
               <Text style={styles.emptyButtonText}>
@@ -380,7 +389,7 @@ export default function GroupsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

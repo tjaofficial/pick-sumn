@@ -33,13 +33,23 @@ import {
 
 import {
   getGroupVote,
+  getPickSession,
+  recordRestaurantDetailView,
 } from "@/features/pickSessions/pickSessionsService";
 import type {
   GroupVoteOption,
+  NearbyRestaurantMatch,
 } from "@/features/pickSessions/types";
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 async function openUrl(
@@ -97,6 +107,8 @@ function getDirectionsUrl(
 
 
 export default function RestaurantDetailScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{
     sessionId?: string | string[];
     optionId?: string | string[];
@@ -148,6 +160,44 @@ export default function RestaurantDetailScreen() {
       }
 
       try {
+        if (optionId === "selected") {
+          const session =
+            await getPickSession(
+              sessionId,
+            );
+
+          const selectedData =
+            session.selected_restaurant_data;
+
+          if (
+            !session.selected_restaurant_external_id
+            || !selectedData
+            || !("external_id" in selectedData)
+          ) {
+            setError(
+              "This restaurant is no longer available.",
+            );
+            setOption(null);
+            return;
+          }
+
+          setOption({
+            id: "selected",
+            external_id:
+              session.selected_restaurant_external_id,
+            name:
+              session.selected_restaurant_name,
+            rank: 1,
+            match_score:
+              selectedData.match_score,
+            vote_count: 0,
+            restaurant:
+              selectedData as NearbyRestaurantMatch,
+          });
+
+          return;
+        }
+
         const voteState =
           await getGroupVote(
             sessionId,
@@ -185,6 +235,29 @@ export default function RestaurantDetailScreen() {
   ]);
 
 
+  useEffect(() => {
+    if (
+      !sessionId
+      || !option
+    ) {
+      return;
+    }
+
+    void recordRestaurantDetailView(
+      sessionId,
+      {
+        external_id:
+          option.external_id,
+        name:
+          option.name,
+      },
+    );
+  }, [
+    option,
+    sessionId,
+  ]);
+
+
   const reasons = useMemo(
     () =>
       option?.restaurant
@@ -201,7 +274,7 @@ export default function RestaurantDetailScreen() {
         <View style={styles.center}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.loadingText}>
@@ -250,12 +323,22 @@ export default function RestaurantDetailScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => {
+            if (optionId === "selected") {
+              router.replace(
+                "/(tabs)/pick",
+              );
+
+              return;
+            }
+
+            router.back();
+          }}
           style={styles.topBarButton}
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -288,7 +371,7 @@ export default function RestaurantDetailScreen() {
             >
               <Store
                 size={46}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
 
               <Text
@@ -332,7 +415,7 @@ export default function RestaurantDetailScreen() {
           <View style={styles.metaItem}>
             <Star
               size={17}
-              color="#E3A008"
+              color={themeColor("#E3A008", "color")}
               fill="#E3A008"
             />
 
@@ -349,7 +432,7 @@ export default function RestaurantDetailScreen() {
           <View style={styles.metaItem}>
             <Navigation
               size={17}
-              color="#168B4F"
+              color={themeColor("#168B4F", "color")}
             />
 
             <Text style={styles.metaText}>
@@ -367,7 +450,7 @@ export default function RestaurantDetailScreen() {
         <View style={styles.addressCard}>
           <MapPin
             size={19}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text style={styles.addressText}>
@@ -387,7 +470,7 @@ export default function RestaurantDetailScreen() {
           >
             <Navigation
               size={20}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
 
             <Text
@@ -484,7 +567,7 @@ export default function RestaurantDetailScreen() {
             >
               <Globe2
                 size={20}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
 
               <Text style={styles.linkText}>
@@ -493,7 +576,7 @@ export default function RestaurantDetailScreen() {
 
               <ExternalLink
                 size={17}
-                color="#9298A2"
+                color={themeColor("#9298A2", "color")}
               />
             </Pressable>
           )}
@@ -509,7 +592,7 @@ export default function RestaurantDetailScreen() {
             >
               <Utensils
                 size={20}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
 
               <Text style={styles.linkText}>
@@ -518,7 +601,7 @@ export default function RestaurantDetailScreen() {
 
               <ExternalLink
                 size={17}
-                color="#9298A2"
+                color={themeColor("#9298A2", "color")}
               />
             </Pressable>
           )}
@@ -529,7 +612,7 @@ export default function RestaurantDetailScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

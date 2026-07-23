@@ -48,6 +48,13 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 function getPriceText(
@@ -69,6 +76,8 @@ function getPriceText(
 
 
 export default function GroupVoteScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{
     id?: string | string[];
   }>();
@@ -373,7 +382,7 @@ export default function GroupVoteScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.loadingText}>
@@ -408,7 +417,7 @@ export default function GroupVoteScreen() {
           >
             <RefreshCw
               size={18}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
 
             <Text
@@ -440,7 +449,7 @@ export default function GroupVoteScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -458,7 +467,7 @@ export default function GroupVoteScreen() {
         >
           <RefreshCw
             size={20}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
       </View>
@@ -476,7 +485,7 @@ export default function GroupVoteScreen() {
             onRefresh={() => {
               void loadVote(true);
             }}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
       >
@@ -484,12 +493,12 @@ export default function GroupVoteScreen() {
           {completed ? (
             <Trophy
               size={38}
-              color="#FFE18A"
+              color={themeColor("#FFE18A", "color")}
             />
           ) : (
             <Vote
               size={38}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           )}
 
@@ -518,7 +527,7 @@ export default function GroupVoteScreen() {
           <View style={styles.summaryItem}>
             <Users
               size={18}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text style={styles.summaryValue}>
@@ -533,7 +542,7 @@ export default function GroupVoteScreen() {
           <View style={styles.summaryItem}>
             <Check
               size={18}
-              color="#168B4F"
+              color={themeColor("#168B4F", "color")}
             />
 
             <Text style={styles.summaryValue}>
@@ -548,7 +557,7 @@ export default function GroupVoteScreen() {
           <View style={styles.summaryItem}>
             <MapPin
               size={18}
-              color="#3A72D8"
+              color={themeColor("#3A72D8", "color")}
             />
 
             <Text
@@ -622,7 +631,7 @@ export default function GroupVoteScreen() {
                       >
                         <Vote
                           size={28}
-                          color="#F3344A"
+                          color={themeColor("#F3344A", "color")}
                         />
                       </View>
                     )}
@@ -669,7 +678,7 @@ export default function GroupVoteScreen() {
                     >
                       <Star
                         size={14}
-                        color="#E3A008"
+                        color={themeColor("#E3A008", "color")}
                         fill="#E3A008"
                       />
 
@@ -745,7 +754,7 @@ export default function GroupVoteScreen() {
                           >
                             <Crown
                               size={14}
-                              color="#9A6C00"
+                              color={themeColor("#9A6C00", "color")}
                             />
 
                             <Text
@@ -784,7 +793,7 @@ export default function GroupVoteScreen() {
 
                             <ChevronRight
                               size={14}
-                              color="#FFFFFF"
+                              color={themeColor("#FFFFFF", "color")}
                             />
                           </Pressable>
                         </View>
@@ -800,7 +809,7 @@ export default function GroupVoteScreen() {
                           {selected && (
                             <Check
                               size={16}
-                              color="#FFFFFF"
+                              color={themeColor("#FFFFFF", "color")}
                               strokeWidth={3}
                             />
                           )}
@@ -843,12 +852,12 @@ export default function GroupVoteScreen() {
             {isSubmitting ? (
               <ActivityIndicator
                 size="small"
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
             ) : (
               <Check
                 size={21}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
                 strokeWidth={3}
               />
             )}
@@ -880,7 +889,7 @@ export default function GroupVoteScreen() {
           >
             <Trophy
               size={20}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text style={styles.finishText}>
@@ -894,7 +903,7 @@ export default function GroupVoteScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

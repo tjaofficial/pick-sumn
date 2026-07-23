@@ -40,9 +40,18 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 export default function SavedLocationsScreen() {
+  useAppTheme();
+
   const [locations, setLocations] =
     useState<SavedLocation[]>([]);
   const [name, setName] =
@@ -271,7 +280,7 @@ export default function SavedLocationsScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -300,7 +309,7 @@ export default function SavedLocationsScreen() {
           value={name}
           onChangeText={setName}
           placeholder="Home, Work, Downtown..."
-          placeholderTextColor="#9298A2"
+          placeholderTextColor={themeColor("#9298A2", "color")}
           style={styles.input}
         />
 
@@ -312,7 +321,7 @@ export default function SavedLocationsScreen() {
           <View style={styles.searchInput}>
             <Search
               size={19}
-              color="#9298A2"
+              color={themeColor("#9298A2", "color")}
             />
             <TextInput
               value={query}
@@ -322,13 +331,13 @@ export default function SavedLocationsScreen() {
                 setLongitude(null);
               }}
               placeholder="Search for an address"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               style={{ flex: 1 }}
             />
             {isSearching && (
               <ActivityIndicator
                 size="small"
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             )}
           </View>
@@ -354,7 +363,7 @@ export default function SavedLocationsScreen() {
                   >
                     <MapPin
                       size={17}
-                      color="#F3344A"
+                      color={themeColor("#F3344A", "color")}
                     />
                     <View style={{ flex: 1 }}>
                       <Text
@@ -394,7 +403,7 @@ export default function SavedLocationsScreen() {
         >
           <Plus
             size={20}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
           />
           <Text style={styles.addText}>
             {isSaving
@@ -416,13 +425,13 @@ export default function SavedLocationsScreen() {
         {isLoading ? (
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
         ) : locations.length === 0 ? (
           <View style={styles.emptyCard}>
             <MapPin
               size={30}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
             <Text style={styles.emptyTitle}>
               No saved locations yet
@@ -439,7 +448,7 @@ export default function SavedLocationsScreen() {
               >
                 <MapPin
                   size={21}
-                  color="#F3344A"
+                  color={themeColor("#F3344A", "color")}
                 />
 
                 <View style={{ flex: 1 }}>
@@ -473,7 +482,7 @@ export default function SavedLocationsScreen() {
                 >
                   <Trash2
                     size={18}
-                    color="#C62828"
+                    color={themeColor("#C62828", "color")}
                   />
                 </Pressable>
               </View>
@@ -486,7 +495,7 @@ export default function SavedLocationsScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

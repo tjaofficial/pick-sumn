@@ -10,12 +10,14 @@ import {
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import {
   useEffect,
   useMemo,
@@ -35,6 +37,13 @@ import type {
   SavePreferencesInput,
 } from "@/features/preferences/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 type SelectedCuisine = {
   level: PreferenceLevel;
@@ -77,6 +86,8 @@ function SectionHeader({
 }
 
 export default function PreferencesScreen() {
+  useAppTheme();
+
   const [options, setOptions] =
     useState<PreferenceOptions | null>(null);
 
@@ -392,7 +403,7 @@ export default function PreferencesScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.loadingText}>
@@ -438,7 +449,7 @@ export default function PreferencesScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -463,7 +474,7 @@ export default function PreferencesScreen() {
         <View style={styles.introCard}>
           <Sparkles
             size={26}
-            color="#E3A008"
+            color={themeColor("#E3A008", "color")}
           />
 
           <View style={styles.introContent}>
@@ -483,7 +494,7 @@ export default function PreferencesScreen() {
             icon={
               <Heart
                 size={22}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             }
             title="Top Five Cuisines"
@@ -598,7 +609,7 @@ export default function PreferencesScreen() {
             icon={
               <Leaf
                 size={22}
-                color="#21A05A"
+                color={themeColor("#21A05A", "color")}
               />
             }
             title="Dietary Preferences"
@@ -647,7 +658,7 @@ export default function PreferencesScreen() {
         <View style={styles.priceReminder}>
           <CircleDollarSign
             size={24}
-            color="#E3A008"
+            color={themeColor("#E3A008", "color")}
           />
 
           <Text style={styles.priceReminderText}>
@@ -675,12 +686,12 @@ export default function PreferencesScreen() {
           {isSaving ? (
             <ActivityIndicator
               size="small"
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           ) : (
             <Save
               size={21}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           )}
 
@@ -695,7 +706,7 @@ export default function PreferencesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

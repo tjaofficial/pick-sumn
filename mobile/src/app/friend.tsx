@@ -25,9 +25,18 @@ import {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 export default function FriendLinkScreen() {
+  useAppTheme();
+
   const params =
     useLocalSearchParams<{
       code?: string | string[];
@@ -94,17 +103,17 @@ export default function FriendLinkScreen() {
         {status === "loading" ? (
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
         ) : status === "success" ? (
           <Check
             size={46}
-            color="#168B4F"
+            color={themeColor("#168B4F", "color")}
           />
         ) : (
           <UserPlus
             size={46}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
         )}
 
@@ -142,7 +151,7 @@ export default function FriendLinkScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     alignItems: "center",

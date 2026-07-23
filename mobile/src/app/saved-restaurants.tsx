@@ -39,6 +39,13 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 function getRestaurantType(
@@ -141,7 +148,7 @@ function SavedRestaurantCard({
           >
             <Store
               size={34}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
           </View>
         )}
@@ -149,7 +156,7 @@ function SavedRestaurantCard({
         <View style={styles.savedBadge}>
           <Heart
             size={16}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
             fill="#FFFFFF"
           />
         </View>
@@ -203,12 +210,12 @@ function SavedRestaurantCard({
             {isRemoving ? (
               <ActivityIndicator
                 size="small"
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             ) : (
               <Trash2
                 size={18}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             )}
           </Pressable>
@@ -217,7 +224,7 @@ function SavedRestaurantCard({
         <View style={styles.ratingRow}>
           <Star
             size={15}
-            color="#E3A008"
+            color={themeColor("#E3A008", "color")}
             fill="#E3A008"
           />
 
@@ -248,7 +255,7 @@ function SavedRestaurantCard({
         <View style={styles.addressRow}>
           <MapPin
             size={15}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text
@@ -267,7 +274,7 @@ function SavedRestaurantCard({
 
           <ChevronRight
             size={19}
-            color="#9298A2"
+            color={themeColor("#9298A2", "color")}
           />
         </View>
       </View>
@@ -277,6 +284,8 @@ function SavedRestaurantCard({
 
 
 export default function SavedRestaurantsScreen() {
+  useAppTheme();
+
   const [
     savedRestaurants,
     setSavedRestaurants,
@@ -416,7 +425,7 @@ export default function SavedRestaurantsScreen() {
         >
           <ChevronLeft
             size={25}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -433,7 +442,7 @@ export default function SavedRestaurantsScreen() {
         <View style={styles.headerHeart}>
           <Heart
             size={22}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
             fill="#F3344A"
           />
         </View>
@@ -443,7 +452,7 @@ export default function SavedRestaurantsScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.stateText}>
@@ -462,7 +471,7 @@ export default function SavedRestaurantsScreen() {
             <RefreshControl
               refreshing={isRefreshing}
               onRefresh={handleRefresh}
-              tintColor="#F3344A"
+              tintColor={themeColor("#F3344A", "color")}
             />
           }
         >
@@ -486,7 +495,7 @@ export default function SavedRestaurantsScreen() {
               >
                 <RefreshCw
                   size={16}
-                  color="#FFFFFF"
+                  color={themeColor("#FFFFFF", "color")}
                 />
 
                 <Text
@@ -511,7 +520,7 @@ export default function SavedRestaurantsScreen() {
               >
                 <Heart
                   size={42}
-                  color="#F3344A"
+                  color={themeColor("#F3344A", "color")}
                 />
               </View>
 
@@ -542,7 +551,7 @@ export default function SavedRestaurantsScreen() {
               >
                 <MapPin
                   size={18}
-                  color="#FFFFFF"
+                  color={themeColor("#FFFFFF", "color")}
                 />
 
                 <Text
@@ -600,7 +609,7 @@ export default function SavedRestaurantsScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFFDFB",

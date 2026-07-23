@@ -5,6 +5,10 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type PlaceholderScreenProps = {
   title: string;
@@ -32,7 +36,7 @@ export function PlaceholderScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

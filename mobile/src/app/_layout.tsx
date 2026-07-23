@@ -7,6 +7,9 @@ import {
 import {
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
+import {
+  SafeAreaProvider,
+} from "react-native-safe-area-context";
 
 import {
   AuthProvider,
@@ -18,6 +21,13 @@ import {
 import {
   PickDraftProvider,
 } from "@/features/pickSessions/PickDraftContext";
+import {
+  AppThemeProvider,
+} from "@/features/settings/AppThemeContext";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 
 function RootNavigator() {
@@ -31,7 +41,7 @@ function RootNavigator() {
       <View style={styles.loadingScreen}>
         <ActivityIndicator
           size="large"
-          color="#F3344A"
+          color={themeColor("#F3344A", "color")}
         />
       </View>
     );
@@ -131,6 +141,106 @@ function RootNavigator() {
           }}
         />
 
+
+        <Stack.Screen
+          name="settings/index"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/privacy-security"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/blocked-users"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/privacy-options"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/notifications"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/appearance"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/change-password"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/location-privacy"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/delete-account"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+
+        <Stack.Screen
+          name="settings/help-support"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/feedback"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/about"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/privacy-policy"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/terms"
+          options={{
+            headerShown: false,
+          }}
+        />
+
         <Stack.Screen
           name="restaurants/[sessionId]/[optionId]"
           options={{
@@ -155,19 +265,23 @@ export default function RootLayout() {
     <GestureHandlerRootView
       style={styles.root}
     >
-      <AuthProvider>
-        <PickDraftProvider>
-          <LiveNotificationsProvider>
-            <RootNavigator />
-          </LiveNotificationsProvider>
-        </PickDraftProvider>
-      </AuthProvider>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <AppThemeProvider>
+            <PickDraftProvider>
+              <LiveNotificationsProvider>
+                <RootNavigator />
+              </LiveNotificationsProvider>
+            </PickDraftProvider>
+          </AppThemeProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   root: {
     flex: 1,
   },

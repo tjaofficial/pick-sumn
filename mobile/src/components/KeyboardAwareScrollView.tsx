@@ -10,6 +10,10 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 
 type KeyboardAwareScrollViewProps = {
@@ -65,7 +69,7 @@ export function KeyboardAwareScrollView({
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   container: {
     flex: 1,
   },

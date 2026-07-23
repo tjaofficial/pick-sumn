@@ -3,6 +3,7 @@ import { apiRequest } from "@/services/api";
 import type {
   FriendListItem,
   FriendRequest,
+  BlockedUser,
   FriendSearchResult,
   FriendUser,
 } from "./types";
@@ -56,4 +57,41 @@ export async function removeFriend(friendshipId: string): Promise<void> {
 
 export async function getMyFriendCode(): Promise<FriendUser> {
   return apiRequest<FriendUser>("/api/auth/friends/me/code/");
+}
+
+
+
+export async function getBlockedUsers(): Promise<
+  BlockedUser[]
+> {
+  return apiRequest<BlockedUser[]>(
+    "/api/auth/friends/blocked/",
+  );
+}
+
+
+export async function blockUser(
+  userId: number,
+): Promise<{ detail: string }> {
+  return apiRequest<{ detail: string }>(
+    "/api/auth/friends/block/",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: userId,
+      }),
+    },
+  );
+}
+
+
+export async function unblockUser(
+  userId: number,
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/auth/friends/blocked/${userId}/`,
+    {
+      method: "DELETE",
+    },
+  );
 }

@@ -31,6 +31,33 @@ class DecisionMode(models.TextChoices):
     ELIMINATION = "elimination", "Elimination Mode"
 
 
+class SelectionMethod(models.TextChoices):
+    RANKED_MANUAL = (
+        "ranked_manual",
+        "Ranked Results - Manual Selection",
+    )
+    SURPRISE_ME = (
+        "surprise_me",
+        "Surprise Me",
+    )
+    GROUP_VOTE = (
+        "group_vote",
+        "Group Vote",
+    )
+    ROULETTE = (
+        "roulette",
+        "Restaurant Roulette",
+    )
+    SWIPE = (
+        "swipe",
+        "Swipe Mode",
+    )
+    ELIMINATION = (
+        "elimination",
+        "Elimination Mode",
+    )
+
+
 class ParticipantStatus(models.TextChoices):
     INVITED = "invited", "Invited"
     JOINED = "joined", "Joined"
@@ -151,6 +178,30 @@ class PickSession(models.Model):
     selected_restaurant_name = models.CharField(
         max_length=255,
         blank=True,
+    )
+
+    selected_restaurant_data = models.JSONField(
+        default=dict,
+        blank=True,
+    )
+
+    selection_method = models.CharField(
+        max_length=30,
+        choices=SelectionMethod.choices,
+        blank=True,
+    )
+
+    selected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="restaurant_selections",
+        blank=True,
+        null=True,
+    )
+
+    selected_at = models.DateTimeField(
+        blank=True,
+        null=True,
     )
 
     expires_at = models.DateTimeField(blank=True, null=True)
@@ -411,9 +462,20 @@ class PickSessionNotificationKind(models.TextChoices):
         "Group Vote Invitation",
     )
 
+    GROUP_VOTE_STARTED = (
+        "group_vote_started",
+        "Group Vote Started",
+    )
+
     GROUP_VOTE_COMPLETED = (
         "group_vote_completed",
         "Group Vote Completed",
+    )
+
+
+    RESTAURANT_SELECTED = (
+        "restaurant_selected",
+        "Restaurant Selected",
     )
 
 
@@ -486,6 +548,115 @@ class PickSessionNotification(models.Model):
         return (
             f"{self.user}: "
             f"{self.get_kind_display()}"
+        )
+
+
+class PickSessionAnalyticsEventType(
+    models.TextChoices
+):
+    SEARCH_STARTED = (
+        "search_started",
+        "Search Started",
+    )
+    RESTAURANT_IMPRESSION = (
+        "restaurant_impression",
+        "Restaurant Impression",
+    )
+    RESTAURANT_DETAIL_VIEWED = (
+        "restaurant_detail_viewed",
+        "Restaurant Detail Viewed",
+    )
+    RESTAURANT_SELECTED = (
+        "restaurant_selected",
+        "Restaurant Selected",
+    )
+    VOTE_CAST = (
+        "vote_cast",
+        "Vote Cast",
+    )
+    SESSION_COMPLETED = (
+        "session_completed",
+        "Session Completed",
+    )
+
+
+class PickSessionAnalyticsEvent(models.Model):
+    """First-party product analytics for Pick Sum'N decisions."""
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    session = models.ForeignKey(
+        PickSession,
+        on_delete=models.CASCADE,
+        related_name="analytics_events",
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="pick_session_analytics_events",
+        blank=True,
+        null=True,
+    )
+
+    event_type = models.CharField(
+        max_length=40,
+        choices=PickSessionAnalyticsEventType.choices,
+    )
+
+    restaurant_external_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    restaurant_name = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    event_data = models.JSONField(
+        default=dict,
+        blank=True,
+    )
+
+    dedupe_key = models.CharField(
+        max_length=500,
+        unique=True,
+        blank=True,
+        null=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        ordering = (
+            "-created_at",
+        )
+        indexes = [
+            models.Index(
+                fields=(
+                    "event_type",
+                    "created_at",
+                ),
+            ),
+            models.Index(
+                fields=(
+                    "restaurant_external_id",
+                    "created_at",
+                ),
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.event_type}: "
+            f"{self.restaurant_name or self.session_id}"
         )
 
 

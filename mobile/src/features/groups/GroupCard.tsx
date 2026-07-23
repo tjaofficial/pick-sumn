@@ -8,6 +8,10 @@ import {
 } from "react-native";
 
 import type { DiningGroup } from "./types";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type GroupCardProps = {
   group: DiningGroup;
@@ -26,7 +30,7 @@ export function GroupCard({ group, onPress }: GroupCardProps) {
         <Image source={{ uri: group.image }} style={styles.groupImage} />
       ) : (
         <View style={styles.iconContainer}>
-          <Users size={25} color="#F3344A" />
+          <Users size={25} color={themeColor("#F3344A", "color")} />
         </View>
       )}
 
@@ -34,7 +38,7 @@ export function GroupCard({ group, onPress }: GroupCardProps) {
         <View style={styles.titleRow}>
           <Text style={styles.name} numberOfLines={1}>{group.name}</Text>
           {group.current_user_role === "owner" && (
-            <Crown size={17} color="#E3A008" fill="#FFE18A" />
+            <Crown size={17} color={themeColor("#E3A008", "color")} fill="#FFE18A" />
           )}
         </View>
         {!!group.description && (
@@ -48,12 +52,12 @@ export function GroupCard({ group, onPress }: GroupCardProps) {
         </Text>
       </View>
 
-      <ChevronRight size={22} color="#9298A2" />
+      <ChevronRight size={22} color={themeColor("#9298A2", "color")} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   card: { flexDirection: "row", alignItems: "center", gap: 14, padding: 18, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 22, backgroundColor: "#FFFFFF" },
   groupImage: { width: 50, height: 50, borderRadius: 25 },
   iconContainer: { width: 50, height: 50, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: "#FFF0F2" },

@@ -13,6 +13,13 @@ import { useState } from "react";
 
 import { sendFriendRequest } from "@/features/friends/friendsService";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 function extractFriendCode(value: string): string {
   const clean = value.trim();
@@ -24,6 +31,8 @@ function extractFriendCode(value: string): string {
 }
 
 export default function ScanFriendScreen() {
+  useAppTheme();
+
   const [permission, requestPermission] = useCameraPermissions();
   const [locked, setLocked] = useState(false);
 
@@ -70,7 +79,7 @@ export default function ScanFriendScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.permission}>
-          <QrCode size={42} color="#F3344A" />
+          <QrCode size={42} color={themeColor("#F3344A", "color")} />
           <Text style={styles.heading}>Camera access needed</Text>
           <Text style={styles.text}>
             Allow camera access to scan a friend’s Pick Sum’N QR code.
@@ -99,7 +108,7 @@ export default function ScanFriendScreen() {
       />
       <SafeAreaView style={styles.overlay}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={23} color="#07111F" />
+          <ArrowLeft size={23} color={themeColor("#07111F", "color")} />
         </Pressable>
         <View style={styles.scanBox} />
         <Text style={styles.scanText}>
@@ -110,7 +119,7 @@ export default function ScanFriendScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#07111F" },
   overlay: { flex: 1, alignItems: "center" },
   backButton: { alignSelf: "flex-start", width: 44, height: 44, alignItems: "center", justifyContent: "center", margin: 18, borderRadius: 15, backgroundColor: "#FFFFFF" },

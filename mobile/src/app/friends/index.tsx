@@ -38,6 +38,13 @@ import type {
   FriendUser,
 } from "@/features/friends/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 function friendName(user: FriendUser): string {
   const fullName = [user.first_name, user.last_name]
@@ -49,6 +56,8 @@ function friendName(user: FriendUser): string {
 }
 
 export default function FriendsScreen() {
+  useAppTheme();
+
   const [friends, setFriends] = useState<FriendListItem[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [query, setQuery] = useState("");
@@ -213,7 +222,7 @@ export default function FriendsScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color="#F3344A" />
+          <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} />
           <Text style={styles.loadingText}>Loading your friends...</Text>
         </View>
       </SafeAreaView>
@@ -224,7 +233,7 @@ export default function FriendsScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={23} color="#07111F" />
+          <ArrowLeft size={23} color={themeColor("#07111F", "color")} />
         </Pressable>
         <View style={styles.topBarCenter}>
           <Text style={styles.topBarTitle}>Your Friends</Text>
@@ -242,7 +251,7 @@ export default function FriendsScreen() {
             onPress={() => router.push("/friends/scan")}
             style={styles.actionCard}
           >
-            <QrCode size={24} color="#F3344A" />
+            <QrCode size={24} color={themeColor("#F3344A", "color")} />
             <Text style={styles.actionTitle}>Scan Friend QR</Text>
           </Pressable>
 
@@ -250,7 +259,7 @@ export default function FriendsScreen() {
             onPress={() => router.push("/friends/code")}
             style={styles.actionCard}
           >
-            <Users size={24} color="#F3344A" />
+            <Users size={24} color={themeColor("#F3344A", "color")} />
             <Text style={styles.actionTitle}>My Friend Code</Text>
           </Pressable>
         </View>
@@ -261,7 +270,7 @@ export default function FriendsScreen() {
             value={query}
             onChangeText={setQuery}
             placeholder="Search name or email"
-            placeholderTextColor="#9298A2"
+            placeholderTextColor={themeColor("#9298A2", "color")}
             autoCapitalize="none"
             returnKeyType="search"
             onSubmitEditing={() => void handleSearch()}
@@ -269,9 +278,9 @@ export default function FriendsScreen() {
           />
           <Pressable onPress={() => void handleSearch()} style={styles.searchButton}>
             {isSearching ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ActivityIndicator size="small" color={themeColor("#FFFFFF", "color")} />
             ) : (
-              <Search size={20} color="#FFFFFF" />
+              <Search size={20} color={themeColor("#FFFFFF", "color")} />
             )}
           </Pressable>
         </View>
@@ -289,7 +298,7 @@ export default function FriendsScreen() {
             </View>
             {result.relationship_status === "accepted" ? (
               <View style={styles.statusPill}>
-                <Check size={14} color="#168B4F" />
+                <Check size={14} color={themeColor("#168B4F", "color")} />
                 <Text style={styles.statusText}>Friends</Text>
               </View>
             ) : result.relationship_status === "pending" ? (
@@ -301,7 +310,7 @@ export default function FriendsScreen() {
                 onPress={() => void requestFriend(result.user.id)}
                 style={styles.smallPrimary}
               >
-                <UserPlus size={17} color="#FFFFFF" />
+                <UserPlus size={17} color={themeColor("#FFFFFF", "color")} />
                 <Text style={styles.smallPrimaryText}>Add</Text>
               </Pressable>
             )}
@@ -326,13 +335,13 @@ export default function FriendsScreen() {
                   onPress={() => void respond(request.friendship_id, "accept")}
                   style={styles.iconAccept}
                 >
-                  <Check size={18} color="#FFFFFF" />
+                  <Check size={18} color={themeColor("#FFFFFF", "color")} />
                 </Pressable>
                 <Pressable
                   onPress={() => void respond(request.friendship_id, "decline")}
                   style={styles.iconDecline}
                 >
-                  <X size={18} color="#C62828" />
+                  <X size={18} color={themeColor("#C62828", "color")} />
                 </Pressable>
               </View>
             ))}
@@ -342,7 +351,7 @@ export default function FriendsScreen() {
         <Text style={styles.sectionTitle}>Your Friends</Text>
         {groupedFriends.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Users size={34} color="#F3344A" />
+            <Users size={34} color={themeColor("#F3344A", "color")} />
             <Text style={styles.emptyTitle}>No friends yet</Text>
             <Text style={styles.emptyText}>
               Search for someone, scan their QR code, or share your friend code.
@@ -367,7 +376,7 @@ export default function FriendsScreen() {
                     onPress={() => confirmRemove(friend)}
                     style={styles.removeButton}
                   >
-                    <UserMinus size={19} color="#C62828" />
+                    <UserMinus size={19} color={themeColor("#C62828", "color")} />
                   </Pressable>
                 </View>
               ))}
@@ -385,7 +394,7 @@ export default function FriendsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#FFF9F2" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: "#ECEDEF" },
   backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFFFFF" },

@@ -5,6 +5,10 @@ import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Spacing } from '@/constants/theme';
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type HintRowProps = {
   title?: string;
@@ -22,7 +26,7 @@ export function HintRow({ title = 'Try editing', hint = 'app/index.tsx' }: HintR
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   stepRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

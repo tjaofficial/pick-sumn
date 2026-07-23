@@ -35,9 +35,18 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 export default function ActiveSessionsScreen() {
+  useAppTheme();
+
   const [
     sessions,
     setSessions,
@@ -163,7 +172,7 @@ export default function ActiveSessionsScreen() {
         <View style={styles.center}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text
@@ -186,7 +195,7 @@ export default function ActiveSessionsScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -211,7 +220,7 @@ export default function ActiveSessionsScreen() {
               setIsRefreshing(true);
               void loadSessions();
             }}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
       >
@@ -236,7 +245,7 @@ export default function ActiveSessionsScreen() {
           <View style={styles.emptyCard}>
             <Clock3
               size={36}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text style={styles.emptyTitle}>
@@ -291,7 +300,7 @@ export default function ActiveSessionsScreen() {
                     >
                       <Check
                         size={14}
-                        color="#FFFFFF"
+                        color={themeColor("#FFFFFF", "color")}
                         strokeWidth={3}
                       />
 
@@ -311,7 +320,7 @@ export default function ActiveSessionsScreen() {
                 >
                   <MapPin
                     size={16}
-                    color="#69707C"
+                    color={themeColor("#69707C", "color")}
                   />
 
                   <Text
@@ -327,7 +336,7 @@ export default function ActiveSessionsScreen() {
                 >
                   <Users
                     size={16}
-                    color="#69707C"
+                    color={themeColor("#69707C", "color")}
                   />
 
                   <Text
@@ -359,7 +368,7 @@ export default function ActiveSessionsScreen() {
                     === session.id ? (
                     <ActivityIndicator
                       size="small"
-                      color="#FFFFFF"
+                      color={themeColor("#FFFFFF", "color")}
                     />
                   ) : (
                     <Text
@@ -391,7 +400,7 @@ export default function ActiveSessionsScreen() {
         >
           <RefreshCw
             size={16}
-            color="#69707C"
+            color={themeColor("#69707C", "color")}
           />
 
           <Text style={styles.refreshText}>
@@ -404,7 +413,7 @@ export default function ActiveSessionsScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

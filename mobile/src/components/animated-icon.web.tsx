@@ -3,6 +3,10 @@ import { StyleSheet, View } from 'react-native';
 import Animated, { Keyframe, Easing } from 'react-native-reanimated';
 
 import classes from './animated-icon.module.css';
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 const DURATION = 300;
 
 export function AnimatedSplashOverlay() {
@@ -72,7 +76,7 @@ export function AnimatedIcon() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   container: {
     alignItems: 'center',
     width: '100%',

@@ -11,6 +11,7 @@ from .models import (
     PickSession,
     PickSessionCuisineFilter,
     PickSessionDiningStyleFilter,
+    PickSessionAnalyticsEvent,
     PickSessionParticipant,
     PickSessionStatus,
 )
@@ -294,3 +295,45 @@ def refresh_pick_session_status(
 
     return session
 
+
+
+
+def record_pick_session_event(
+    *,
+    session,
+    event_type,
+    user=None,
+    restaurant_external_id="",
+    restaurant_name="",
+    event_data=None,
+    dedupe_key=None,
+):
+    defaults = {
+        "session": session,
+        "user": user,
+        "event_type": event_type,
+        "restaurant_external_id": (
+            restaurant_external_id
+        ),
+        "restaurant_name": (
+            restaurant_name
+        ),
+        "event_data": (
+            event_data or {}
+        ),
+    }
+
+    if dedupe_key:
+        event, _ = (
+            PickSessionAnalyticsEvent.objects
+            .get_or_create(
+                dedupe_key=dedupe_key,
+                defaults=defaults,
+            )
+        )
+
+        return event
+
+    return PickSessionAnalyticsEvent.objects.create(
+        **defaults,
+    )

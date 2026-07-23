@@ -12,13 +12,15 @@ import {
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import {
   useEffect,
   useRef,
@@ -43,6 +45,13 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 const RADIUS_OPTIONS = [5, 10, 15, 25, 50];
 
@@ -100,6 +109,8 @@ function handleBack() {
 }
 
 export default function PickLocationScreen() {
+  useAppTheme();
+
   const {
     draft,
     updateLocation,
@@ -360,7 +371,7 @@ export default function PickLocationScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color="#F3344A" />
+          <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} />
           <Text style={styles.loadingText}>Loading location...</Text>
         </View>
       </SafeAreaView>
@@ -371,7 +382,7 @@ export default function PickLocationScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={handleBack} style={styles.backButton}>
-          <ArrowLeft size={23} color="#07111F" />
+          <ArrowLeft size={23} color={themeColor("#07111F", "color")} />
         </Pressable>
         <View style={styles.topBarCenter}>
           <Text style={styles.topBarTitle}>Location</Text>
@@ -386,7 +397,7 @@ export default function PickLocationScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.introCard}>
-          <MapPin size={27} color="#F3344A" />
+          <MapPin size={27} color={themeColor("#F3344A", "color")} />
           <View style={styles.introContent}>
             <Text style={styles.introTitle}>Where should we look?</Text>
             <Text style={styles.introText}>
@@ -416,12 +427,12 @@ export default function PickLocationScreen() {
             {savedLocationsOpen ? (
               <ChevronUp
                 size={20}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
             ) : (
               <ChevronDown
                 size={20}
-                color="#69707C"
+                color={themeColor("#69707C", "color")}
               />
             )}
           </Pressable>
@@ -467,13 +478,13 @@ export default function PickLocationScreen() {
                           {isSelected ? (
                             <Check
                               size={16}
-                              color="#FFFFFF"
+                              color={themeColor("#FFFFFF", "color")}
                               strokeWidth={3}
                             />
                           ) : (
                             <MapPin
                               size={18}
-                              color="#F3344A"
+                              color={themeColor("#F3344A", "color")}
                             />
                           )}
                         </View>
@@ -532,9 +543,9 @@ export default function PickLocationScreen() {
           style={[styles.locationButton, isGettingLocation && styles.disabled]}
         >
           {isGettingLocation ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator size="small" color={themeColor("#FFFFFF", "color")} />
           ) : (
-            <LocateFixed size={22} color="#FFFFFF" />
+            <LocateFixed size={22} color={themeColor("#FFFFFF", "color")} />
           )}
           <Text style={styles.locationButtonText}>
             {isGettingLocation ? "Getting Location..." : "Use Current Location"}
@@ -549,7 +560,7 @@ export default function PickLocationScreen() {
 
         <View style={styles.searchContainer}>
           <View style={[styles.inputWrapper, suggestions.length > 0 && styles.inputOpen]}>
-            <Search size={20} color="#9298A2" />
+            <Search size={20} color={themeColor("#9298A2", "color")} />
             <TextInput
               value={locationLabel}
               onChangeText={(value) => {
@@ -559,13 +570,13 @@ export default function PickLocationScreen() {
                 setError(null);
               }}
               placeholder="City, neighborhood, or address"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               autoCorrect={false}
               autoCapitalize="words"
               style={styles.input}
             />
             {(isSearching || isSelecting) && (
-              <ActivityIndicator size="small" color="#F3344A" />
+              <ActivityIndicator size="small" color={themeColor("#F3344A", "color")} />
             )}
           </View>
 
@@ -580,7 +591,7 @@ export default function PickLocationScreen() {
                     index < suggestions.length - 1 && styles.suggestionBorder,
                   ]}
                 >
-                  <MapPin size={18} color="#F3344A" />
+                  <MapPin size={18} color={themeColor("#F3344A", "color")} />
                   <View style={styles.suggestionContent}>
                     <Text style={styles.suggestionMain}>{suggestion.main_text}</Text>
                     {!!suggestion.secondary_text && (
@@ -597,7 +608,7 @@ export default function PickLocationScreen() {
 
         {latitude !== null && longitude !== null && (
           <View style={styles.successRow}>
-            <Check size={17} color="#168B4F" strokeWidth={3} />
+            <Check size={17} color={themeColor("#168B4F", "color")} strokeWidth={3} />
             <Text style={styles.successText}>Location selected</Text>
           </View>
         )}
@@ -627,7 +638,7 @@ export default function PickLocationScreen() {
         )}
 
         <Pressable onPress={handleSave} style={styles.saveButton}>
-          <Check size={21} color="#FFFFFF" strokeWidth={2.8} />
+          <Check size={21} color={themeColor("#FFFFFF", "color")} strokeWidth={2.8} />
           <Text style={styles.saveText}>Save Location</Text>
         </Pressable>
       </ScrollView>
@@ -635,7 +646,7 @@ export default function PickLocationScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#FFF9F2" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: "#ECEDEF" },
   backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFFFFF" },

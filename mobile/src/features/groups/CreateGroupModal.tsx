@@ -15,6 +15,10 @@ import {
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 import { createGroup } from "./groupsService";
 import type { DiningGroup } from "./types";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type CreateGroupModalProps = {
   visible: boolean;
@@ -91,7 +95,7 @@ export function CreateGroupModal({
               </Text>
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}>
-              <X size={22} color="#07111F" />
+              <X size={22} color={themeColor("#07111F", "color")} />
             </Pressable>
           </View>
 
@@ -101,7 +105,7 @@ export function CreateGroupModal({
               value={name}
               onChangeText={setName}
               placeholder="Friday Night Crew"
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               maxLength={120}
               style={styles.input}
             />
@@ -111,7 +115,7 @@ export function CreateGroupModal({
               value={description}
               onChangeText={setDescription}
               placeholder="The people who can never decide."
-              placeholderTextColor="#9298A2"
+              placeholderTextColor={themeColor("#9298A2", "color")}
               maxLength={255}
               multiline
               style={[styles.input, styles.descriptionInput]}
@@ -145,7 +149,7 @@ export function CreateGroupModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   overlay: { flex: 1, justifyContent: "flex-end" },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(7,17,31,0.48)" },
   sheet: { maxHeight: "88%", paddingHorizontal: 22, paddingTop: 10, paddingBottom: 30, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: "#FFF9F2" },

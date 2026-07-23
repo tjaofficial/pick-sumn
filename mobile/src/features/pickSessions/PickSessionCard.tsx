@@ -13,6 +13,10 @@ import {
 } from "react-native";
 
 import type { PickSession } from "./types";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type PickSessionCardProps = {
   session: PickSession;
@@ -116,7 +120,7 @@ export function PickSessionCard({
           <View style={styles.metaItem}>
             <Users
               size={15}
-              color="#727985"
+              color={themeColor("#727985", "color")}
             />
 
             <Text style={styles.metaText}>
@@ -131,7 +135,7 @@ export function PickSessionCard({
             <View style={styles.metaItem}>
               <MapPin
                 size={15}
-                color="#727985"
+                color={themeColor("#727985", "color")}
               />
 
               <Text
@@ -151,13 +155,13 @@ export function PickSessionCard({
 
       <ChevronRight
         size={22}
-        color="#9298A2"
+        color={themeColor("#9298A2", "color")}
       />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   card: {
     flexDirection: "row",
     alignItems: "center",

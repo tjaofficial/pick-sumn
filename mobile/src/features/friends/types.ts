@@ -29,3 +29,11 @@ export type FriendSearchResult = {
     | "blocked"
     | null;
 };
+
+
+
+export type BlockedUser = {
+  friendship_id: string;
+  user: FriendUser;
+  blocked_at: string;
+};

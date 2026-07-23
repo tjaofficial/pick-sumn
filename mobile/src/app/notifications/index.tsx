@@ -50,6 +50,13 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 type CombinedNotification =
@@ -85,6 +92,8 @@ function friendName(
 
 
 export default function NotificationsScreen() {
+  useAppTheme();
+
   const [
     notifications,
     setNotifications,
@@ -247,6 +256,25 @@ export default function NotificationsScreen() {
       }
     }
 
+    if (
+      notification.kind
+      === "restaurant_selected"
+      || notification.kind
+      === "group_vote_completed"
+    ) {
+      router.push({
+        pathname:
+          "/restaurants/[sessionId]/[optionId]",
+        params: {
+          sessionId:
+            notification.session_id,
+          optionId: "selected",
+        },
+      });
+
+      return;
+    }
+
     router.push({
       pathname:
         "/pick-votes/[id]",
@@ -324,7 +352,7 @@ export default function NotificationsScreen() {
         <View style={styles.center}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text
@@ -351,7 +379,7 @@ export default function NotificationsScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -406,7 +434,7 @@ export default function NotificationsScreen() {
 
               void loadNotifications();
             }}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
       >
@@ -425,7 +453,7 @@ export default function NotificationsScreen() {
           <View style={styles.emptyCard}>
             <Bell
               size={38}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text
@@ -527,7 +555,7 @@ export default function NotificationsScreen() {
                         >
                           <Check
                             size={15}
-                            color="#FFFFFF"
+                            color={themeColor("#FFFFFF", "color")}
                           />
 
                           <Text
@@ -552,7 +580,7 @@ export default function NotificationsScreen() {
                         >
                           <X
                             size={15}
-                            color="#C62828"
+                            color={themeColor("#C62828", "color")}
                           />
 
                           <Text
@@ -588,15 +616,17 @@ export default function NotificationsScreen() {
                       }
                     >
                       {item.notification.kind
-                      === "group_vote_completed" ? (
+                      === "group_vote_completed"
+                      || item.notification.kind
+                      === "restaurant_selected" ? (
                         <Trophy
                           size={23}
-                          color="#D99A00"
+                          color={themeColor("#D99A00", "color")}
                         />
                       ) : (
                         <Vote
                           size={23}
-                          color="#F3344A"
+                          color={themeColor("#F3344A", "color")}
                         />
                       )}
                     </View>
@@ -642,13 +672,18 @@ export default function NotificationsScreen() {
                           styles.openText
                         }
                       >
-                        Open Group Vote
+                        {item.notification.kind
+                        === "restaurant_selected"
+                        || item.notification.kind
+                        === "group_vote_completed"
+                          ? "View Restaurant"
+                          : "Open Group Vote"}
                       </Text>
                     </View>
 
                     <ChevronRight
                       size={21}
-                      color="#9298A2"
+                      color={themeColor("#9298A2", "color")}
                     />
                   </Pressable>
                 ),
@@ -661,7 +696,7 @@ export default function NotificationsScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

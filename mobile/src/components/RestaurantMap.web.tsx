@@ -13,6 +13,10 @@ import {
 import type {
   NearbyRestaurantMatch,
 } from "@/features/pickSessions/types";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 
 export type RestaurantMapHandle = {
@@ -290,7 +294,7 @@ export const RestaurantMap =
   );
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   map: {
     ...StyleSheet.absoluteFill,
     overflow: "hidden",

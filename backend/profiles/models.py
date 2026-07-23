@@ -82,6 +82,10 @@ class Profile(models.Model):
         ),
     )
 
+    profile_completion_card_dismissed = models.BooleanField(
+        default=False,
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )

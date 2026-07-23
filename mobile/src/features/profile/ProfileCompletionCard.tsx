@@ -2,6 +2,7 @@ import {
   ArrowRight,
   CircleCheck,
   ClipboardList,
+  X,
 } from "lucide-react-native";
 import {
   Pressable,
@@ -9,11 +10,16 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type ProfileCompletionCardProps = {
   percentage: number;
   missingSections: string[];
   onPress: () => void;
+  onDismiss: () => void;
 };
 
 function formatSection(section: string): string {
@@ -34,6 +40,7 @@ export function ProfileCompletionCard({
   percentage,
   missingSections,
   onPress,
+  onDismiss,
 }: ProfileCompletionCardProps) {
   const complete = percentage >= 100;
 
@@ -50,13 +57,13 @@ export function ProfileCompletionCard({
           {complete ? (
             <CircleCheck
               size={25}
-              color="#21A05A"
+              color={themeColor("#21A05A", "color")}
               strokeWidth={2.4}
             />
           ) : (
             <ClipboardList
               size={25}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
               strokeWidth={2.3}
             />
           )}
@@ -72,10 +79,28 @@ export function ProfileCompletionCard({
           </Text>
         </View>
 
-        <ArrowRight
-          size={21}
-          color="#9096A0"
-        />
+        <View style={styles.headerActions}>
+          <ArrowRight
+            size={21}
+            color={themeColor("#9096A0", "color")}
+          />
+
+          <Pressable
+            onPress={(event) => {
+              event.stopPropagation();
+              onDismiss();
+            }}
+            hitSlop={10}
+            style={styles.dismissButton}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss profile progress"
+          >
+            <X
+              size={18}
+              color={themeColor("#B6BDC7", "color")}
+            />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.progressTrack}>
@@ -113,7 +138,7 @@ export function ProfileCompletionCard({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   card: {
     padding: 20,
     borderRadius: 24,
@@ -141,6 +166,21 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
     marginLeft: 13,
+  },
+
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  dismissButton: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#172332",
   },
 
   label: {

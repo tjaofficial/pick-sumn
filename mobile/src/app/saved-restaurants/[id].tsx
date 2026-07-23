@@ -48,6 +48,13 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 function getRestaurantType(
@@ -354,6 +361,8 @@ function ActionButton({
 
 
 export default function SavedRestaurantDetailScreen() {
+  useAppTheme();
+
   const params =
     useLocalSearchParams<{
       id?: string | string[];
@@ -488,7 +497,7 @@ export default function SavedRestaurantDetailScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text style={styles.stateText}>
@@ -515,7 +524,7 @@ export default function SavedRestaurantDetailScreen() {
           >
             <ChevronLeft
               size={25}
-              color="#07111F"
+              color={themeColor("#07111F", "color")}
             />
           </Pressable>
         </View>
@@ -579,7 +588,7 @@ export default function SavedRestaurantDetailScreen() {
             >
               <Store
                 size={56}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
 
               <Text
@@ -604,7 +613,7 @@ export default function SavedRestaurantDetailScreen() {
           >
             <ChevronLeft
               size={25}
-              color="#07111F"
+              color={themeColor("#07111F", "color")}
             />
           </Pressable>
 
@@ -621,12 +630,12 @@ export default function SavedRestaurantDetailScreen() {
             {isRemoving ? (
               <ActivityIndicator
                 size="small"
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
               />
             ) : (
               <Heart
                 size={23}
-                color="#F3344A"
+                color={themeColor("#F3344A", "color")}
                 fill="#F3344A"
               />
             )}
@@ -651,7 +660,7 @@ export default function SavedRestaurantDetailScreen() {
           <View style={styles.ratingRow}>
             <Star
               size={18}
-              color="#E3A008"
+              color={themeColor("#E3A008", "color")}
               fill="#E3A008"
             />
 
@@ -687,7 +696,7 @@ export default function SavedRestaurantDetailScreen() {
               icon={
                 <Navigation
                   size={22}
-                  color="#F3344A"
+                  color={themeColor("#F3344A", "color")}
                 />
               }
               onPress={() =>
@@ -747,7 +756,7 @@ export default function SavedRestaurantDetailScreen() {
                 icon={
                   <Menu
                     size={22}
-                    color="#F3344A"
+                    color={themeColor("#F3344A", "color")}
                   />
                 }
                 onPress={() => {
@@ -764,7 +773,7 @@ export default function SavedRestaurantDetailScreen() {
               <View style={styles.infoIcon}>
                 <MapPin
                   size={19}
-                  color="#69707C"
+                  color={themeColor("#69707C", "color")}
                 />
               </View>
 
@@ -790,7 +799,7 @@ export default function SavedRestaurantDetailScreen() {
               <View style={styles.infoIcon}>
                 <Utensils
                   size={19}
-                  color="#69707C"
+                  color={themeColor("#69707C", "color")}
                 />
               </View>
 
@@ -825,7 +834,7 @@ export default function SavedRestaurantDetailScreen() {
                   >
                     <Truck
                       size={19}
-                      color="#7C4DCC"
+                      color={themeColor("#7C4DCC", "color")}
                     />
                   </View>
 
@@ -860,7 +869,7 @@ export default function SavedRestaurantDetailScreen() {
               <View style={styles.infoIcon}>
                 <Clock3
                   size={19}
-                  color="#69707C"
+                  color={themeColor("#69707C", "color")}
                 />
               </View>
 
@@ -897,7 +906,7 @@ export default function SavedRestaurantDetailScreen() {
             >
               <ExternalLink
                 size={19}
-                color="#FFFFFF"
+                color={themeColor("#FFFFFF", "color")}
               />
 
               <Text
@@ -923,12 +932,12 @@ export default function SavedRestaurantDetailScreen() {
             {isRemoving ? (
               <ActivityIndicator
                 size="small"
-                color="#C62828"
+                color={themeColor("#C62828", "color")}
               />
             ) : (
               <Trash2
                 size={19}
-                color="#C62828"
+                color={themeColor("#C62828", "color")}
               />
             )}
 
@@ -947,7 +956,7 @@ export default function SavedRestaurantDetailScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFFDFB",

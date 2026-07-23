@@ -42,6 +42,10 @@ import type {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 
 type LiveNotificationsContextValue = {
@@ -167,8 +171,12 @@ export function LiveNotificationsProvider({
             notifications.notifications.find(
               (item) =>
                 !item.is_read
-                && item.kind
+                && (
+                  item.kind
                   === "group_vote_invite"
+                  || item.kind
+                  === "restaurant_selected"
+                )
                 && !dismissedVoteIds
                   .current
                   .has(item.id),
@@ -275,6 +283,23 @@ export function LiveNotificationsProvider({
           count - 1,
         ),
     );
+
+    if (
+      currentInvitation.kind
+      === "restaurant_selected"
+    ) {
+      router.push({
+        pathname:
+          "/restaurants/[sessionId]/[optionId]",
+        params: {
+          sessionId:
+            currentInvitation.session_id,
+          optionId: "selected",
+        },
+      });
+
+      return;
+    }
 
     router.push({
       pathname:
@@ -391,7 +416,7 @@ export function LiveNotificationsProvider({
           >
             <UserPlus
               size={34}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text
@@ -509,7 +534,7 @@ export function LiveNotificationsProvider({
           >
             <Vote
               size={34}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
             />
 
             <Text
@@ -517,7 +542,10 @@ export function LiveNotificationsProvider({
                 styles.modalTitle
               }
             >
-              Group Vote Invitation
+              {invitation?.kind
+              === "restaurant_selected"
+                ? "Restaurant Selected"
+                : "Group Vote Invitation"}
             </Text>
 
             <Text
@@ -541,7 +569,10 @@ export function LiveNotificationsProvider({
                   styles.modalPrimaryText
                 }
               >
-                Open Vote
+                {invitation?.kind
+                === "restaurant_selected"
+                  ? "View Restaurant"
+                  : "Open Vote"}
               </Text>
             </Pressable>
 
@@ -585,7 +616,7 @@ export function useLiveNotifications() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   modalOverlay: {
     flex: 1,
     alignItems: "center",

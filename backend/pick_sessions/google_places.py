@@ -43,6 +43,15 @@ GENERIC_NEARBY_SUBSEARCH_OFFSET_FACTOR = 0.72
 logger = logging.getLogger(__name__)
 
 
+def _is_don_jose_name(
+    value: str,
+) -> bool:
+    return (
+        "don jose"
+        in value.strip().lower()
+    )
+
+
 class GooglePlacesError(Exception):
     """Raised when Google Places cannot return usable results."""
 
@@ -75,6 +84,10 @@ class NearbyRestaurant:
     delivery: bool | None
     dine_in: bool | None
     takeout: bool | None
+    serves_beer: bool | None
+    serves_wine: bool | None
+    serves_cocktails: bool | None
+    business_status: str
 
     distance_miles: float | None
 
@@ -83,6 +96,8 @@ class NearbyRestaurant:
 
     dietary_search_slugs: list[str]
     dietary_search_match_counts: dict[str, int]
+    dining_style_search_slugs: list[str]
+    dining_style_search_match_counts: dict[str, int]
     contextual_review_texts: list[str]
     review_texts: list[str]
 
@@ -113,6 +128,10 @@ class NearbyRestaurant:
             "delivery": self.delivery,
             "dine_in": self.dine_in,
             "takeout": self.takeout,
+            "serves_beer": self.serves_beer,
+            "serves_wine": self.serves_wine,
+            "serves_cocktails": self.serves_cocktails,
+            "business_status": self.business_status,
             "distance_miles": (
                 self.distance_miles
             ),
@@ -122,6 +141,12 @@ class NearbyRestaurant:
             ],
             "dietary_search_match_counts": {
                 **self.dietary_search_match_counts
+            },
+            "dining_style_search_slugs": [
+                *self.dining_style_search_slugs
+            ],
+            "dining_style_search_match_counts": {
+                **self.dining_style_search_match_counts
             },
             "contextual_review_texts": [
                 *self.contextual_review_texts
@@ -612,6 +637,43 @@ def _parse_restaurant(
         "takeout"
     )
 
+    serves_beer = place.get(
+        "servesBeer"
+    )
+
+    serves_wine = place.get(
+        "servesWine"
+    )
+
+    serves_cocktails = place.get(
+        "servesCocktails"
+    )
+
+    business_status = str(
+        place.get("businessStatus")
+        or ""
+    ).strip()
+
+    if _is_don_jose_name(
+        name
+    ):
+        logger.warning(
+            (
+                "[DON-JOSE-GOOGLE] PARSED "
+                "name=%r id=%r primary_type=%r "
+                "types=%s distance=%s takeout=%s "
+                "dine_in=%s delivery=%s"
+            ),
+            name,
+            external_id,
+            primary_type,
+            place_types,
+            distance_miles,
+            takeout,
+            dine_in,
+            delivery,
+        )
+
     return NearbyRestaurant(
         external_id=external_id,
         name=name,
@@ -694,6 +756,31 @@ def _parse_restaurant(
             )
             else None
         ),
+        serves_beer=(
+            serves_beer
+            if isinstance(
+                serves_beer,
+                bool,
+            )
+            else None
+        ),
+        serves_wine=(
+            serves_wine
+            if isinstance(
+                serves_wine,
+                bool,
+            )
+            else None
+        ),
+        serves_cocktails=(
+            serves_cocktails
+            if isinstance(
+                serves_cocktails,
+                bool,
+            )
+            else None
+        ),
+        business_status=business_status,
         distance_miles=distance_miles,
         photo_name=_get_first_photo_name(
             place
@@ -701,6 +788,8 @@ def _parse_restaurant(
         photo_url="",
         dietary_search_slugs=[],
         dietary_search_match_counts={},
+        dining_style_search_slugs=[],
+        dining_style_search_match_counts={},
         contextual_review_texts=[],
         review_texts=[],
     )
@@ -770,6 +859,10 @@ def _build_headers(
                 "places.delivery",
                 "places.dineIn",
                 "places.takeout",
+                "places.servesBeer",
+                "places.servesWine",
+                "places.servesCocktails",
+                "places.businessStatus",
                 "places.photos",
             )
         ),
@@ -924,6 +1017,9 @@ def _build_text_search_headers(
         "places.delivery",
         "places.dineIn",
         "places.takeout",
+        "places.servesBeer",
+        "places.servesWine",
+        "places.servesCocktails",
         "places.photos",
         "places.businessStatus",
         "places.movedPlace",
@@ -1365,23 +1461,16 @@ def _normalize_search_label(
 
 DINING_STYLE_TEXT_QUERIES = {
     "local-restaurant-bar-tavern": (
-        "local restaurants and taverns in {location}",
         "bar and grill in {location}",
-        "taverns in {location}",
-        "local restaurant bar in {location}",
-        "pub and grill in {location}",
-        "restaurants bars and taverns near {location}",
-        "local pubs with food near {location}",
-        "lakefront restaurants and taverns near {location}",
-        "restaurants near {location}",
-        "local restaurants near {location}",
-    ),
-    "bar-tavern": (
         "bars and taverns in {location}",
-        "pubs in {location}",
+        "pub and grill in {location}",
+        "pubs with food in {location}",
         "sports bars in {location}",
         "brewpubs in {location}",
-        "cocktail bars in {location}",
+        "local restaurants and taverns in {location}",
+        "restaurants bars and taverns near {location}",
+        "local restaurant bar in {location}",
+        "lakefront restaurants and taverns near {location}",
     ),
     "coffee-shop-cafe": (
         "coffee shops in {location}",
@@ -1392,25 +1481,44 @@ DINING_STYLE_TEXT_QUERIES = {
 }
 
 
+def _canonical_dining_style_slug(
+    value: str,
+) -> str:
+    normalized = (
+        value.strip()
+        .lower()
+        .replace("_", "-")
+        .replace(" ", "-")
+    )
+
+    if normalized in {
+        "bar-tavern",
+        "local-restaurant-bar-tavern",
+    }:
+        return "local-restaurant-bar-tavern"
+
+    return normalized
+
+
+
 def _build_dining_style_text_queries(
     *,
     dining_style_slugs: list[str],
     location_label: str,
-) -> list[str]:
+) -> list[tuple[str, str]]:
     clean_location = (
         location_label.strip()
         or "the selected area"
     )
 
-    queries: list[str] = []
-    seen: set[str] = set()
+    queries: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
 
     for style_slug in dining_style_slugs:
         normalized_slug = (
-            style_slug.strip()
-            .lower()
-            .replace("_", "-")
-            .replace(" ", "-")
+            _canonical_dining_style_slug(
+                style_slug
+            )
         )
 
         for template in (
@@ -1423,13 +1531,21 @@ def _build_dining_style_text_queries(
                 location=clean_location
             )
 
-            key = query.lower()
+            key = (
+                normalized_slug,
+                query.lower(),
+            )
 
             if key in seen:
                 continue
 
             seen.add(key)
-            queries.append(query)
+            queries.append(
+                (
+                    normalized_slug,
+                    query,
+                )
+            )
 
     return queries
 
@@ -1469,7 +1585,10 @@ def search_dining_style_restaurants(
     )
 
     query_results: list[
-        list[dict[str, Any]]
+        tuple[
+            str,
+            list[dict[str, Any]],
+        ]
     ] = []
 
     with ThreadPoolExecutor(
@@ -1486,20 +1605,30 @@ def search_dining_style_restaurants(
                 latitude=latitude,
                 longitude=longitude,
                 radius_meters=radius_meters,
-            ): text_query
-            for text_query in queries
+            ): (
+                style_slug,
+                text_query,
+            )
+            for (
+                style_slug,
+                text_query,
+            ) in queries
         }
 
         for future in as_completed(
             future_to_query
         ):
-            text_query = (
-                future_to_query[future]
-            )
+            (
+                style_slug,
+                text_query,
+            ) = future_to_query[future]
 
             try:
                 query_results.append(
-                    future.result()
+                    (
+                        style_slug,
+                        future.result(),
+                    )
                 )
             except GooglePlacesError as error:
                 logger.warning(
@@ -1516,7 +1645,10 @@ def search_dining_style_restaurants(
         NearbyRestaurant,
     ] = {}
 
-    for places in query_results:
+    for (
+        style_slug,
+        places,
+    ) in query_results:
         for place in places:
             restaurant = _parse_restaurant(
                 place,
@@ -1547,9 +1679,49 @@ def search_dining_style_restaurants(
             ):
                 continue
 
+            existing = restaurants_by_id.get(
+                restaurant.external_id
+            )
+
+            search_slugs = {
+                style_slug,
+            }
+
+            match_counts = {
+                style_slug: 1,
+            }
+
+            if existing is not None:
+                search_slugs.update(
+                    existing.dining_style_search_slugs
+                )
+
+                match_counts = {
+                    **existing
+                    .dining_style_search_match_counts
+                }
+
+                match_counts[
+                    style_slug
+                ] = (
+                    match_counts.get(
+                        style_slug,
+                        0,
+                    )
+                    + 1
+                )
+
             restaurants_by_id[
                 restaurant.external_id
-            ] = restaurant
+            ] = replace(
+                existing or restaurant,
+                dining_style_search_slugs=sorted(
+                    search_slugs
+                ),
+                dining_style_search_match_counts=(
+                    match_counts
+                ),
+            )
 
     restaurants = list(
         restaurants_by_id.values()
@@ -1939,6 +2111,23 @@ def merge_restaurant_results(
             )
 
             if existing is None:
+                if _is_don_jose_name(
+                    restaurant.name
+                ):
+                    logger.warning(
+                        (
+                            "[DON-JOSE-GOOGLE] NEARBY-KEPT "
+                            "name=%r id=%r distance=%s "
+                            "open_now=%s takeout=%s dine_in=%s"
+                        ),
+                        restaurant.name,
+                        restaurant.external_id,
+                        restaurant.distance_miles,
+                        restaurant.open_now,
+                        restaurant.takeout,
+                        restaurant.dine_in,
+                    )
+
                 restaurants_by_id[
                     restaurant.external_id
                 ] = restaurant
@@ -1954,6 +2143,18 @@ def merge_restaurant_results(
             dietary_search_match_counts = {
                 **existing
                 .dietary_search_match_counts
+            }
+
+            dining_style_search_slugs = sorted(
+                {
+                    *existing.dining_style_search_slugs,
+                    *restaurant.dining_style_search_slugs,
+                }
+            )
+
+            dining_style_search_match_counts = {
+                **existing
+                .dining_style_search_match_counts
             }
 
             contextual_review_texts = list(
@@ -1985,6 +2186,24 @@ def merge_restaurant_results(
                     match_count,
                 )
 
+            for (
+                style_slug,
+                match_count,
+            ) in (
+                restaurant
+                .dining_style_search_match_counts
+                .items()
+            ):
+                dining_style_search_match_counts[
+                    style_slug
+                ] = max(
+                    dining_style_search_match_counts.get(
+                        style_slug,
+                        0,
+                    ),
+                    match_count,
+                )
+
             restaurants_by_id[
                 restaurant.external_id
             ] = replace(
@@ -1994,6 +2213,12 @@ def merge_restaurant_results(
                 ),
                 dietary_search_match_counts=(
                     dietary_search_match_counts
+                ),
+                dining_style_search_slugs=(
+                    dining_style_search_slugs
+                ),
+                dining_style_search_match_counts=(
+                    dining_style_search_match_counts
                 ),
                 contextual_review_texts=(
                     contextual_review_texts
@@ -2601,6 +2826,31 @@ def search_nearby_restaurants(
                 continue
 
             for place in places:
+                raw_name = _get_localized_text(
+                    place.get(
+                        "displayName"
+                    )
+                )
+
+                if _is_don_jose_name(
+                    raw_name
+                ):
+                    logger.warning(
+                        (
+                            "[DON-JOSE-GOOGLE] NEARBY-RETURNED "
+                            "group=%s name=%r id=%r "
+                            "primary_type=%r types=%s"
+                        ),
+                        primary_type_group,
+                        raw_name,
+                        place.get("id"),
+                        place.get("primaryType"),
+                        place.get(
+                            "types",
+                            [],
+                        ),
+                    )
+
                 restaurant = _parse_restaurant(
                     place,
                     origin_latitude=(

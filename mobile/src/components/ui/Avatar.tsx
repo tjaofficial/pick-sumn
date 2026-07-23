@@ -11,6 +11,10 @@ import {
   useEffect,
   useState,
 } from "react";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 
 type AvatarProps = {
@@ -118,7 +122,7 @@ export function Avatar({
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   container: {
     overflow: "hidden",
     alignItems: "center",

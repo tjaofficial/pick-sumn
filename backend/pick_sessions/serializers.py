@@ -11,6 +11,7 @@ from .models import (
     ParticipantStatus,
     PickSession,
     PickSessionNotification,
+    SelectionMethod,
     PickSessionParticipant,
     PickSessionRestaurantOption,
     RestaurantDietaryReport,
@@ -92,7 +93,12 @@ class PickSessionListSerializer(
             "price_max",
             "open_now",
             "something_new",
+            "selected_restaurant_external_id",
             "selected_restaurant_name",
+            "selected_restaurant_data",
+            "selection_method",
+            "selected_by",
+            "selected_at",
             "created_at",
             "updated_at",
             "completed_at",
@@ -495,6 +501,18 @@ class PickSessionCreateSerializer(serializers.Serializer):
         )
 
 
+class SelectRestaurantSerializer(
+    serializers.Serializer
+):
+    external_id = serializers.CharField(
+        max_length=255,
+    )
+
+    selection_method = serializers.ChoiceField(
+        choices=SelectionMethod.choices,
+    )
+
+
 class UpdateParticipantStatusSerializer(
     serializers.Serializer
 ):
@@ -560,6 +578,33 @@ class PickSessionNotificationSerializer(
         read_only=True,
     )
 
+    selected_restaurant_external_id = (
+        serializers.CharField(
+            source=(
+                "session.selected_restaurant_external_id"
+            ),
+            read_only=True,
+        )
+    )
+
+    selected_restaurant_name = (
+        serializers.CharField(
+            source=(
+                "session.selected_restaurant_name"
+            ),
+            read_only=True,
+        )
+    )
+
+    selected_restaurant_data = (
+        serializers.JSONField(
+            source=(
+                "session.selected_restaurant_data"
+            ),
+            read_only=True,
+        )
+    )
+
     class Meta:
         model = PickSessionNotification
 
@@ -574,6 +619,9 @@ class PickSessionNotificationSerializer(
             "session_id",
             "session_status",
             "decision_mode",
+            "selected_restaurant_external_id",
+            "selected_restaurant_name",
+            "selected_restaurant_data",
         )
 
 

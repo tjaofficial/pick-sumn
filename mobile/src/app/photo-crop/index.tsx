@@ -29,6 +29,13 @@ import {
   useState,
 } from "react";
 import * as ImageManipulator from "expo-image-manipulator";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 const SCREEN_WIDTH =
@@ -56,6 +63,8 @@ function clamp(
 
 
 export default function PhotoCropScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{
     uri?: string | string[];
     width?: string | string[];
@@ -461,7 +470,7 @@ const result =
         >
           <ArrowLeft
             size={23}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
           />
         </Pressable>
 
@@ -475,7 +484,7 @@ const result =
         >
           <RotateCcw
             size={21}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
           />
         </Pressable>
       </View>
@@ -556,12 +565,12 @@ const result =
           {isSaving ? (
             <ActivityIndicator
               size="small"
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           ) : (
             <Check
               size={22}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
               strokeWidth={3}
             />
           )}
@@ -578,7 +587,7 @@ const result =
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#07111F",

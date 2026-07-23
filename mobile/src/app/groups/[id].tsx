@@ -26,13 +26,15 @@ import {
   Alert,
   Image,
   Pressable,
-  SafeAreaView,
   ScrollView,
   Share,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Avatar } from "@/components/ui/Avatar";
@@ -52,6 +54,13 @@ import type {
 } from "@/features/groups/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 import { choosePhotoForCrop } from "@/services/photoPicker";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 function memberName(member: DiningGroupMember): string {
   const fullName = [member.user.first_name, member.user.last_name]
@@ -70,6 +79,8 @@ function friendName(user: FriendUser): string {
 }
 
 export default function GroupDetailScreen() {
+  useAppTheme();
+
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const groupId = Array.isArray(params.id) ? params.id[0] : params.id;
 
@@ -128,7 +139,7 @@ export default function GroupDetailScreen() {
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color="#F3344A" />
+          <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} />
           <Text style={styles.stateText}>Loading group...</Text>
         </View>
       </SafeAreaView>
@@ -410,7 +421,7 @@ export default function GroupDetailScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={23} color="#07111F" />
+          <ArrowLeft size={23} color={themeColor("#07111F", "color")} />
         </Pressable>
         <Text style={styles.topTitle}>Group Details</Text>
         <View style={{ width: 42 }} />
@@ -426,12 +437,12 @@ export default function GroupDetailScreen() {
               <Image source={{ uri: group.image }} style={styles.heroImage} />
             ) : (
               <View style={styles.heroFallback}>
-                <Users size={34} color="#F3344A" />
+                <Users size={34} color={themeColor("#F3344A", "color")} />
               </View>
             )}
             {canManage && (
               <View style={styles.cameraBadge}>
-                <Camera size={15} color="#FFFFFF" />
+                <Camera size={15} color={themeColor("#FFFFFF", "color")} />
               </View>
             )}
           </Pressable>
@@ -454,7 +465,7 @@ export default function GroupDetailScreen() {
               }
               style={styles.editGroupButton}
             >
-              <Pencil size={17} color="#F3344A" />
+              <Pencil size={17} color={themeColor("#F3344A", "color")} />
               <Text style={styles.editGroupText}>
                 Edit Group
               </Text>
@@ -471,7 +482,7 @@ export default function GroupDetailScreen() {
               style={styles.collapseHeader}
             >
               <View style={styles.collapseIcon}>
-                <UserPlus size={21} color="#F3344A" />
+                <UserPlus size={21} color={themeColor("#F3344A", "color")} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.collapseTitle}>Invite Friends</Text>
@@ -480,9 +491,9 @@ export default function GroupDetailScreen() {
                 </Text>
               </View>
               {inviteFriendsOpen ? (
-                <ChevronUp size={20} color="#69707C" />
+                <ChevronUp size={20} color={themeColor("#69707C", "color")} />
               ) : (
-                <ChevronDown size={20} color="#69707C" />
+                <ChevronDown size={20} color={themeColor("#69707C", "color")} />
               )}
             </Pressable>
 
@@ -513,7 +524,7 @@ export default function GroupDetailScreen() {
                             selected && styles.selectCircleSelected,
                           ]}
                         >
-                          {selected && <Check size={15} color="#FFFFFF" />}
+                          {selected && <Check size={15} color={themeColor("#FFFFFF", "color")} />}
                         </View>
                       </Pressable>
                     );
@@ -547,7 +558,7 @@ export default function GroupDetailScreen() {
             style={styles.collapseHeader}
           >
             <View style={styles.collapseIcon}>
-              <Share2 size={21} color="#F3344A" />
+              <Share2 size={21} color={themeColor("#F3344A", "color")} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.collapseTitle}>Share Group Invite</Text>
@@ -556,9 +567,9 @@ export default function GroupDetailScreen() {
               </Text>
             </View>
             {shareInviteOpen ? (
-              <ChevronUp size={20} color="#69707C" />
+              <ChevronUp size={20} color={themeColor("#69707C", "color")} />
             ) : (
-              <ChevronDown size={20} color="#69707C" />
+              <ChevronDown size={20} color={themeColor("#69707C", "color")} />
             )}
           </Pressable>
 
@@ -568,7 +579,7 @@ export default function GroupDetailScreen() {
                 <QRCode
                   value={joinLink}
                   size={170}
-                  color="#07111F"
+                  color={themeColor("#07111F", "color")}
                   backgroundColor="#FFFFFF"
                 />
               </View>
@@ -576,16 +587,16 @@ export default function GroupDetailScreen() {
               <View style={styles.actionRow}>
                 <Pressable onPress={() => void copyCode()} style={styles.primary}>
                   {copied ? (
-                    <Check size={18} color="#FFFFFF" />
+                    <Check size={18} color={themeColor("#FFFFFF", "color")} />
                   ) : (
-                    <Copy size={18} color="#FFFFFF" />
+                    <Copy size={18} color={themeColor("#FFFFFF", "color")} />
                   )}
                   <Text style={styles.primaryText}>
                     {copied ? "Copied" : "Copy Code"}
                   </Text>
                 </Pressable>
                 <Pressable onPress={() => void shareCode()} style={styles.secondary}>
-                  <Share2 size={18} color="#F3344A" />
+                  <Share2 size={18} color={themeColor("#F3344A", "color")} />
                   <Text style={styles.secondaryText}>Share</Text>
                 </Pressable>
               </View>
@@ -638,12 +649,12 @@ export default function GroupDetailScreen() {
                     === "owner" ? (
                       <Crown
                         size={17}
-                        color="#E3A008"
+                        color={themeColor("#E3A008", "color")}
                       />
                     ) : (
                       <User
                         size={17}
-                        color="#69707C"
+                        color={themeColor("#69707C", "color")}
                       />
                     )}
 
@@ -665,7 +676,7 @@ export default function GroupDetailScreen() {
                 === member.id ? (
                   <ActivityIndicator
                     size="small"
-                    color="#F3344A"
+                    color={themeColor("#F3344A", "color")}
                   />
                 ) : canRemove ? (
                   <View
@@ -673,7 +684,7 @@ export default function GroupDetailScreen() {
                   >
                     <ChevronLeft
                       size={18}
-                      color="#9298A2"
+                      color={themeColor("#9298A2", "color")}
                     />
                   </View>
                 ) : null}
@@ -710,7 +721,7 @@ export default function GroupDetailScreen() {
                   >
                     <Trash2
                       size={21}
-                      color="#FFFFFF"
+                      color={themeColor("#FFFFFF", "color")}
                     />
 
                     <Text
@@ -734,7 +745,7 @@ export default function GroupDetailScreen() {
             disabled={isDeleting}
             style={styles.dangerButton}
           >
-            <Trash2 size={20} color="#C62828" />
+            <Trash2 size={20} color={themeColor("#C62828", "color")} />
             <Text style={styles.dangerText}>
               {isDeleting ? "Deleting..." : "Delete Group"}
             </Text>
@@ -745,7 +756,7 @@ export default function GroupDetailScreen() {
             disabled={isLeaving}
             style={styles.dangerButton}
           >
-            <LogOut size={20} color="#C62828" />
+            <LogOut size={20} color={themeColor("#C62828", "color")} />
             <Text style={styles.dangerText}>
               {isLeaving ? "Leaving..." : "Leave Group"}
             </Text>
@@ -756,7 +767,7 @@ export default function GroupDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#FFF9F2" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18, borderBottomWidth: 1, borderBottomColor: "#ECEDEF" },
   backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFFFFF" },

@@ -1,6 +1,8 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+from accounts.models import UserAppSettings
+
 from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, Q
@@ -36,10 +38,12 @@ from .models import (
     ParticipantStatus,
     PickSession,
     PickSessionNotification,
+    PickSessionAnalyticsEventType,
     PickSessionNotificationKind,
     PickSessionParticipant,
     PickSessionRestaurantOption,
     PickSessionStatus,
+    SelectionMethod,
     PickSessionVote,
     DietaryReportModerationStatus,
     RestaurantDietaryProfile,
@@ -52,6 +56,7 @@ from .serializers import (
     GroupVoteOptionSerializer,
     PickSessionListSerializer,
     PickSessionNotificationSerializer,
+    SelectRestaurantSerializer,
     SubmitGroupVoteSerializer,
     UpdateParticipantStatusSerializer,
     RestaurantDietaryReportSerializer,
@@ -59,6 +64,7 @@ from .serializers import (
 from .services import (
     refresh_pick_session_status,
     set_current_pick_session,
+    record_pick_session_event,
 )
 
 
@@ -77,7 +83,7 @@ ACTIVE_SESSION_STATUSES = (
 
 
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
-MATCH_SEARCH_CACHE_VERSION = "v6"
+MATCH_SEARCH_CACHE_VERSION = "v7"
 
 
 def _get_session_search_cache_key(
@@ -407,6 +413,38 @@ def _prepare_group_vote_options(
     )
 
 
+def _get_user_notification_settings(
+    user,
+):
+    settings_object, _ = (
+        UserAppSettings.objects.get_or_create(
+            user=user,
+        )
+    )
+
+    return settings_object
+
+
+def _notification_enabled(
+    *,
+    user,
+    field_name,
+) -> bool:
+    settings_object = (
+        _get_user_notification_settings(
+            user
+        )
+    )
+
+    return bool(
+        getattr(
+            settings_object,
+            field_name,
+            True,
+        )
+    )
+
+
 def _create_group_vote_invites(
     session,
 ):
@@ -435,8 +473,18 @@ def _create_group_vote_invites(
         )
     )
 
-    PickSessionNotification.objects.bulk_create(
-        [
+    notification_rows = []
+
+    for participant in invitees:
+        if not _notification_enabled(
+            user=participant.user,
+            field_name=(
+                "notification_pick_session_invites"
+            ),
+        ):
+            continue
+
+        notification_rows.append(
             PickSessionNotification(
                 user=participant.user,
                 session=session,
@@ -450,10 +498,266 @@ def _create_group_vote_invites(
                     "on where the group should eat."
                 ),
             )
-            for participant in invitees
-        ],
+        )
+
+    PickSessionNotification.objects.bulk_create(
+        notification_rows,
         ignore_conflicts=True,
     )
+
+
+def _create_group_vote_started_notifications(
+    session,
+):
+    participants = (
+        session.participants.exclude(
+            is_host=True,
+        )
+        .exclude(
+            status__in=(
+                ParticipantStatus.DECLINED,
+                ParticipantStatus.LEFT,
+            ),
+        )
+        .select_related(
+            "user",
+        )
+    )
+
+    notification_rows = []
+
+    for participant in participants:
+        if not _notification_enabled(
+            user=participant.user,
+            field_name=(
+                "notification_group_vote_started"
+            ),
+        ):
+            continue
+
+        notification_rows.append(
+            PickSessionNotification(
+                user=participant.user,
+                session=session,
+                kind=(
+                    PickSessionNotificationKind
+                    .GROUP_VOTE_STARTED
+                ),
+                title="Group Vote Started",
+                message=(
+                    "Your group vote is ready. "
+                    "Cast your vote now."
+                ),
+            )
+        )
+
+    PickSessionNotification.objects.bulk_create(
+        notification_rows,
+        ignore_conflicts=True,
+    )
+
+
+def _create_group_vote_result_notifications(
+    *,
+    session,
+    winner,
+):
+    participants = (
+        session.participants.exclude(
+            status__in=(
+                ParticipantStatus.DECLINED,
+                ParticipantStatus.LEFT,
+            ),
+        )
+        .select_related(
+            "user",
+        )
+    )
+
+    notification_rows = []
+
+    for participant in participants:
+        if not _notification_enabled(
+            user=participant.user,
+            field_name=(
+                "notification_session_results"
+            ),
+        ):
+            continue
+
+        notification_rows.append(
+            PickSessionNotification(
+                user=participant.user,
+                session=session,
+                kind=(
+                    PickSessionNotificationKind
+                    .GROUP_VOTE_COMPLETED
+                ),
+                title="Group Vote Complete",
+                message=(
+                    f"{winner.name} won the group vote."
+                ),
+            )
+        )
+
+    PickSessionNotification.objects.bulk_create(
+        notification_rows,
+        ignore_conflicts=True,
+    )
+
+
+def _create_restaurant_selected_notifications(
+    session,
+):
+    participants = (
+        session.participants.exclude(
+            status__in=(
+                ParticipantStatus.DECLINED,
+                ParticipantStatus.LEFT,
+            ),
+        )
+        .select_related(
+            "user",
+        )
+    )
+
+    rows = []
+
+    for participant in participants:
+        if not _notification_enabled(
+            user=participant.user,
+            field_name=(
+                "notification_session_results"
+            ),
+        ):
+            continue
+
+        rows.append(
+            PickSessionNotification(
+                user=participant.user,
+                session=session,
+                kind=(
+                    PickSessionNotificationKind
+                    .RESTAURANT_SELECTED
+                ),
+                title="Restaurant Selected",
+                message=(
+                    f"{session.selected_restaurant_name} "
+                    "is where your group is eating."
+                ),
+            )
+        )
+
+    PickSessionNotification.objects.bulk_create(
+        rows,
+        ignore_conflicts=True,
+    )
+
+
+def _record_search_and_impressions(
+    *,
+    session,
+    user,
+    matches,
+):
+    filter_data = {
+        "latitude": (
+            float(session.latitude)
+            if session.latitude is not None
+            else None
+        ),
+        "longitude": (
+            float(session.longitude)
+            if session.longitude is not None
+            else None
+        ),
+        "location_label": (
+            session.location_label
+        ),
+        "radius_miles": (
+            session.search_radius_miles
+        ),
+        "price_min": session.price_min,
+        "price_max": session.price_max,
+        "open_now": session.open_now,
+        "decision_mode": (
+            session.decision_mode
+        ),
+        "participant_count": (
+            session.participant_count
+        ),
+        "cuisines": (
+            get_session_preferred_cuisine_slugs(
+                session
+            )
+        ),
+        "dining_styles": (
+            get_session_preferred_dining_style_slugs(
+                session
+            )
+        ),
+        "dietary_requirements": (
+            get_session_requested_dietary_slugs(
+                session
+            )
+        ),
+    }
+
+    record_pick_session_event(
+        session=session,
+        user=user,
+        event_type=(
+            PickSessionAnalyticsEventType
+            .SEARCH_STARTED
+        ),
+        event_data=filter_data,
+        dedupe_key=(
+            f"session:{session.id}:search"
+        ),
+    )
+
+    for position, restaurant in enumerate(
+        matches,
+        start=1,
+    ):
+        record_pick_session_event(
+            session=session,
+            user=user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .RESTAURANT_IMPRESSION
+            ),
+            restaurant_external_id=(
+                restaurant.get(
+                    "external_id",
+                    "",
+                )
+            ),
+            restaurant_name=(
+                restaurant.get(
+                    "name",
+                    "",
+                )
+            ),
+            event_data={
+                "position": position,
+                "match_score": (
+                    restaurant.get(
+                        "match_score"
+                    )
+                ),
+                "distance_miles": (
+                    restaurant.get(
+                        "distance_miles"
+                    )
+                ),
+            },
+            dedupe_key=(
+                f"session:{session.id}:"
+                f"impression:"
+                f"{restaurant.get('external_id', '')}"
+            ),
+        )
 
 
 def _serialize_group_vote_state(
@@ -620,9 +924,6 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 )
                 | Q(
                     user=user,
-                    session__decision_mode=(
-                        DecisionMode.GROUP_VOTE
-                    ),
                 )
             )
             .exclude(
@@ -843,37 +1144,6 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             is_current=False,
         )
 
-        active_participants = (
-            session.participants.exclude(
-                status__in=(
-                    ParticipantStatus.DECLINED,
-                    ParticipantStatus.LEFT,
-                ),
-            )
-            .select_related(
-                "user",
-            )
-        )
-
-        PickSessionNotification.objects.bulk_create(
-            [
-                PickSessionNotification(
-                    user=participant.user,
-                    session=session,
-                    kind=(
-                        PickSessionNotificationKind
-                        .GROUP_VOTE_COMPLETED
-                    ),
-                    title="Group Vote Complete",
-                    message=(
-                        f"{winner.name} won the group vote."
-                    ),
-                )
-                for participant in active_participants
-            ],
-            ignore_conflicts=True,
-        )
-
         return Response(
             status=status.HTTP_204_NO_CONTENT,
         )
@@ -1081,6 +1351,39 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             in scored_restaurants
         ]
 
+        target_positions = [
+            {
+                "position": index + 1,
+                "name": match.get("name"),
+                "match_score": match.get("match_score"),
+                "external_id": match.get("external_id"),
+            }
+            for index, match in enumerate(matches)
+            if "4th tavern"
+            in str(
+                match.get("name")
+                or ""
+            ).lower()
+        ]
+
+        logger.warning(
+            (
+                "[4TH-TAVERN-RESPONSE] session=%s "
+                "decision_mode=%s match_count=%s "
+                "target_positions=%s"
+            ),
+            session.id,
+            session.decision_mode,
+            len(matches),
+            target_positions,
+        )
+
+        _record_search_and_impressions(
+            session=session,
+            user=request.user,
+            matches=matches,
+        )
+
         return Response(
             {
                 "session": {
@@ -1128,6 +1431,322 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 "match_count": len(matches),
                 "matches": matches,
             },
+        )
+
+    @action(
+        detail=True,
+        methods=("post",),
+        url_path="select-restaurant",
+    )
+    @transaction.atomic
+    def select_restaurant(
+        self,
+        request,
+        id=None,
+    ):
+        session = self.get_object()
+
+        is_host = session.participants.filter(
+            user=request.user,
+            is_host=True,
+        ).exists()
+
+        if not is_host:
+            return Response(
+                {
+                    "detail": (
+                        "Only the session host can "
+                        "select the restaurant."
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if session.status in (
+            PickSessionStatus.COMPLETED,
+            PickSessionStatus.CANCELLED,
+            PickSessionStatus.EXPIRED,
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "This Pick Session can no "
+                        "longer be completed."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            session.decision_mode
+            == DecisionMode.GROUP_VOTE
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "Group Vote sessions are completed "
+                        "through the vote result."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = SelectRestaurantSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        selection_method = (
+            serializer.validated_data[
+                "selection_method"
+            ]
+        )
+
+        expected_method = (
+            SelectionMethod.SURPRISE_ME
+            if session.decision_mode
+            == DecisionMode.PICK_FOR_US
+            else SelectionMethod.RANKED_MANUAL
+        )
+
+        if selection_method != expected_method:
+            return Response(
+                {
+                    "detail": (
+                        "The selection method does not "
+                        "match this session."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            (
+                restaurants,
+                _primary_types,
+                _dietary_slugs,
+                _required_dietary,
+                _preferred_dietary,
+            ) = _get_enriched_session_restaurants(
+                session
+            )
+        except GooglePlacesError as error:
+            return Response(
+                {
+                    "detail": str(error),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        scored = score_and_sort_restaurants(
+            restaurants=restaurants,
+            session=session,
+        )
+
+        external_id = (
+            serializer.validated_data[
+                "external_id"
+            ]
+        )
+
+        selected = next(
+            (
+                item
+                for item in scored
+                if item.restaurant.external_id
+                == external_id
+            ),
+            None,
+        )
+
+        if selected is None:
+            return Response(
+                {
+                    "detail": (
+                        "That restaurant is not a current "
+                        "match for this session."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        restaurant_data = selected.to_dict()
+        now = timezone.now()
+
+        session.selected_restaurant_external_id = (
+            selected.restaurant.external_id
+        )
+        session.selected_restaurant_name = (
+            selected.restaurant.name
+        )
+        session.selected_restaurant_data = (
+            restaurant_data
+        )
+        session.selection_method = (
+            selection_method
+        )
+        session.selected_by = (
+            request.user
+        )
+        session.selected_at = now
+        session.status = (
+            PickSessionStatus.COMPLETED
+        )
+        session.completed_at = now
+
+        session.save(
+            update_fields=(
+                "selected_restaurant_external_id",
+                "selected_restaurant_name",
+                "selected_restaurant_data",
+                "selection_method",
+                "selected_by",
+                "selected_at",
+                "status",
+                "completed_at",
+                "updated_at",
+            ),
+        )
+
+        session.participants.filter(
+            is_current=True,
+        ).update(
+            is_current=False,
+        )
+
+        _create_restaurant_selected_notifications(
+            session
+        )
+
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .RESTAURANT_SELECTED
+            ),
+            restaurant_external_id=(
+                session
+                .selected_restaurant_external_id
+            ),
+            restaurant_name=(
+                session
+                .selected_restaurant_name
+            ),
+            event_data={
+                "selection_method": (
+                    selection_method
+                ),
+                "match_score": (
+                    restaurant_data.get(
+                        "match_score"
+                    )
+                ),
+                "participant_count": (
+                    session.participant_count
+                ),
+            },
+            dedupe_key=(
+                f"session:{session.id}:selected"
+            ),
+        )
+
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .SESSION_COMPLETED
+            ),
+            restaurant_external_id=(
+                session
+                .selected_restaurant_external_id
+            ),
+            restaurant_name=(
+                session
+                .selected_restaurant_name
+            ),
+            event_data={
+                "selection_method": (
+                    selection_method
+                ),
+            },
+            dedupe_key=(
+                f"session:{session.id}:completed"
+            ),
+        )
+
+        refreshed = self.get_queryset().get(
+            id=session.id,
+        )
+
+        return Response(
+            PickSessionDetailSerializer(
+                refreshed,
+                context={
+                    "request": request,
+                },
+            ).data,
+        )
+
+    @action(
+        detail=True,
+        methods=("post",),
+        url_path="restaurant-detail-view",
+    )
+    def restaurant_detail_view(
+        self,
+        request,
+        id=None,
+    ):
+        session = self.get_object()
+        external_id = str(
+            request.data.get(
+                "external_id",
+                "",
+            )
+        ).strip()
+        restaurant_name = str(
+            request.data.get(
+                "restaurant_name",
+                "",
+            )
+        ).strip()
+
+        if not external_id:
+            return Response(
+                {
+                    "detail": (
+                        "A restaurant ID is required."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .RESTAURANT_DETAIL_VIEWED
+            ),
+            restaurant_external_id=(
+                external_id
+            ),
+            restaurant_name=(
+                restaurant_name
+            ),
+            event_data={
+                "decision_mode": (
+                    session.decision_mode
+                ),
+            },
+        )
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
         )
 
     @action(
@@ -1206,6 +1825,10 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                     ),
                 )
 
+                _create_group_vote_started_notifications(
+                    session
+                )
+
             return Response(
                 _serialize_group_vote_state(
                     session=session,
@@ -1280,6 +1903,10 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 "started_at",
                 "updated_at",
             ),
+        )
+
+        _create_group_vote_started_notifications(
+            session
         )
 
         return Response(
@@ -1405,6 +2032,26 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             },
         )
 
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .VOTE_CAST
+            ),
+            restaurant_external_id=(
+                option.external_id
+            ),
+            restaurant_name=(
+                option.name
+            ),
+            event_data={
+                "option_id": str(
+                    option.id
+                ),
+            },
+        )
+
         session.refresh_from_db()
 
         return Response(
@@ -1507,18 +2154,38 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             winner.name
         )
 
+        session.selected_restaurant_data = (
+            winner.restaurant_data
+        )
+
+        session.selection_method = (
+            SelectionMethod.GROUP_VOTE
+        )
+
+        session.selected_by = (
+            request.user
+        )
+
+        session.selected_at = (
+            timezone.now()
+        )
+
         session.status = (
             PickSessionStatus.COMPLETED
         )
 
         session.completed_at = (
-            timezone.now()
+            session.selected_at
         )
 
         session.save(
             update_fields=(
                 "selected_restaurant_external_id",
                 "selected_restaurant_name",
+                "selected_restaurant_data",
+                "selection_method",
+                "selected_by",
+                "selected_at",
                 "status",
                 "completed_at",
                 "updated_at",
@@ -1529,6 +2196,63 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             is_current=True,
         ).update(
             is_current=False,
+        )
+
+        _create_group_vote_result_notifications(
+            session=session,
+            winner=winner,
+        )
+
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .RESTAURANT_SELECTED
+            ),
+            restaurant_external_id=(
+                winner.external_id
+            ),
+            restaurant_name=(
+                winner.name
+            ),
+            event_data={
+                "selection_method": (
+                    SelectionMethod.GROUP_VOTE
+                ),
+                "vote_count": (
+                    winner.vote_count
+                ),
+                "participant_count": (
+                    session.participant_count
+                ),
+            },
+            dedupe_key=(
+                f"session:{session.id}:selected"
+            ),
+        )
+
+        record_pick_session_event(
+            session=session,
+            user=request.user,
+            event_type=(
+                PickSessionAnalyticsEventType
+                .SESSION_COMPLETED
+            ),
+            restaurant_external_id=(
+                winner.external_id
+            ),
+            restaurant_name=(
+                winner.name
+            ),
+            event_data={
+                "selection_method": (
+                    SelectionMethod.GROUP_VOTE
+                ),
+            },
+            dedupe_key=(
+                f"session:{session.id}:completed"
+            ),
         )
 
         return Response(
@@ -1849,17 +2573,16 @@ class PickSessionViewSet(viewsets.ModelViewSet):
         sessions = (
             self.get_queryset()
             .filter(
-                status__in=(
-                    PickSessionStatus.COMPLETED,
-                    PickSessionStatus.CANCELLED,
-                    PickSessionStatus.EXPIRED,
+                status=(
+                    PickSessionStatus.COMPLETED
                 ),
+                selected_restaurant_external_id__gt="",
             )
             .order_by(
                 "-completed_at",
                 "-updated_at",
                 "-created_at",
-            )
+            )[:20]
         )
 
         serializer = (

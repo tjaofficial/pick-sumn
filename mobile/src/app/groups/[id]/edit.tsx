@@ -30,9 +30,18 @@ import {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 export default function EditGroupScreen() {
+  useAppTheme();
+
   const params =
     useLocalSearchParams<{
       id?: string | string[];
@@ -136,7 +145,7 @@ export default function EditGroupScreen() {
         <View style={styles.centerState}>
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
           <Text style={styles.loadingText}>
             Loading group...
@@ -156,7 +165,7 @@ export default function EditGroupScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -180,7 +189,7 @@ export default function EditGroupScreen() {
           value={name}
           onChangeText={setName}
           placeholder="Group name"
-          placeholderTextColor="#9298A2"
+          placeholderTextColor={themeColor("#9298A2", "color")}
           maxLength={120}
           style={styles.input}
         />
@@ -193,7 +202,7 @@ export default function EditGroupScreen() {
           value={description}
           onChangeText={setDescription}
           placeholder="Add a description"
-          placeholderTextColor="#9298A2"
+          placeholderTextColor={themeColor("#9298A2", "color")}
           maxLength={255}
           multiline
           textAlignVertical="top"
@@ -223,12 +232,12 @@ export default function EditGroupScreen() {
           {isSaving ? (
             <ActivityIndicator
               size="small"
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           ) : (
             <Check
               size={20}
-              color="#FFFFFF"
+              color={themeColor("#FFFFFF", "color")}
             />
           )}
 
@@ -244,7 +253,7 @@ export default function EditGroupScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

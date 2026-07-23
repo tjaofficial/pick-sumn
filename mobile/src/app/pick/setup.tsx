@@ -9,13 +9,15 @@ import {
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
   View,
 } from "react-native";
+import {
+  SafeAreaView,
+} from "react-native-safe-area-context";
 import {
   useEffect,
   useMemo,
@@ -34,6 +36,13 @@ import {
 import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 
 type DiningStyleChoice = {
@@ -58,6 +67,14 @@ const MERGED_STYLE_GROUPS = [
     slugs: [
       "fast-casual",
       "fast-food",
+    ],
+  },
+  {
+    key: "restaurant-bar-tavern",
+    label: "Restaurant / Bar / Tavern",
+    slugs: [
+      "bar-tavern",
+      "local-restaurant-bar-tavern",
     ],
   },
 ];
@@ -125,6 +142,8 @@ function buildDiningStyleChoices(
 
 
 export default function PickFiltersScreen() {
+  useAppTheme();
+
   const {
     draft,
     updateSessionFilters,
@@ -298,7 +317,7 @@ export default function PickFiltersScreen() {
         >
           <ActivityIndicator
             size="large"
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <Text
@@ -321,7 +340,7 @@ export default function PickFiltersScreen() {
         >
           <ArrowLeft
             size={23}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
           />
         </Pressable>
 
@@ -361,7 +380,7 @@ export default function PickFiltersScreen() {
         <View style={styles.introCard}>
           <UtensilsCrossed
             size={27}
-            color="#F3344A"
+            color={themeColor("#F3344A", "color")}
           />
 
           <View
@@ -449,7 +468,7 @@ export default function PickFiltersScreen() {
                   {selected && (
                     <Check
                       size={16}
-                      color="#FFFFFF"
+                      color={themeColor("#FFFFFF", "color")}
                       strokeWidth={3}
                     />
                   )}
@@ -497,7 +516,7 @@ export default function PickFiltersScreen() {
             icon={
               <Clock3
                 size={21}
-                color="#168B4F"
+                color={themeColor("#168B4F", "color")}
               />
             }
             title="Open Now"
@@ -512,7 +531,7 @@ export default function PickFiltersScreen() {
             icon={
               <Sparkles
                 size={21}
-                color="#E3A008"
+                color={themeColor("#E3A008", "color")}
               />
             }
             title="Something New"
@@ -553,7 +572,7 @@ export default function PickFiltersScreen() {
         >
           <Check
             size={21}
-            color="#FFFFFF"
+            color={themeColor("#FFFFFF", "color")}
             strokeWidth={2.8}
           />
 
@@ -637,7 +656,7 @@ function FilterToggle({
 }
 
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",

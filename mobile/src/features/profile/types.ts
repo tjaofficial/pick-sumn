@@ -22,6 +22,7 @@ export type Profile = {
   updated_at: string;
   dietary_section_completed?: boolean;
   dislikes_section_completed?: boolean;
+  profile_completion_card_dismissed: boolean;
 };
 
 export type UpdateProfileInput = {
@@ -39,6 +40,7 @@ export type UpdateProfileInput = {
   default_price_max?: number;
   exclude_recent_days?: number;
   onboarding_completed?: boolean;
+  profile_completion_card_dismissed?: boolean;
 };
 
 export type SavedLocation = {

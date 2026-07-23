@@ -15,8 +15,17 @@ import { useEffect, useState } from "react";
 
 import { getMyFriendCode } from "@/features/friends/friendsService";
 import type { FriendUser } from "@/features/friends/types";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 export default function FriendCodeScreen() {
+  useAppTheme();
+
   const [user, setUser] = useState<FriendUser | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -27,7 +36,7 @@ export default function FriendCodeScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.screen}>
-        <ActivityIndicator size="large" color="#F3344A" style={{ marginTop: 100 }} />
+        <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} style={{ marginTop: 100 }} />
       </SafeAreaView>
     );
   }
@@ -54,7 +63,7 @@ export default function FriendCodeScreen() {
     <SafeAreaView style={styles.screen}>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={23} color="#07111F" />
+          <ArrowLeft size={23} color={themeColor("#07111F", "color")} />
         </Pressable>
         <Text style={styles.title}>My Friend Code</Text>
         <View style={{ width: 42 }} />
@@ -70,7 +79,7 @@ export default function FriendCodeScreen() {
           <QRCode
             value={link}
             size={220}
-            color="#07111F"
+            color={themeColor("#07111F", "color")}
             backgroundColor="#FFFFFF"
           />
         </View>
@@ -80,15 +89,15 @@ export default function FriendCodeScreen() {
         <View style={styles.actions}>
           <Pressable onPress={() => void copyCode()} style={styles.primary}>
             {copied ? (
-              <Check size={19} color="#FFFFFF" />
+              <Check size={19} color={themeColor("#FFFFFF", "color")} />
             ) : (
-              <Copy size={19} color="#FFFFFF" />
+              <Copy size={19} color={themeColor("#FFFFFF", "color")} />
             )}
             <Text style={styles.primaryText}>{copied ? "Copied" : "Copy Code"}</Text>
           </Pressable>
 
           <Pressable onPress={() => void shareCode()} style={styles.secondary}>
-            <Share2 size={19} color="#F3344A" />
+            <Share2 size={19} color={themeColor("#F3344A", "color")} />
             <Text style={styles.secondaryText}>Share</Text>
           </Pressable>
         </View>
@@ -97,7 +106,7 @@ export default function FriendCodeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#FFF9F2" },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18 },
   backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFFFFF" },

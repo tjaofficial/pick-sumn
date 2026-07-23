@@ -11,7 +11,17 @@ import type {
 export async function getGroups(): Promise<DiningGroup[]> {
   return apiRequest<DiningGroup[]>("/api/groups/");
 }
-
+export async function removeGroupMember(
+  groupId: string,
+  memberId: number,
+): Promise<void> {
+  return apiRequest<void>(
+    `/api/groups/${groupId}/members/${memberId}/`,
+    {
+      method: "DELETE",
+    },
+  );
+}
 export async function getGroup(
   groupId: string,
 ): Promise<DiningGroupDetail> {

@@ -15,6 +15,10 @@ import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 
 import { joinGroup } from "./groupsService";
 import type { DiningGroupDetail } from "./types";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
 
 type JoinGroupModalProps = {
   visible: boolean;
@@ -97,14 +101,14 @@ export function JoinGroupModal({
           >
             <X
               size={21}
-              color="#07111F"
+              color={themeColor("#07111F", "color")}
             />
           </Pressable>
 
           <View style={styles.iconContainer}>
             <Hash
               size={31}
-              color="#F3344A"
+              color={themeColor("#F3344A", "color")}
               strokeWidth={2.5}
             />
           </View>
@@ -124,7 +128,7 @@ export function JoinGroupModal({
               setJoinCode(value.toUpperCase())
             }
             placeholder="BURGER7"
-            placeholderTextColor="#A4A9B2"
+            placeholderTextColor={themeColor("#A4A9B2", "color")}
             autoCapitalize="characters"
             autoCorrect={false}
             maxLength={12}
@@ -155,7 +159,7 @@ export function JoinGroupModal({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   overlay: {
     flex: 1,
     alignItems: "center",

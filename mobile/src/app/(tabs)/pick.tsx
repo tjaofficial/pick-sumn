@@ -55,6 +55,16 @@ import type {
   PickSession,
 } from "@/features/pickSessions/types";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
+import {
+  useTheme,
+} from "@/hooks/use-theme";
+import {
+  createThemedStyleSheet,
+  themeColor,
+} from "@/theme/themedStyleSheet";
+import {
+  useAppTheme,
+} from "@/features/settings/AppThemeContext";
 
 function roundCoordinate(
   value: number | string | null | undefined,
@@ -79,6 +89,9 @@ function roundCoordinate(
 }
 
 export default function PickScreen() {
+  useAppTheme();
+
+  const colors = useTheme();
   const { user } = useAuth();
   const {
     unreadCount,
@@ -220,14 +233,29 @@ export default function PickScreen() {
 
       if (decisionMode === "group_vote") {
         await prepareGroupVote(session.id);
-        router.replace({ pathname: "/pick-votes/[id]", params: { id: session.id } });
+
+        resetDraft();
+
+        router.replace({
+          pathname: "/pick-votes/[id]",
+          params: {
+            id: session.id,
+          },
+        });
+
         return;
       }
 
       await startPickSessionMatching(session.id);
+
+      resetDraft();
+
       router.replace({
         pathname: "/(tabs)/matches",
-        params: { sessionId: session.id, decisionMode },
+        params: {
+          sessionId: session.id,
+          decisionMode,
+        },
       });
     } catch (requestError) {
       setError(
@@ -264,9 +292,9 @@ export default function PickScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.screen}>
+      <SafeAreaView style={[styles.screen, { backgroundColor: colors.backgroundAlt }]}>
         <View style={styles.centerState}>
-          <ActivityIndicator size="large" color="#F3344A" />
+          <ActivityIndicator size="large" color={themeColor("#F3344A", "color")} />
           <Text style={styles.loadingText}>Loading Pick Sum’N...</Text>
         </View>
       </SafeAreaView>
@@ -274,7 +302,7 @@ export default function PickScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.backgroundAlt }]}>
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -285,7 +313,7 @@ export default function PickScreen() {
               setIsRefreshing(true);
               void loadSessions();
             }}
-            tintColor="#F3344A"
+            tintColor={themeColor("#F3344A", "color")}
           />
         }
       >
@@ -296,8 +324,26 @@ export default function PickScreen() {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Pressable onPress={() => router.push("/notifications")} style={styles.notificationButton}>
-            <Bell size={23} color="#07111F" />
+          <Pressable
+            onPress={() =>
+              router.push(
+                "/notifications",
+              )
+            }
+            style={[
+              styles.notificationButton,
+              {
+                backgroundColor:
+                  colors.surface,
+                borderColor:
+                  colors.border,
+              },
+            ]}
+          >
+            <Bell
+              size={23}
+              color={colors.text}
+            />
             {unreadCount > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>{unreadCount > 9 ? "9+" : unreadCount}</Text>
@@ -306,8 +352,8 @@ export default function PickScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.guideTitle}>Set up your session</Text>
-        <Text style={styles.guideSubtitle}>Follow the path, then Pick Sum’N.</Text>
+        <Text style={[styles.guideTitle, { color: colors.text }]}>Set up your session</Text>
+        <Text style={[styles.guideSubtitle, { color: colors.textSecondary }]}>Follow the path, then Pick Sum’N.</Text>
 
         <Pressable
           onPress={confirmResetSetup}
@@ -324,7 +370,7 @@ export default function PickScreen() {
         >
           <RotateCcw
             size={17}
-            color="#C62828"
+            color={themeColor("#C62828", "color")}
           />
 
           <Text
@@ -376,7 +422,7 @@ export default function PickScreen() {
         <View style={styles.decisionRow}>
           <DecisionSideButton
             label={"Surprise\nMe"}
-            icon={<Shuffle size={29} color="#07111F" />}
+            icon={<Shuffle size={29} color={themeColor("#07111F", "color")} />}
             disabled={!canStart}
             loading={creatingMode === "pick_for_us"}
             onPress={() => void createSession("pick_for_us")}
@@ -389,10 +435,10 @@ export default function PickScreen() {
           >
             <View style={[styles.pickInner, setupComplete && styles.pickInnerReady]}>
               {creatingMode === "ranked" ? (
-                <ActivityIndicator size="large" color="#FFFFFF" />
+                <ActivityIndicator size="large" color={themeColor("#FFFFFF", "color")} />
               ) : (
                 <>
-                  <Dices size={49} color="#FFFFFF" strokeWidth={2.5} />
+                  <Dices size={49} color={themeColor("#FFFFFF", "color")} strokeWidth={2.5} />
                   <Text style={styles.pickText}>PICK SUM’N</Text>
                 </>
               )}
@@ -401,7 +447,7 @@ export default function PickScreen() {
 
           <DecisionSideButton
             label={"Group\nVote"}
-            icon={<Vote size={29} color="#07111F" />}
+            icon={<Vote size={29} color={themeColor("#07111F", "color")} />}
             disabled={!canStart}
             loading={creatingMode === "group_vote"}
             onPress={() => void createSession("group_vote")}
@@ -416,21 +462,27 @@ export default function PickScreen() {
 
         <View style={styles.bottomRow}>
           <Shortcut
-            icon={<Clock3 size={21} color="#F3344A" />}
+            icon={<Clock3 size={21} color={themeColor("#F3344A", "color")} />}
             title="Active Session"
             subtitle={activeSessions.length > 0 ? `${activeSessions.length} in progress` : "No active session"}
             onPress={() => router.push("/pick/active")}
           />
           <Shortcut
-            icon={<History size={21} color="#F3344A" />}
-            title="Recent Picks"
-            subtitle={recentSessions.length > 0 ? `${recentSessions.length} recent picks` : "Nothing picked yet"}
+            icon={<History size={21} color={themeColor("#F3344A", "color")} />}
+            title="Recent History"
+            subtitle={
+              recentSessions.length > 0
+                ? `${recentSessions.length} recent choice${
+                    recentSessions.length === 1 ? "" : "s"
+                  }`
+                : "No history yet"
+            }
             onPress={() => router.push("/pick/recent")}
           />
         </View>
 
         <Pressable onPress={() => void loadSessions()} style={styles.refreshButton}>
-          <RefreshCw size={15} color="#777E89" />
+          <RefreshCw size={15} color={themeColor("#777E89", "color")} />
           <Text style={styles.refreshText}>Refresh sessions</Text>
         </Pressable>
       </ScrollView>
@@ -448,22 +500,59 @@ type StepCardProps = {
 };
 
 function StepCard({ complete, active, icon, title, subtitle, onPress }: StepCardProps) {
+  const colors = useTheme();
+
   return (
     <Pressable
       onPress={onPress}
       style={[
         styles.stepCard,
+        {
+          backgroundColor:
+            complete
+              ? colors.successSoft
+              : colors.surface,
+          borderColor:
+            complete
+              ? colors.success
+              : active
+                ? colors.primary
+                : colors.border,
+        },
         active && styles.stepCardActive,
-        complete && styles.stepCardComplete,
       ]}
     >
       <View style={[styles.stepIcon, complete && styles.stepIconComplete]}>{icon}</View>
       <View style={styles.stepContent}>
-        <Text style={[styles.stepTitle, complete && styles.stepTitleComplete]} numberOfLines={1}>{title}</Text>
-        <Text style={[styles.stepSubtitle, complete && styles.stepSubtitleComplete]} numberOfLines={2}>{subtitle}</Text>
+        <Text
+          style={[
+            styles.stepTitle,
+            {
+              color:
+                complete
+                  ? colors.success
+                  : colors.text,
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        <Text
+          style={[
+            styles.stepSubtitle,
+            {
+              color:
+                colors.textSecondary,
+            },
+          ]}
+          numberOfLines={2}
+        >
+          {subtitle}
+        </Text>
       </View>
       {complete ? (
-        <View style={styles.checkCircle}><Check size={17} color="#FFFFFF" strokeWidth={3} /></View>
+        <View style={styles.checkCircle}><Check size={17} color={themeColor("#FFFFFF", "color")} strokeWidth={3} /></View>
       ) : (
         <ChevronRight size={23} color={active ? "#F3344A" : "#9298A2"} />
       )}
@@ -481,25 +570,84 @@ function GuideArrow({ active, complete }: { active: boolean; complete: boolean }
 }
 
 function DecisionSideButton({ label, icon, disabled, loading, onPress }: { label: string; icon: React.ReactNode; disabled: boolean; loading: boolean; onPress: () => void }) {
+  const colors = useTheme();
+
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={[styles.sideButton, disabled && styles.sideDisabled]}>
-      {loading ? <ActivityIndicator size="small" color="#07111F" /> : icon}
-      <Text style={styles.sideText}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.sideButton,
+        {
+          backgroundColor:
+            colors.surface,
+          borderColor:
+            colors.border,
+        },
+        disabled
+          && styles.sideDisabled,
+      ]}
+    >
+      {loading ? <ActivityIndicator size="small" color={themeColor("#07111F", "color")} /> : icon}
+      <Text
+        style={[
+          styles.sideText,
+          {
+            color:
+              colors.text,
+          },
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
 function Shortcut({ icon, title, subtitle, onPress }: { icon: React.ReactNode; title: string; subtitle: string; onPress: () => void }) {
+  const colors = useTheme();
+
   return (
-    <Pressable onPress={onPress} style={styles.shortcut}>
-      <View style={styles.shortcutHeading}>{icon}<Text style={styles.shortcutTitle}>{title}</Text></View>
-      <Text style={styles.shortcutSubtitle}>{subtitle}</Text>
-      <ChevronRight size={19} color="#F3344A" style={styles.shortcutArrow} />
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.shortcut,
+        {
+          backgroundColor:
+            colors.surface,
+          borderColor:
+            colors.border,
+        },
+      ]}
+    >
+      <View style={styles.shortcutHeading}>{icon}<Text
+        style={[
+          styles.shortcutTitle,
+          {
+            color:
+              colors.text,
+          },
+        ]}
+      >
+        {title}
+      </Text></View>
+      <Text
+        style={[
+          styles.shortcutSubtitle,
+          {
+            color:
+              colors.textSecondary,
+          },
+        ]}
+      >
+        {subtitle}
+      </Text>
+      <ChevronRight size={19} color={themeColor("#F3344A", "color")} style={styles.shortcutArrow} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const styles = createThemedStyleSheet({
   screen: { flex: 1, backgroundColor: "#FFFDFB" },
   content: { paddingHorizontal: 18, paddingBottom: 38 },
   logoRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
