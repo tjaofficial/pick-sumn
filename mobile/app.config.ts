@@ -17,6 +17,14 @@ export default ({
 
   const plugins:
     NonNullable<ExpoConfig["plugins"]> = [
+      [
+        "expo-build-properties",
+        {
+          ios: {
+            useFrameworks: "static",
+          },
+        },
+      ],
       "expo-router",
       [
         "expo-splash-screen",
