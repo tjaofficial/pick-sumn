@@ -1,4 +1,6 @@
-import { apiRequest } from "@/services/api";
+import {
+  apiRequest,
+} from "@/services/api";
 
 import type {
   CreateGroupInput,
@@ -6,11 +8,18 @@ import type {
   DiningGroupDetail,
   DiningGroupInvitation,
   JoinGroupInput,
+  UpdateGroupInput,
 } from "./types";
 
-export async function getGroups(): Promise<DiningGroup[]> {
-  return apiRequest<DiningGroup[]>("/api/groups/");
+
+export async function getGroups():
+Promise<DiningGroup[]> {
+  return apiRequest<DiningGroup[]>(
+    "/api/groups/",
+  );
 }
+
+
 export async function removeGroupMember(
   groupId: string,
   memberId: number,
@@ -22,6 +31,8 @@ export async function removeGroupMember(
     },
   );
 }
+
+
 export async function getGroup(
   groupId: string,
 ): Promise<DiningGroupDetail> {
@@ -30,14 +41,37 @@ export async function getGroup(
   );
 }
 
+
 export async function createGroup(
   input: CreateGroupInput,
 ): Promise<DiningGroup> {
-  return apiRequest<DiningGroup>("/api/groups/", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
+  return apiRequest<DiningGroup>(
+    "/api/groups/",
+    {
+      method: "POST",
+      body: JSON.stringify(
+        input,
+      ),
+    },
+  );
 }
+
+
+export async function updateGroup(
+  groupId: string,
+  input: UpdateGroupInput,
+): Promise<DiningGroupDetail> {
+  return apiRequest<DiningGroupDetail>(
+    `/api/groups/${groupId}/`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(
+        input,
+      ),
+    },
+  );
+}
+
 
 export async function joinGroup(
   input: JoinGroupInput,
@@ -46,10 +80,13 @@ export async function joinGroup(
     "/api/groups/join/",
     {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify(
+        input,
+      ),
     },
   );
 }
+
 
 export async function leaveGroup(
   groupId: string,
@@ -85,10 +122,11 @@ export async function inviteFriendsToGroup(
 }
 
 
-export async function getGroupInvitations(): Promise<
-  DiningGroupInvitation[]
-> {
-  return apiRequest<DiningGroupInvitation[]>(
+export async function getGroupInvitations():
+Promise<DiningGroupInvitation[]> {
+  return apiRequest<
+    DiningGroupInvitation[]
+  >(
     "/api/groups/invitations/",
   );
 }
@@ -96,9 +134,15 @@ export async function getGroupInvitations(): Promise<
 
 export async function respondToGroupInvitation(
   invitationId: string,
-  action: "accept" | "decline",
-): Promise<{ detail: string }> {
-  return apiRequest<{ detail: string }>(
+  action:
+    "accept"
+    | "decline",
+): Promise<{
+  detail: string;
+}> {
+  return apiRequest<{
+    detail: string;
+  }>(
     `/api/groups/invitations/${invitationId}/respond/`,
     {
       method: "POST",
@@ -140,7 +184,9 @@ export async function uploadGroupImage(
   );
 
   const file =
-    new File(localFile.uri);
+    new File(
+      localFile.uri,
+    );
 
   const formData =
     new FormData();

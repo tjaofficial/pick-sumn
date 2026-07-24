@@ -1,4 +1,7 @@
-export type GroupRole = "owner" | "admin" | "member";
+export type GroupRole =
+  "owner"
+  | "admin"
+  | "member";
 
 export type DiningGroupMemberUser = {
   id: number;
@@ -27,18 +30,25 @@ export type DiningGroup = {
   image: string | null;
   join_code: string;
   member_count: number;
-  current_user_role: GroupRole | null;
+  current_user_role:
+    GroupRole | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 };
 
-export type DiningGroupDetail = DiningGroup & {
-  members: DiningGroupMember[];
-};
+export type DiningGroupDetail =
+  DiningGroup & {
+    members: DiningGroupMember[];
+  };
 
 export type CreateGroupInput = {
   name: string;
+  description?: string;
+};
+
+export type UpdateGroupInput = {
+  name?: string;
   description?: string;
 };
 
