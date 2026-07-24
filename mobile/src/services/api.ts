@@ -259,8 +259,21 @@ export async function apiRequest<T>(
 
 
   if (!response.ok) {
+    let message =
+      `Request failed with status ${response.status}`;
+
+    if (
+      data
+      && typeof data === "object"
+      && "detail" in data
+      && typeof data.detail === "string"
+      && data.detail.trim()
+    ) {
+      message = data.detail.trim();
+    }
+
     throw new ApiError(
-      `Request failed with status ${response.status}`,
+      message,
       response.status,
       data,
     );

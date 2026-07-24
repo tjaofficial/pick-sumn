@@ -258,6 +258,7 @@ class FeedbackSubmission(models.Model):
 class SocialAuthProvider(models.TextChoices):
     APPLE = "apple", "Apple"
     GOOGLE = "google", "Google"
+    FACEBOOK = "facebook", "Facebook"
 
 
 class SocialIdentity(models.Model):

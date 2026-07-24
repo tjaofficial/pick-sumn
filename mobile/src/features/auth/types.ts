@@ -27,12 +27,23 @@ export type RegisterInput = {
 
 export type SocialProvider =
   | "apple"
-  | "google";
+  | "google"
+  | "facebook";
 
 export type SocialLoginInput = {
   provider: SocialProvider;
   identity_token: string;
+  token_type?: "oidc" | "access";
+  nonce?: string;
   display_name?: string;
   first_name?: string;
   last_name?: string;
+};
+
+
+export type SignInMethods = {
+  password: boolean;
+  apple: boolean;
+  google: boolean;
+  facebook: boolean;
 };

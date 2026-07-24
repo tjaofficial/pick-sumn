@@ -12,6 +12,7 @@ from .models import (
     Friendship,
     FriendshipStatus,
     UserAppSettings,
+    SocialIdentity,
 )
 from .social_auth import (
     SocialAuthError,
@@ -30,6 +31,7 @@ from .serializers import (
     UserAppSettingsSerializer,
     UserSerializer,
     SocialLoginSerializer,
+    SignInMethodsSerializer,
 )
 
 User = get_user_model()
@@ -811,6 +813,14 @@ class SocialLoginView(APIView):
                     identity_token=data[
                         "identity_token"
                     ],
+                    token_type=data.get(
+                        "token_type",
+                        "oidc",
+                    ),
+                    nonce=data.get(
+                        "nonce",
+                        "",
+                    ),
                 )
             )
 
@@ -866,4 +876,35 @@ class SocialLoginView(APIView):
                 ),
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class SignInMethodsView(APIView):
+    permission_classes = (
+        permissions.IsAuthenticated,
+    )
+
+    def get(self, request):
+        providers = set(
+            SocialIdentity.objects.filter(
+                user=request.user,
+            ).values_list(
+                "provider",
+                flat=True,
+            )
+        )
+
+        serializer = SignInMethodsSerializer(
+            {
+                "password": (
+                    request.user.has_usable_password()
+                ),
+                "apple": "apple" in providers,
+                "google": "google" in providers,
+                "facebook": "facebook" in providers,
+            }
+        )
+
+        return Response(
+            serializer.data
         )

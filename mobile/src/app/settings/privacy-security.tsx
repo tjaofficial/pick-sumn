@@ -12,6 +12,9 @@ import {
   ShieldBan,
   UserRoundCheck,
   UsersRound,
+  CircleCheck,
+  CircleMinus,
+  LogIn,
 } from "lucide-react-native";
 import {
   Alert,
@@ -39,6 +42,8 @@ import {
 import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
+import { getSignInMethods } from "@/features/auth/authService";
+import type { SignInMethods } from "@/features/auth/types";
 
 type RowProps = {
   icon: React.ReactNode;
@@ -83,6 +88,58 @@ function Row({
   );
 }
 
+type SignInMethodRowProps = {
+  title: string;
+  connected: boolean | undefined;
+};
+
+function SignInMethodRow({
+  title,
+  connected,
+}: SignInMethodRowProps) {
+  const isConnected =
+    connected === true;
+
+  return (
+    <View style={styles.methodRow}>
+      <View style={styles.rowIcon}>
+        <LogIn
+          size={21}
+          color={themeColor("#F3344A", "color")}
+        />
+      </View>
+
+      <View style={styles.rowContent}>
+        <Text style={styles.rowTitle}>
+          {title}
+        </Text>
+
+        <Text style={styles.rowSubtitle}>
+          {connected === undefined
+            ? "Checking..."
+            : isConnected
+              ? "Connected"
+              : "Not connected"}
+        </Text>
+      </View>
+
+      {connected === undefined ? null : (
+        isConnected ? (
+          <CircleCheck
+            size={22}
+            color={themeColor("#2E9D57", "color")}
+          />
+        ) : (
+          <CircleMinus
+            size={22}
+            color={themeColor("#9298A2", "color")}
+          />
+        )
+      )}
+    </View>
+  );
+}
+
 export default function PrivacySecurityScreen() {
   useAppTheme();
 
@@ -99,9 +156,24 @@ export default function PrivacySecurityScreen() {
     setIsUpdatingBiometrics,
   ] = useState(false);
 
+  const [
+    signInMethods,
+    setSignInMethods,
+  ] = useState<SignInMethods | null>(
+    null,
+  );
+
   useFocusEffect(
     useCallback(() => {
       void refreshBiometricStatus();
+
+      void getSignInMethods()
+        .then(
+          setSignInMethods,
+        )
+        .catch(() => {
+          setSignInMethods(null);
+        });
     }, [
       refreshBiometricStatus,
     ]),
@@ -269,6 +341,38 @@ export default function PrivacySecurityScreen() {
         </View>
 
         <Text style={styles.sectionLabel}>
+          CONNECTED SIGN-IN METHODS
+        </Text>
+
+        <View style={styles.card}>
+          <SignInMethodRow
+            title="Password"
+            connected={signInMethods?.password}
+          />
+
+          <View style={styles.divider} />
+
+          <SignInMethodRow
+            title="Apple"
+            connected={signInMethods?.apple}
+          />
+
+          <View style={styles.divider} />
+
+          <SignInMethodRow
+            title="Google"
+            connected={signInMethods?.google}
+          />
+
+          <View style={styles.divider} />
+
+          <SignInMethodRow
+            title="Facebook"
+            connected={signInMethods?.facebook}
+          />
+        </View>
+
+        <Text style={styles.sectionLabel}>
           PRIVACY
         </Text>
 
@@ -413,6 +517,11 @@ const styles = createThemedStyleSheet({
   },
   rowPressed: {
     backgroundColor: "#F8F8F9",
+  },
+  methodRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 17,
   },
   rowIcon: {
     width: 43,

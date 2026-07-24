@@ -263,3 +263,14 @@ APPLE_SIGN_IN_AUDIENCES = env.list(
         "com.picksumn.app",
     ],
 )
+
+
+FACEBOOK_APP_ID = env(
+    "FACEBOOK_APP_ID",
+    default="",
+)
+
+FACEBOOK_APP_SECRET = env(
+    "FACEBOOK_APP_SECRET",
+    default="",
+)

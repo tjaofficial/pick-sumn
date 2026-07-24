@@ -1,8 +1,15 @@
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
 import {
   GoogleSignin,
   isSuccessResponse,
 } from "@react-native-google-signin/google-signin";
+import {
+  AccessToken,
+  AuthenticationToken,
+  LoginManager,
+  Settings,
+} from "react-native-fbsdk-next";
 import { Platform } from "react-native";
 
 import type {
@@ -16,8 +23,12 @@ const GOOGLE_WEB_CLIENT_ID =
 const GOOGLE_IOS_CLIENT_ID =
   process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? "";
 
+const FACEBOOK_APP_ID =
+  process.env.EXPO_PUBLIC_FACEBOOK_APP_ID ?? "";
+
 
 let googleConfigured = false;
+let facebookConfigured = false;
 
 
 function configureGoogle() {
@@ -45,6 +56,28 @@ function configureGoogle() {
   });
 
   googleConfigured = true;
+}
+
+
+function configureFacebook() {
+  if (facebookConfigured) {
+    return;
+  }
+
+  if (!FACEBOOK_APP_ID) {
+    throw new Error(
+      "Facebook sign-in is not configured. "
+      + "EXPO_PUBLIC_FACEBOOK_APP_ID is missing.",
+    );
+  }
+
+  Settings.setAppID(
+    FACEBOOK_APP_ID,
+  );
+
+  Settings.initializeSDK();
+
+  facebookConfigured = true;
 }
 
 
@@ -104,6 +137,7 @@ export async function createAppleSocialLoginInput(): Promise<
       provider: "apple",
       identity_token:
         credential.identityToken,
+      token_type: "oidc",
       ...(displayName
         ? {
             display_name:
@@ -168,11 +202,91 @@ export async function createGoogleSocialLoginInput(): Promise<
   return {
     provider: "google",
     identity_token: idToken,
+    token_type: "oidc",
     display_name:
       response.data.user.name ?? "",
     first_name:
       response.data.user.givenName ?? "",
     last_name:
       response.data.user.familyName ?? "",
+  };
+}
+
+
+export async function createFacebookSocialLoginInput(): Promise<
+  SocialLoginInput | null
+> {
+  configureFacebook();
+
+  if (Platform.OS === "ios") {
+    const nonce =
+      Crypto.randomUUID();
+
+    const result =
+      await LoginManager.logInWithPermissions(
+        [
+          "public_profile",
+          "email",
+        ],
+        "limited",
+        nonce,
+      );
+
+    if (result.isCancelled) {
+      return null;
+    }
+
+    const token =
+      await AuthenticationToken
+        .getAuthenticationTokenIOS();
+
+    const authenticationToken =
+      token?.authenticationToken;
+
+    if (!authenticationToken) {
+      throw new Error(
+        "Facebook did not return an authentication token.",
+      );
+    }
+
+    return {
+      provider: "facebook",
+      identity_token:
+        authenticationToken,
+      token_type: "oidc",
+      nonce,
+    };
+  }
+
+  const result =
+    await LoginManager.logInWithPermissions(
+      [
+        "public_profile",
+        "email",
+      ],
+    );
+
+  if (result.isCancelled) {
+    return null;
+  }
+
+  const token =
+    await AccessToken
+      .getCurrentAccessToken();
+
+  const accessToken =
+    token?.accessToken;
+
+  if (!accessToken) {
+    throw new Error(
+      "Facebook did not return an access token.",
+    );
+  }
+
+  return {
+    provider: "facebook",
+    identity_token:
+      accessToken,
+    token_type: "access",
   };
 }

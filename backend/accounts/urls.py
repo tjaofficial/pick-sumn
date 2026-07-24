@@ -19,6 +19,7 @@ from .views import (
     RegisterView,
     SendFriendRequestView,
     SocialLoginView,
+    SignInMethodsView,
     UnblockUserView,
 )
 
@@ -28,6 +29,7 @@ urlpatterns = [
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", TokenObtainPairView.as_view(), name="login"),
     path("social-login/", SocialLoginView.as_view(), name="social-login"),
+    path("sign-in-methods/", SignInMethodsView.as_view(), name="sign-in-methods"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("me/", CurrentUserView.as_view(), name="current-user"),

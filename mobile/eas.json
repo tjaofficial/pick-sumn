@@ -12,7 +12,9 @@
         "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY": "AIzaSyCQErUzcEcyryPSGFLQvMEdx5090jsPjb8",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1051010285595-8h4v5108vam8fo533tv8bskc6or9h0ij.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7"
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7",
+        "EXPO_PUBLIC_FACEBOOK_APP_ID": "2728446650882598",
+        "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "1a653bdd86d00aac04cbd73271dc8ebf"
       }
     },
     "ios-simulator": {
@@ -31,7 +33,9 @@
         "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY": "AIzaSyCQErUzcEcyryPSGFLQvMEdx5090jsPjb8",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1051010285595-8h4v5108vam8fo533tv8bskc6or9h0ij.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7"
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7",
+        "EXPO_PUBLIC_FACEBOOK_APP_ID": "2728446650882598",
+        "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "1a653bdd86d00aac04cbd73271dc8ebf"
       }
     },
     "production": {
@@ -41,7 +45,9 @@
         "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY": "AIzaSyCQErUzcEcyryPSGFLQvMEdx5090jsPjb8",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "1051010285595-8h4v5108vam8fo533tv8bskc6or9h0ij.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7"
+        "EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME": "com.googleusercontent.apps.1051010285595-qv4vq4s1vvlhg5e04cu1d1tas866emg7",
+        "EXPO_PUBLIC_FACEBOOK_APP_ID": "2728446650882598",
+        "EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN": "1a653bdd86d00aac04cbd73271dc8ebf"
       }
     }
   }

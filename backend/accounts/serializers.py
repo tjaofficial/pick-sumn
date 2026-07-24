@@ -282,11 +282,25 @@ class SocialLoginSerializer(serializers.Serializer):
         choices=(
             "apple",
             "google",
+            "facebook",
         ),
     )
     identity_token = serializers.CharField(
         write_only=True,
         trim_whitespace=True,
+    )
+    token_type = serializers.ChoiceField(
+        choices=(
+            "oidc",
+            "access",
+        ),
+        required=False,
+        default="oidc",
+    )
+    nonce = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=200,
     )
     display_name = serializers.CharField(
         required=False,
@@ -303,3 +317,10 @@ class SocialLoginSerializer(serializers.Serializer):
         allow_blank=True,
         max_length=150,
     )
+
+
+class SignInMethodsSerializer(serializers.Serializer):
+    password = serializers.BooleanField()
+    apple = serializers.BooleanField()
+    google = serializers.BooleanField()
+    facebook = serializers.BooleanField()

@@ -6,6 +6,7 @@ import type {
   LoginInput,
   RegisterInput,
   SocialLoginInput,
+  SignInMethods,
   User,
 } from "./types";
 
@@ -80,4 +81,13 @@ export async function socialLogin(
   );
 
   return getCurrentUser();
+}
+
+
+export async function getSignInMethods(): Promise<
+  SignInMethods
+> {
+  return apiRequest<SignInMethods>(
+    "/api/auth/sign-in-methods/",
+  );
 }

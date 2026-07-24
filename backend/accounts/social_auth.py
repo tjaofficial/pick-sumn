@@ -1,6 +1,8 @@
 import hashlib
+import hmac
 
 import jwt
+import requests
 from django.conf import settings
 from django.db import transaction
 from google.auth.transport import requests as google_requests
@@ -15,6 +17,11 @@ class SocialAuthError(Exception):
 
 _apple_jwk_client = jwt.PyJWKClient(
     "https://appleid.apple.com/auth/keys",
+    cache_keys=True,
+)
+
+_facebook_jwk_client = jwt.PyJWKClient(
+    "https://www.facebook.com/.well-known/oauth/openid/jwks/",
     cache_keys=True,
 )
 
@@ -159,10 +166,204 @@ def verify_apple_identity_token(identity_token):
     }
 
 
+def verify_facebook_oidc_token(
+    identity_token,
+    nonce,
+):
+    app_id = str(
+        settings.FACEBOOK_APP_ID or ""
+    ).strip()
+
+    if not app_id:
+        raise SocialAuthError(
+            "Facebook sign-in is not configured on the server."
+        )
+
+    if not nonce:
+        raise SocialAuthError(
+            "Facebook sign-in nonce is missing."
+        )
+
+    try:
+        signing_key = (
+            _facebook_jwk_client
+            .get_signing_key_from_jwt(
+                identity_token
+            )
+        )
+        claims = jwt.decode(
+            identity_token,
+            signing_key.key,
+            algorithms=("RS256",),
+            audience=app_id,
+            issuer="https://www.facebook.com",
+        )
+    except Exception as exc:
+        raise SocialAuthError(
+            "Facebook could not verify this sign-in."
+        ) from exc
+
+    token_nonce = str(
+        claims.get("nonce") or ""
+    ).strip()
+
+    if not hmac.compare_digest(
+        token_nonce,
+        nonce,
+    ):
+        raise SocialAuthError(
+            "Facebook returned an invalid sign-in nonce."
+        )
+
+    provider_user_id = str(
+        claims.get("sub") or ""
+    ).strip()
+    email = str(
+        claims.get("email") or ""
+    ).strip().lower()
+
+    if not provider_user_id:
+        raise SocialAuthError(
+            "Facebook did not return an account identifier."
+        )
+
+    if not email:
+        raise SocialAuthError(
+            "Facebook did not provide an email address. "
+            "Allow email access and try again."
+        )
+
+    return {
+        "provider_user_id": provider_user_id,
+        "email": email,
+        "first_name": str(
+            claims.get("given_name") or ""
+        ).strip(),
+        "last_name": str(
+            claims.get("family_name") or ""
+        ).strip(),
+        "display_name": str(
+            claims.get("name") or ""
+        ).strip(),
+    }
+
+
+def verify_facebook_access_token(
+    access_token,
+):
+    app_id = str(
+        settings.FACEBOOK_APP_ID or ""
+    ).strip()
+    app_secret = str(
+        settings.FACEBOOK_APP_SECRET or ""
+    ).strip()
+
+    if not app_id or not app_secret:
+        raise SocialAuthError(
+            "Facebook sign-in is not configured on the server."
+        )
+
+    app_access_token = (
+        f"{app_id}|{app_secret}"
+    )
+
+    try:
+        debug_response = requests.get(
+            "https://graph.facebook.com/debug_token",
+            params={
+                "input_token": access_token,
+                "access_token": app_access_token,
+            },
+            timeout=10,
+        )
+        debug_response.raise_for_status()
+        debug_data = (
+            debug_response.json()
+            .get("data", {})
+        )
+    except Exception as exc:
+        raise SocialAuthError(
+            "Facebook could not verify this sign-in."
+        ) from exc
+
+    if not debug_data.get("is_valid"):
+        raise SocialAuthError(
+            "Facebook returned an invalid access token."
+        )
+
+    if str(
+        debug_data.get("app_id") or ""
+    ) != app_id:
+        raise SocialAuthError(
+            "This Facebook sign-in was issued for a different app."
+        )
+
+    provider_user_id = str(
+        debug_data.get("user_id") or ""
+    ).strip()
+
+    if not provider_user_id:
+        raise SocialAuthError(
+            "Facebook did not return an account identifier."
+        )
+
+    try:
+        profile_response = requests.get(
+            "https://graph.facebook.com/me",
+            params={
+                "fields": (
+                    "id,name,email,"
+                    "first_name,last_name"
+                ),
+                "access_token": access_token,
+            },
+            timeout=10,
+        )
+        profile_response.raise_for_status()
+        profile = profile_response.json()
+    except Exception as exc:
+        raise SocialAuthError(
+            "Facebook could not load the signed-in profile."
+        ) from exc
+
+    email = str(
+        profile.get("email") or ""
+    ).strip().lower()
+
+    if not email:
+        raise SocialAuthError(
+            "Facebook did not provide an email address. "
+            "Allow email access and try again."
+        )
+
+    if str(
+        profile.get("id") or ""
+    ).strip() != provider_user_id:
+        raise SocialAuthError(
+            "Facebook returned inconsistent account information."
+        )
+
+    return {
+        "provider_user_id": provider_user_id,
+        "email": email,
+        "first_name": str(
+            profile.get("first_name") or ""
+        ).strip(),
+        "last_name": str(
+            profile.get("last_name") or ""
+        ).strip(),
+        "display_name": str(
+            profile.get("name") or ""
+        ).strip(),
+    }
+
+
 def verify_social_identity(
     *,
     provider,
     identity_token,
+    token_type="oidc",
+    nonce="",
 ):
     if provider == "google":
         return verify_google_identity_token(
@@ -172,6 +373,17 @@ def verify_social_identity(
     if provider == "apple":
         return verify_apple_identity_token(
             identity_token
+        )
+
+    if provider == "facebook":
+        if token_type == "access":
+            return verify_facebook_access_token(
+                identity_token
+            )
+
+        return verify_facebook_oidc_token(
+            identity_token,
+            nonce,
         )
 
     raise SocialAuthError(

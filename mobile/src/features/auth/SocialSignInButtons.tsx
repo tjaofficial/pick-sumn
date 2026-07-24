@@ -14,11 +14,13 @@ import {
 import {
   createAppleSocialLoginInput,
   createGoogleSocialLoginInput,
+  createFacebookSocialLoginInput,
   getAppleSignInAvailable,
 } from "@/features/auth/socialProviderAuth";
 import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
+import { ApiError } from "@/services/api";
 import {
   createThemedStyleSheet,
 } from "@/theme/themedStyleSheet";
@@ -33,6 +35,13 @@ type Props = {
 function getMessage(
   error: unknown,
 ): string {
+  if (
+    error instanceof ApiError
+    && error.message.trim()
+  ) {
+    return error.message;
+  }
+
   if (
     error instanceof Error
     && error.message.trim()
@@ -70,6 +79,7 @@ export function SocialSignInButtons({
   ] = useState<
     "apple"
     | "google"
+    | "facebook"
     | null
   >(null);
 
@@ -121,6 +131,31 @@ export function SocialSignInButtons({
 
       const input =
         await createGoogleSocialLoginInput();
+
+      if (!input) {
+        return;
+      }
+
+      await socialLogin(
+        input,
+      );
+    } catch (error) {
+      onError(
+        getMessage(error),
+      );
+    } finally {
+      setActiveProvider(null);
+    }
+  }
+
+
+  async function handleFacebook() {
+    try {
+      setActiveProvider("facebook");
+      onError("");
+
+      const input =
+        await createFacebookSocialLoginInput();
 
       if (!input) {
         return;
@@ -220,6 +255,41 @@ export function SocialSignInButtons({
           </>
         )}
       </Pressable>
+
+      <Pressable
+        onPress={() =>
+          void handleFacebook()
+        }
+        disabled={
+          disabled
+          || busy
+        }
+        style={({ pressed }) => [
+          styles.facebookButton,
+          pressed
+            && styles.facebookButtonPressed,
+          (disabled || busy)
+            && styles.disabled,
+        ]}
+      >
+        {activeProvider === "facebook" ? (
+          <ActivityIndicator
+            color="#FFFFFF"
+          />
+        ) : (
+          <>
+            <View style={styles.facebookMark}>
+              <Text style={styles.facebookMarkText}>
+                f
+              </Text>
+            </View>
+
+            <Text style={styles.facebookButtonText}>
+              Continue with Facebook
+            </Text>
+          </>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -293,6 +363,38 @@ const styles = createThemedStyleSheet({
     fontSize: 15,
     fontWeight: "900",
     color: "#07111F",
+  },
+  facebookButton: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    borderRadius: 16,
+    backgroundColor: "#1877F2",
+  },
+  facebookButtonPressed: {
+    opacity: 0.88,
+  },
+  facebookMark: {
+    width: 25,
+    height: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 13,
+    backgroundColor: "#FFFFFF",
+  },
+  facebookMarkText: {
+    marginTop: 3,
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: "900",
+    color: "#1877F2",
+  },
+  facebookButtonText: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
   disabled: {
     opacity: 0.6,

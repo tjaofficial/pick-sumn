@@ -15,6 +15,14 @@ export default ({
     process.env
       .EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME;
 
+  const facebookAppId =
+    process.env
+      .EXPO_PUBLIC_FACEBOOK_APP_ID;
+
+  const facebookClientToken =
+    process.env
+      .EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN;
+
   const plugins:
     NonNullable<ExpoConfig["plugins"]> = [
       [
@@ -76,6 +84,33 @@ export default ({
       {
         iosUrlScheme:
           googleIosUrlScheme,
+      },
+    ]);
+  }
+
+  if (
+    facebookAppId
+    && facebookClientToken
+  ) {
+    plugins.push([
+      "react-native-fbsdk-next",
+      {
+        appID:
+          facebookAppId,
+        clientToken:
+          facebookClientToken,
+        displayName:
+          "Pick Sum'N",
+        scheme:
+          `fb${facebookAppId}`,
+        advertiserIDCollectionEnabled:
+          false,
+        autoLogAppEventsEnabled:
+          false,
+        isAutoInitEnabled:
+          true,
+        iosUserTrackingPermission:
+          false,
       },
     ]);
   }
