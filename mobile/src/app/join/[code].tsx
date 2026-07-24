@@ -19,6 +19,7 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -87,6 +88,9 @@ export default function JoinGroupLinkScreen() {
     null,
   );
 
+  const attemptedJoinRef =
+    useRef(false);
+
 
   useEffect(() => {
     if (!joinCode) {
@@ -106,10 +110,12 @@ export default function JoinGroupLinkScreen() {
       authLoading
       || !isAuthenticated
       || !joinCode
-      || isJoining
+      || attemptedJoinRef.current
     ) {
       return;
     }
+
+    attemptedJoinRef.current = true;
 
     async function join() {
       try {
@@ -150,7 +156,6 @@ export default function JoinGroupLinkScreen() {
   }, [
     authLoading,
     isAuthenticated,
-    isJoining,
     joinCode,
   ]);
 
@@ -316,15 +321,18 @@ const styles = createThemedStyleSheet({
     padding: 22,
     backgroundColor: "#FFF9F2",
   },
+
   centerState: {
     alignItems: "center",
     gap: 12,
   },
+
   stateTitle: {
     fontSize: 16,
     fontWeight: "800",
     color: "#07111F",
   },
+
   card: {
     alignItems: "center",
     padding: 26,
@@ -333,6 +341,7 @@ const styles = createThemedStyleSheet({
     borderRadius: 26,
     backgroundColor: "#FFFFFF",
   },
+
   iconWrap: {
     width: 74,
     height: 74,
@@ -341,6 +350,7 @@ const styles = createThemedStyleSheet({
     borderRadius: 37,
     backgroundColor: "#FFF0F2",
   },
+
   title: {
     marginTop: 16,
     fontSize: 27,
@@ -348,6 +358,7 @@ const styles = createThemedStyleSheet({
     color: "#07111F",
     textAlign: "center",
   },
+
   body: {
     marginTop: 10,
     fontSize: 15,
@@ -355,6 +366,7 @@ const styles = createThemedStyleSheet({
     color: "#606773",
     textAlign: "center",
   },
+
   code: {
     marginTop: 18,
     fontSize: 23,
@@ -362,6 +374,7 @@ const styles = createThemedStyleSheet({
     letterSpacing: 4,
     color: "#F3344A",
   },
+
   primary: {
     width: "100%",
     minHeight: 52,
@@ -373,11 +386,13 @@ const styles = createThemedStyleSheet({
     borderRadius: 16,
     backgroundColor: "#F3344A",
   },
+
   primaryText: {
     fontSize: 16,
     fontWeight: "900",
     color: "#FFFFFF",
   },
+
   secondary: {
     width: "100%",
     minHeight: 52,
@@ -391,6 +406,7 @@ const styles = createThemedStyleSheet({
     borderRadius: 16,
     backgroundColor: "#FFFFFF",
   },
+
   secondaryText: {
     fontSize: 15,
     fontWeight: "900",
