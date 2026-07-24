@@ -14,6 +14,24 @@ urlpatterns = [
     ),
 
     path(
+        "privacy",
+        public_views.privacy_policy,
+        name="privacy-policy",
+    ),
+
+    path(
+        "terms",
+        public_views.terms_of_service,
+        name="terms-of-service",
+    ),
+
+    path(
+        "support",
+        public_views.support,
+        name="support",
+    ),
+
+    path(
         "join/<str:join_code>",
         public_views.group_invite,
         name="public-group-invite",
@@ -57,7 +75,7 @@ urlpatterns = [
         "api/",
         include("api.urls"),
     ),
-    
+
     path(
         "api/pick-sessions/",
         include("pick_sessions.urls"),
