@@ -130,6 +130,9 @@ export default ({
       bundleIdentifier:
         "com.picksumn.app",
       usesAppleSignIn: true,
+      associatedDomains: [
+        "applinks:picksumn.com",
+      ],
       icon: "./assets/expo.icon",
       infoPlist: {
         ITSAppUsesNonExemptEncryption:
@@ -155,6 +158,23 @@ export default ({
       },
       predictiveBackGestureEnabled:
         false,
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "picksumn.com",
+              pathPrefix: "/join/",
+            },
+          ],
+          category: [
+            "BROWSABLE",
+            "DEFAULT",
+          ],
+        },
+      ],
     },
 
     web: {

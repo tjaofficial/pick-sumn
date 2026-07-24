@@ -3,8 +3,34 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from . import public_views
+
 
 urlpatterns = [
+    path(
+        "",
+        public_views.home,
+        name="public-home",
+    ),
+
+    path(
+        "join/<str:join_code>",
+        public_views.group_invite,
+        name="public-group-invite",
+    ),
+
+    path(
+        ".well-known/apple-app-site-association",
+        public_views.apple_app_site_association,
+        name="apple-app-site-association",
+    ),
+
+    path(
+        ".well-known/assetlinks.json",
+        public_views.android_asset_links,
+        name="android-asset-links",
+    ),
+
     path("admin/", admin.site.urls),
 
     path(

@@ -22,6 +22,9 @@ import {
   PickDraftProvider,
 } from "@/features/pickSessions/PickDraftContext";
 import {
+  PendingGroupInviteHandler,
+} from "@/features/groups/PendingGroupInviteHandler";
+import {
   AppThemeProvider,
 } from "@/features/settings/AppThemeContext";
 import {
@@ -53,6 +56,13 @@ function RootNavigator() {
         headerShown: false,
       }}
     >
+      <Stack.Screen
+        name="join/[code]"
+        options={{
+          headerShown: false,
+        }}
+      />
+
       <Stack.Protected
         guard={!isAuthenticated}
       >
@@ -270,6 +280,7 @@ export default function RootLayout() {
           <AppThemeProvider>
             <PickDraftProvider>
               <LiveNotificationsProvider>
+                <PendingGroupInviteHandler />
                 <RootNavigator />
               </LiveNotificationsProvider>
             </PickDraftProvider>

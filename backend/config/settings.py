@@ -274,3 +274,21 @@ FACEBOOK_APP_SECRET = env(
     "FACEBOOK_APP_SECRET",
     default="",
 )
+
+IOS_APP_STORE_URL = env(
+    "IOS_APP_STORE_URL",
+    default="",
+)
+
+ANDROID_PLAY_STORE_URL = env(
+    "ANDROID_PLAY_STORE_URL",
+    default="",
+)
+
+ANDROID_APP_LINK_SHA256_CERT_FINGERPRINTS = (
+    env.list(
+        "ANDROID_APP_LINK_SHA256_CERT_FINGERPRINTS",
+        default=[],
+    )
+)
+

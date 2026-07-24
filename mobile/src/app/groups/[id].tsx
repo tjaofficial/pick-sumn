@@ -192,7 +192,7 @@ export default function GroupDetailScreen() {
     group.current_user_role === "owner" ||
     group.current_user_role === "admin";
 
-  const joinLink = `picksumn://join-group?code=${encodeURIComponent(group.join_code)}`;
+  const joinLink = `https://picksumn.com/join/${encodeURIComponent(group.join_code)}`;
 
   function toggleFriend(userId: number) {
     setSelectedFriendIds((current) => {
@@ -362,7 +362,7 @@ export default function GroupDetailScreen() {
     }
 
     await Clipboard.setStringAsync(
-      currentGroup.join_code,
+      joinLink,
     );
 
     setCopied(true);
@@ -751,7 +751,7 @@ export default function GroupDetailScreen() {
                     <Copy size={18} color={themeColor("#FFFFFF", "color")} />
                   )}
                   <Text style={styles.primaryText}>
-                    {copied ? "Copied" : "Copy Code"}
+                    {copied ? "Copied" : "Copy Link"}
                   </Text>
                 </Pressable>
                 <Pressable onPress={() => void shareCode()} style={styles.secondary}>
