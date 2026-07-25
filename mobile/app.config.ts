@@ -129,12 +129,12 @@ export default ({
     ios: {
       bundleIdentifier:
         "com.picksumn.app",
-      buildNumber: "3",
+      buildNumber: "4",
       usesAppleSignIn: true,
       associatedDomains: [
         "applinks:picksumn.com",
       ],
-      icon: "./assets/expo.icon",
+      icon: "./assets/images/icon.png",
       infoPlist: {
         ITSAppUsesNonExemptEncryption:
           false,
