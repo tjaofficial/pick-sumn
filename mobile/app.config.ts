@@ -129,6 +129,7 @@ export default ({
     ios: {
       bundleIdentifier:
         "com.picksumn.app",
+      buildNumber: "3",
       usesAppleSignIn: true,
       associatedDomains: [
         "applinks:picksumn.com",
