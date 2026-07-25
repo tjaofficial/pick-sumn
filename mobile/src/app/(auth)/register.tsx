@@ -1,20 +1,25 @@
 import { Link } from "expo-router";
 import { useState } from "react";
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   SafeAreaView,
-  ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
 
-import { useAuth } from "@/features/auth/AuthContext";
-import { SocialSignInButtons } from "@/features/auth/SocialSignInButtons";
-import { ApiError } from "@/services/api";
+import {
+  KeyboardAwareScrollView,
+} from "@/components/KeyboardAwareScrollView";
+import {
+  useAuth,
+} from "@/features/auth/AuthContext";
+import {
+  SocialSignInButtons,
+} from "@/features/auth/SocialSignInButtons";
+import {
+  ApiError,
+} from "@/services/api";
 import {
   createThemedStyleSheet,
   themeColor,
@@ -23,22 +28,56 @@ import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
 
+
 export default function RegisterScreen() {
   useAppTheme();
 
-  const { register } = useAuth();
+  const {
+    register,
+  } = useAuth();
 
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] =
-    useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [
+    displayName,
+    setDisplayName,
+  ] = useState("");
+
+  const [
+    email,
+    setEmail,
+  ] = useState("");
+
+  const [
+    password,
+    setPassword,
+  ] = useState("");
+
+  const [
+    passwordConfirm,
+    setPasswordConfirm,
+  ] = useState("");
+
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(
+    null,
+  );
+
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] = useState(false);
+
 
   async function handleRegister() {
-    if (password !== passwordConfirm) {
-      setError("The passwords do not match.");
+    if (
+      password
+      !== passwordConfirm
+    ) {
+      setError(
+        "The passwords do not match.",
+      );
+
       return;
     }
 
@@ -47,15 +86,27 @@ export default function RegisterScreen() {
       setError(null);
 
       await register({
-        email: email.trim().toLowerCase(),
-        display_name: displayName.trim(),
+        email:
+          email
+            .trim()
+            .toLowerCase(),
+
+        display_name:
+          displayName.trim(),
+
         password,
-        password_confirm: passwordConfirm,
+
+        password_confirm:
+          passwordConfirm,
       });
     } catch (requestError) {
-      if (requestError instanceof ApiError) {
+      if (
+        requestError
+        instanceof ApiError
+      ) {
         setError(
-          "We could not create the account. Check the entered information.",
+          "We could not create the account. "
+          + "Check the entered information.",
         );
       } else {
         setError(
@@ -67,129 +118,186 @@ export default function RegisterScreen() {
     }
   }
 
+
   return (
     <SafeAreaView style={styles.screen}>
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={
-          Platform.OS === "ios" ? "padding" : undefined
+      <KeyboardAwareScrollView
+        contentContainerStyle={
+          styles.container
         }
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Text style={styles.logoText}>PICK SUM’N</Text>
+        <Text style={styles.logoText}>
+          PICK SUM’N
+        </Text>
 
-          <Text style={styles.title}>
-            Create your account
-          </Text>
+        <Text style={styles.title}>
+          Create your account
+        </Text>
 
-          <Text style={styles.subtitle}>
-            Your food profile is about to become more
-            decisive than the group chat.
-          </Text>
+        <Text style={styles.subtitle}>
+          Your food profile is about to
+          become more decisive than the
+          group chat.
+        </Text>
 
-          <View style={styles.form}>
-            <TextInput
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Display name"
-              placeholderTextColor={themeColor("#9298A2", "color")}
-              style={styles.input}
-            />
+        <View style={styles.form}>
+          <TextInput
+            value={displayName}
+            onChangeText={
+              setDisplayName
+            }
+            placeholder="Display name"
+            placeholderTextColor={
+              themeColor(
+                "#9298A2",
+                "color",
+              )
+            }
+            autoCapitalize="words"
+            autoCorrect={false}
+            textContentType="name"
+            style={styles.input}
+          />
 
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Email address"
-              placeholderTextColor={themeColor("#9298A2", "color")}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.input}
-            />
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            placeholder="Email address"
+            placeholderTextColor={
+              themeColor(
+                "#9298A2",
+                "color",
+              )
+            }
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="emailAddress"
+            autoComplete="email"
+            style={styles.input}
+          />
 
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Password"
-              placeholderTextColor={themeColor("#9298A2", "color")}
-              secureTextEntry
-              style={styles.input}
-            />
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Password"
+            placeholderTextColor={
+              themeColor(
+                "#9298A2",
+                "color",
+              )
+            }
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="none"
+            autoComplete="off"
+            importantForAutofill="no"
+            style={styles.input}
+          />
 
-            <TextInput
-              value={passwordConfirm}
-              onChangeText={setPasswordConfirm}
-              placeholder="Confirm password"
-              placeholderTextColor={themeColor("#9298A2", "color")}
-              secureTextEntry
-              style={styles.input}
-            />
+          <TextInput
+            value={passwordConfirm}
+            onChangeText={
+              setPasswordConfirm
+            }
+            placeholder="Confirm password"
+            placeholderTextColor={
+              themeColor(
+                "#9298A2",
+                "color",
+              )
+            }
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="none"
+            autoComplete="off"
+            importantForAutofill="no"
+            returnKeyType="done"
+            onSubmitEditing={() =>
+              void handleRegister()
+            }
+            style={styles.input}
+          />
 
-            {error && (
-              <Text style={styles.error}>{error}</Text>
-            )}
+          {error && (
+            <Text style={styles.error}>
+              {error}
+            </Text>
+          )}
 
-            <Pressable
-              onPress={handleRegister}
-              disabled={isSubmitting}
-              style={[
-                styles.button,
-                isSubmitting && styles.buttonDisabled,
-              ]}
+          <Pressable
+            onPress={() =>
+              void handleRegister()
+            }
+            disabled={isSubmitting}
+            style={[
+              styles.button,
+              isSubmitting
+                && styles.buttonDisabled,
+            ]}
+          >
+            <Text style={styles.buttonText}>
+              {isSubmitting
+                ? "Creating Account..."
+                : "Create Account"}
+            </Text>
+          </Pressable>
+
+          <SocialSignInButtons
+            disabled={isSubmitting}
+            onError={(message) =>
+              setError(
+                message || null,
+              )
+            }
+          />
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Already have an account?
+            </Text>
+
+            <Link
+              href="/(auth)/login"
+              asChild
             >
-              <Text style={styles.buttonText}>
-                {isSubmitting
-                  ? "Creating Account..."
-                  : "Create Account"}
-              </Text>
-            </Pressable>
-
-            <SocialSignInButtons
-              disabled={isSubmitting}
-              onError={(message) =>
-                setError(
-                  message || null,
-                )
-              }
-            />
-
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>
-                Already have an account?
-              </Text>
-
-              <Link href="/(auth)/login" asChild>
-                <Pressable>
-                  <Text style={styles.link}>Sign in</Text>
-                </Pressable>
-              </Link>
-            </View>
+              <Pressable>
+                <Text style={styles.link}>
+                  Sign in
+                </Text>
+              </Pressable>
+            </Link>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
+
 
 const styles = createThemedStyleSheet({
   screen: {
     flex: 1,
     backgroundColor: "#FFF9F2",
   },
+
   container: {
     flexGrow: 1,
     justifyContent: "center",
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 48,
   },
+
   logoText: {
     fontSize: 34,
     fontWeight: "900",
     color: "#F3344A",
     textAlign: "center",
   },
+
   title: {
     marginTop: 18,
     fontSize: 30,
@@ -197,6 +305,7 @@ const styles = createThemedStyleSheet({
     color: "#07111F",
     textAlign: "center",
   },
+
   subtitle: {
     marginTop: 8,
     marginBottom: 28,
@@ -205,9 +314,11 @@ const styles = createThemedStyleSheet({
     color: "#606773",
     textAlign: "center",
   },
+
   form: {
     gap: 14,
   },
+
   input: {
     height: 56,
     paddingHorizontal: 18,
@@ -218,34 +329,42 @@ const styles = createThemedStyleSheet({
     fontSize: 16,
     color: "#07111F",
   },
+
   error: {
     color: "#C62828",
     fontWeight: "600",
     textAlign: "center",
   },
+
   button: {
     alignItems: "center",
     paddingVertical: 17,
     borderRadius: 16,
     backgroundColor: "#F3344A",
   },
+
   buttonDisabled: {
     opacity: 0.65,
   },
+
   buttonText: {
     color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "800",
   },
+
   footer: {
     flexDirection: "row",
     justifyContent: "center",
+    flexWrap: "wrap",
     gap: 6,
     marginTop: 8,
   },
+
   footerText: {
     color: "#606773",
   },
+
   link: {
     color: "#F3344A",
     fontWeight: "800",

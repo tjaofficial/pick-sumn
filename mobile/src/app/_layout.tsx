@@ -1,7 +1,6 @@
 import { Stack } from "expo-router";
 import {
   ActivityIndicator,
-  StyleSheet,
   View,
 } from "react-native";
 import {
@@ -44,7 +43,10 @@ function RootNavigator() {
       <View style={styles.loadingScreen}>
         <ActivityIndicator
           size="large"
-          color={themeColor("#F3344A", "color")}
+          color={themeColor(
+            "#F3344A",
+            "color",
+          )}
         />
       </View>
     );
@@ -56,6 +58,13 @@ function RootNavigator() {
         headerShown: false,
       }}
     >
+      <Stack.Screen
+        name="index"
+        options={{
+          headerShown: false,
+        }}
+      />
+
       <Stack.Screen
         name="join/[code]"
         options={{
@@ -151,7 +160,6 @@ function RootNavigator() {
           }}
         />
 
-
         <Stack.Screen
           name="settings/index"
           options={{
@@ -214,7 +222,6 @@ function RootNavigator() {
             headerShown: false,
           }}
         />
-
 
         <Stack.Screen
           name="settings/help-support"
