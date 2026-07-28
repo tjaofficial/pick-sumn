@@ -261,6 +261,8 @@ CUISINE_WEIGHT = 0.45
 DISTANCE_WEIGHT = 0.35
 RATING_WEIGHT = 0.20
 
+MIN_STRICT_MATCHES = 8
+
 
 CUISINE_RANK_SCORES = {
     1: 100.0,
@@ -799,9 +801,6 @@ def _get_participant_cuisine_score(
                 )
             ]
 
-        if level == PreferenceLevel.DISLIKE:
-            continue
-
         rank = participant.cuisine_ranks.get(
             cuisine_slug
         )
@@ -811,39 +810,40 @@ def _get_participant_cuisine_score(
                 rank,
                 60.0,
             )
-
-            reasons.append(
-                (
-                    f"Top {rank} cuisine: "
-                    f"{_display_slug(cuisine_slug)}"
-                )
+            reason = (
+                f"Top {rank} cuisine: "
+                f"{_display_slug(cuisine_slug)}"
             )
-
         elif level == PreferenceLevel.LOVE:
-            score = 62.0
-
-            reasons.append(
-                f"Loves {_display_slug(cuisine_slug)}"
+            score = 72.0
+            reason = (
+                f"Loves "
+                f"{_display_slug(cuisine_slug)}"
             )
-
         elif level == PreferenceLevel.LIKE:
-            score = 55.0
-
-            reasons.append(
-                f"Likes {_display_slug(cuisine_slug)}"
+            score = 60.0
+            reason = (
+                f"Likes "
+                f"{_display_slug(cuisine_slug)}"
             )
-
+        elif level == PreferenceLevel.DISLIKE:
+            score = 15.0
+            reason = ""
         else:
-            continue
+            score = 35.0
+            reason = ""
 
         if (
             best_score is None
             or score > best_score
         ):
             best_score = score
+            reasons = [reason] if reason else []
+
+    if best_score is None:
+        return 35.0, []
 
     return best_score, reasons
-
 
 def _get_group_cuisine_score(
     restaurant_cuisines: set[str],
@@ -864,30 +864,20 @@ def _get_group_cuisine_score(
         )
 
         if score is None:
-            if participant_reasons:
-                warnings.extend(
-                    participant_reasons
-                )
-                return None, reasons, warnings
-
-            participant_scores.append(
-                0.0
+            warnings.extend(
+                participant_reasons
             )
-            continue
+            return None, reasons, warnings
 
         participant_scores.append(
             score
         )
-
         reasons.extend(
             participant_reasons
         )
 
     if not participant_scores:
-        return None, reasons, warnings
-
-    if max(participant_scores) <= 0:
-        return None, reasons, warnings
+        return 35.0, reasons, warnings
 
     average_score = (
         sum(participant_scores)
@@ -899,12 +889,11 @@ def _get_group_cuisine_score(
     )
 
     group_score = (
-        average_score * 0.75
-        + lowest_score * 0.25
+        average_score * 0.70
+        + lowest_score * 0.30
     )
 
     return group_score, reasons, warnings
-
 
 def _get_distance_score(
     restaurant: NearbyRestaurant,
@@ -2616,6 +2605,31 @@ def _is_don_jose_target(
     )
 
 
+def _has_hard_dining_style_requirement(
+    dining_style_slugs: set[str],
+) -> bool:
+    canonical_styles = {
+        _canonical_dining_style_slug(
+            style_slug
+        )
+        for style_slug
+        in dining_style_slugs
+    }
+
+    hard_styles = {
+        "delivery",
+        "drive-through",
+        "carryout",
+        "dine-in",
+    }
+
+    return bool(
+        canonical_styles.intersection(
+            hard_styles
+        )
+    )
+
+
 def score_restaurant_for_session(
     *,
     restaurant: NearbyRestaurant,
@@ -2624,7 +2638,10 @@ def score_restaurant_for_session(
         ParticipantPreferenceSnapshot
     ],
     dining_style_slugs: set[str],
+    relax_soft_filters: bool = False,
 ) -> ScoredRestaurant | None:
+    warnings: list[str] = []
+
     style_match = (
         _restaurant_matches_selected_dining_styles(
             restaurant,
@@ -2632,25 +2649,27 @@ def score_restaurant_for_session(
         )
     )
 
-    if _is_don_jose_target(
-        restaurant
-    ):
-        logger.warning(
-            (
-                "[DON-JOSE-MATCHING] STYLE "
-                "name=%r styles=%s result=%s "
-                "takeout=%s dine_in=%s types=%s"
-            ),
-            restaurant.name,
-            sorted(dining_style_slugs),
-            style_match,
-            restaurant.takeout,
-            restaurant.dine_in,
-            restaurant.types,
-        )
+    style_penalty = 0.0
 
     if not style_match:
-        return None
+        if (
+            _has_hard_dining_style_requirement(
+                dining_style_slugs
+            )
+        ):
+            return None
+
+        if not relax_soft_filters:
+            return None
+
+        style_penalty = -12.0
+        warnings.append(
+            (
+                "This restaurant does not "
+                "clearly match every selected "
+                "dining style."
+            )
+        )
 
     restaurant_cuisines = (
         _get_restaurant_cuisine_slugs(
@@ -2658,52 +2677,34 @@ def score_restaurant_for_session(
         )
     )
 
-    if _is_don_jose_target(
-        restaurant
-    ):
-        logger.warning(
-            (
-                "[DON-JOSE-MATCHING] CUISINES "
-                "name=%r primary_type=%r types=%s "
-                "inferred=%s"
-            ),
-            restaurant.name,
-            restaurant.primary_type,
-            restaurant.types,
-            sorted(
-                restaurant_cuisines
-            ),
-        )
-
-    if not restaurant_cuisines:
-        return None
-
-    (
-        cuisine_score,
-        cuisine_reasons,
-        cuisine_warnings,
-    ) = _get_group_cuisine_score(
-        restaurant_cuisines,
-        participants,
-    )
-
-    if _is_don_jose_target(
-        restaurant
-    ):
-        logger.warning(
-            (
-                "[DON-JOSE-MATCHING] CUISINE-SCORE "
-                "name=%r score=%s reasons=%s "
-                "warnings=%s"
-            ),
-            restaurant.name,
+    if restaurant_cuisines:
+        (
             cuisine_score,
             cuisine_reasons,
             cuisine_warnings,
+        ) = _get_group_cuisine_score(
+            restaurant_cuisines,
+            participants,
         )
 
-    if cuisine_score is None:
-        return None
+        if cuisine_score is None:
+            return None
+
+        warnings.extend(
+            cuisine_warnings
+        )
+    else:
+        if not relax_soft_filters:
+            return None
+
+        cuisine_score = 30.0
+        cuisine_reasons = []
+        warnings.append(
+            (
+                "Cuisine information is limited "
+                "for this restaurant."
+            )
+        )
 
     (
         distance_score,
@@ -2756,6 +2757,79 @@ def score_restaurant_for_session(
         ),
     )
 
+    dietary_reasons: list[str] = []
+
+    for evidence in dietary_evidence:
+        dietary_slug = str(
+            evidence.get(
+                "slug",
+                "",
+            )
+            or ""
+        )
+
+        if dietary_slug not in required_dietary_slugs:
+            continue
+
+        label = (
+            evidence.get("label")
+            or _display_slug(
+                dietary_slug
+            )
+        )
+
+        confidence = str(
+            evidence.get(
+                "confidence_level",
+                "unknown",
+            )
+            or "unknown"
+        )
+
+        concerns = (
+            evidence.get(
+                "concerns",
+                [],
+            )
+            or []
+        )
+
+        if concerns:
+            warnings.append(
+                (
+                    f"{label} has reported "
+                    "accommodation concerns."
+                )
+            )
+        elif confidence == "high":
+            dietary_reasons.append(
+                (
+                    f"Strong {label} "
+                    "accommodation evidence"
+                )
+            )
+        elif confidence == "moderate":
+            dietary_reasons.append(
+                (
+                    f"{label} accommodation "
+                    "evidence found"
+                )
+            )
+        elif confidence == "low":
+            warnings.append(
+                (
+                    f"Limited {label} "
+                    "information is available."
+                )
+            )
+        else:
+            warnings.append(
+                (
+                    f"{label} information "
+                    "is not confirmed."
+                )
+            )
+
     dining_style_reasons = (
         _get_dining_style_reasons(
             restaurant,
@@ -2771,30 +2845,26 @@ def score_restaurant_for_session(
     )
 
     weighted_score = (
-        cuisine_score
-        * CUISINE_WEIGHT
-        + distance_score
-        * DISTANCE_WEIGHT
-        + rating_score
-        * RATING_WEIGHT
+        cuisine_score * CUISINE_WEIGHT
+        + distance_score * DISTANCE_WEIGHT
+        + rating_score * RATING_WEIGHT
         + dining_style_adjustment
+        + style_penalty
     )
 
     if required_dietary_slugs:
         dietary_adjustment = {
-            0: 8.0,
-            1: 5.0,
-            2: 2.0,
-            3: -8.0,
-            4: -18.0,
+            0: 12.0,
+            1: 8.0,
+            2: 3.0,
+            3: -5.0,
+            4: -20.0,
         }.get(
             dietary_priority_tier,
             0.0,
         )
 
-        weighted_score += (
-            dietary_adjustment
-        )
+        weighted_score += dietary_adjustment
     elif preferred_dietary_slugs:
         weighted_score += min(
             dietary_priority_score
@@ -2816,6 +2886,7 @@ def score_restaurant_for_session(
 
     reasons = _deduplicate_strings(
         [
+            *dietary_reasons,
             *cuisine_reasons,
             *distance_reasons,
             *rating_reasons,
@@ -2824,27 +2895,8 @@ def score_restaurant_for_session(
     )[:5]
 
     warnings = _deduplicate_strings(
-        [
-            *cuisine_warnings,
-        ]
+        warnings
     )[:4]
-
-    if _is_don_jose_target(
-        restaurant
-    ):
-        logger.warning(
-            (
-                "[DON-JOSE-MATCHING] FINAL "
-                "name=%r match=%s cuisine=%s "
-                "distance=%s rating=%s reasons=%s"
-            ),
-            restaurant.name,
-            final_score,
-            cuisine_score,
-            distance_score,
-            rating_score,
-            reasons,
-        )
 
     return ScoredRestaurant(
         restaurant=restaurant,
@@ -2870,7 +2922,6 @@ def score_restaurant_for_session(
         ),
     )
 
-
 def score_and_sort_restaurants(
     *,
     restaurants: list[
@@ -2894,6 +2945,8 @@ def score_and_sort_restaurants(
         ScoredRestaurant
     ] = []
 
+    scored_ids: set[str] = set()
+
     for restaurant in restaurants:
         scored_restaurant = (
             score_restaurant_for_session(
@@ -2903,6 +2956,7 @@ def score_and_sort_restaurants(
                 dining_style_slugs=(
                     dining_style_slugs
                 ),
+                relax_soft_filters=False,
             )
         )
 
@@ -2912,6 +2966,38 @@ def score_and_sort_restaurants(
         scored_restaurants.append(
             scored_restaurant
         )
+
+        scored_ids.add(
+            restaurant.external_id
+        )
+
+    if len(scored_restaurants) < MIN_STRICT_MATCHES:
+        for restaurant in restaurants:
+            if restaurant.external_id in scored_ids:
+                continue
+
+            scored_restaurant = (
+                score_restaurant_for_session(
+                    restaurant=restaurant,
+                    session=session,
+                    participants=participants,
+                    dining_style_slugs=(
+                        dining_style_slugs
+                    ),
+                    relax_soft_filters=True,
+                )
+            )
+
+            if scored_restaurant is None:
+                continue
+
+            scored_restaurants.append(
+                scored_restaurant
+            )
+
+            scored_ids.add(
+                restaurant.external_id
+            )
 
     required_dietary_slugs: set[str] = set()
 
