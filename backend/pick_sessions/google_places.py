@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -27,11 +28,11 @@ METERS_PER_MILE = 1609.344
 MAX_GOOGLE_RADIUS_METERS = 50000.0
 MAX_GOOGLE_RESULTS_PER_REQUEST = 20
 MAX_COMBINED_RESULTS = 100
-MAX_PHOTOS_TO_RESOLVE = 25
+MAX_PHOTOS_TO_RESOLVE = 15
 MAX_DIETARY_TEXT_RESULTS = 20
-MAX_REVIEW_ENRICHMENTS = 20
+MAX_REVIEW_ENRICHMENTS = 12
 MAX_TEXT_SEARCH_PAGES = 1
-MAX_DIETARY_QUERIES_PER_SLUG = 10
+MAX_DIETARY_QUERIES_PER_SLUG = 6
 MAX_GOOGLE_SEARCH_WORKERS = 6
 MAX_GOOGLE_DETAIL_WORKERS = 6
 MAX_GOOGLE_PHOTO_WORKERS = 6
@@ -1560,6 +1561,7 @@ def search_dining_style_restaurants(
     open_now: bool = True,
     include_delivery: bool = False,
     include_drive_through: bool = False,
+    resolve_photos: bool = True,
 ) -> list[NearbyRestaurant]:
     if not dining_style_slugs:
         return []
@@ -1745,6 +1747,9 @@ def search_dining_style_restaurants(
         )
     )
 
+    if not resolve_photos:
+        return restaurants
+
     return _add_photo_urls(
         restaurants=restaurants,
         api_key=api_key,
@@ -1889,6 +1894,7 @@ def search_dietary_restaurants(
     open_now: bool = True,
     include_delivery: bool = False,
     include_drive_through: bool = False,
+    resolve_photos: bool = True,
 ) -> list[NearbyRestaurant]:
     api_key = _get_api_key()
 
@@ -2088,6 +2094,9 @@ def search_dietary_restaurants(
             ),
         )
     )
+
+    if not resolve_photos:
+        return restaurants
 
     return _add_photo_urls(
         restaurants=restaurants,
@@ -2357,9 +2366,13 @@ def _resolve_photo_url(
     if not photo_name:
         return ""
 
+    photo_cache_digest = hashlib.sha256(
+        photo_name.encode("utf-8")
+    ).hexdigest()
+
     cache_key = (
         "pick-sumn:google-photo-url:"
-        f"{photo_name}"
+        f"{photo_cache_digest}"
     )
 
     cached_url = cache.get(
@@ -2489,6 +2502,37 @@ def _add_photo_urls(
         if restaurant.external_id
         in resolved_urls
         else restaurant
+        for restaurant in restaurants
+    ]
+
+
+def resolve_restaurant_photos(
+    restaurants: list[NearbyRestaurant],
+    *,
+    limit: int = MAX_PHOTOS_TO_RESOLVE,
+) -> list[NearbyRestaurant]:
+    if not restaurants or limit <= 0:
+        return restaurants
+
+    api_key = _get_api_key()
+
+    limited_restaurants = restaurants[:limit]
+
+    resolved = _add_photo_urls(
+        restaurants=limited_restaurants,
+        api_key=api_key,
+    )
+
+    resolved_by_id = {
+        restaurant.external_id: restaurant
+        for restaurant in resolved
+    }
+
+    return [
+        resolved_by_id.get(
+            restaurant.external_id,
+            restaurant,
+        )
         for restaurant in restaurants
     ]
 
@@ -2717,6 +2761,7 @@ def search_nearby_restaurants(
     include_drive_through: bool = False,
     max_results_per_type: int = 20,
     include_generic_fallback: bool = True,
+    resolve_photos: bool = True,
 ) -> list[NearbyRestaurant]:
     api_key = _get_api_key()
 
@@ -2910,6 +2955,9 @@ def search_nearby_restaurants(
             -restaurant.user_rating_count,
         )
     )
+
+    if not resolve_photos:
+        return restaurants
 
     return _add_photo_urls(
         restaurants=restaurants,

@@ -21,6 +21,7 @@ from .google_places import (
     GooglePlacesError,
     enrich_restaurants_with_dietary_details,
     merge_restaurant_results,
+    resolve_restaurant_photos,
     search_dietary_restaurants,
     search_dining_style_restaurants,
     search_nearby_restaurants,
@@ -88,10 +89,15 @@ ACTIVE_SESSION_STATUSES = (
 
 
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
-MATCH_SEARCH_CACHE_VERSION = "v7"
+MATCH_SEARCH_CACHE_VERSION = "v8"
 
 EXPLORE_CACHE_SECONDS = 15 * 60
 EXPLORE_MAX_CANDIDATES = 60
+
+MATCH_MAX_CANDIDATES = 30
+MATCH_DIETARY_ENRICHMENT_LIMIT = 10
+MATCH_MENU_ANALYSIS_LIMIT = 3
+MATCH_PHOTO_LIMIT = 15
 
 
 def _get_session_search_cache_key(
@@ -188,6 +194,7 @@ def _get_enriched_session_restaurants(
             ),
             max_results_per_type=20,
             include_generic_fallback=True,
+            resolve_photos=False,
         )
 
         dining_style_future = (
@@ -200,6 +207,7 @@ def _get_enriched_session_restaurants(
                 location_label=(
                     session.location_label
                 ),
+                resolve_photos=False,
             )
         )
 
@@ -220,6 +228,7 @@ def _get_enriched_session_restaurants(
                 location_label=(
                     session.location_label
                 ),
+                resolve_photos=False,
             )
 
         nearby_restaurants = (
@@ -253,15 +262,21 @@ def _get_enriched_session_restaurants(
 
     ordered_restaurants = [
         item.restaurant
-        for item in preliminary_scored
+        for item in preliminary_scored[
+            :MATCH_MAX_CANDIDATES
+        ]
     ]
 
     try:
         enriched_restaurants = (
             enrich_restaurants_with_dietary_details(
                 ordered_restaurants,
-                limit=15 if dietary_slugs else 0,
-                max_workers=6,
+                limit=(
+                    MATCH_DIETARY_ENRICHMENT_LIMIT
+                    if dietary_slugs
+                    else 0
+                ),
+                max_workers=4,
             )
         )
     except Exception as error:
@@ -287,8 +302,10 @@ def _get_enriched_session_restaurants(
                 dietary_slugs=(
                     dietary_slugs
                 ),
-                limit=4,
-                max_workers=4,
+                limit=(
+                    MATCH_MENU_ANALYSIS_LIMIT
+                ),
+                max_workers=3,
             )
         except Exception as error:
             logger.exception(
@@ -299,6 +316,23 @@ def _get_enriched_session_restaurants(
                 session.pk,
                 error,
             )
+
+    try:
+        enriched_restaurants = (
+            resolve_restaurant_photos(
+                enriched_restaurants,
+                limit=MATCH_PHOTO_LIMIT,
+            )
+        )
+    except Exception as error:
+        logger.exception(
+            (
+                "Restaurant photo resolution failed "
+                "for pick session %s: %s"
+            ),
+            session.pk,
+            error,
+        )
 
     result = (
         enriched_restaurants,
