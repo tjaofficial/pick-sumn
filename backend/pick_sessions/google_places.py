@@ -32,7 +32,7 @@ MAX_PHOTOS_TO_RESOLVE = 15
 MAX_DIETARY_TEXT_RESULTS = 20
 MAX_REVIEW_ENRICHMENTS = 12
 MAX_TEXT_SEARCH_PAGES = 1
-MAX_DIETARY_QUERIES_PER_SLUG = 6
+MAX_DIETARY_QUERIES_PER_SLUG = 4
 MAX_GOOGLE_SEARCH_WORKERS = 6
 MAX_GOOGLE_DETAIL_WORKERS = 6
 MAX_GOOGLE_PHOTO_WORKERS = 6
@@ -1379,9 +1379,7 @@ def _get_place_dietary_details(
             headers={
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": api_key,
-                "X-Goog-FieldMask": (
-                    "reviews,menuUri"
-                ),
+                "X-Goog-FieldMask": "reviews",
             },
             timeout=5,
         )
@@ -1434,7 +1432,7 @@ def _get_place_dietary_details(
 
     result = (
         review_texts,
-        str(payload.get("menuUri") or "").strip(),
+        "",
     )
 
     cache.set(
@@ -1465,19 +1463,13 @@ DINING_STYLE_TEXT_QUERIES = {
         "bar and grill in {location}",
         "bars and taverns in {location}",
         "pub and grill in {location}",
-        "pubs with food in {location}",
         "sports bars in {location}",
-        "brewpubs in {location}",
         "local restaurants and taverns in {location}",
-        "restaurants bars and taverns near {location}",
-        "local restaurant bar in {location}",
-        "lakefront restaurants and taverns near {location}",
     ),
     "coffee-shop-cafe": (
         "coffee shops in {location}",
         "cafes in {location}",
         "tea houses in {location}",
-        "local coffee shops in {location}",
     ),
 }
 

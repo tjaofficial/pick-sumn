@@ -19,15 +19,11 @@ from rest_framework.response import Response
 
 from .google_places import (
     GooglePlacesError,
-    enrich_restaurants_with_dietary_details,
     merge_restaurant_results,
     resolve_restaurant_photos,
     search_dietary_restaurants,
     search_dining_style_restaurants,
     search_nearby_restaurants,
-)
-from .menu_intelligence import (
-    analyze_official_menus,
 )
 from .matching import (
     get_session_dietary_requirements,
@@ -85,19 +81,17 @@ ACTIVE_SESSION_STATUSES = (
     PickSessionStatus.VOTING,
 )
 
-
-
-
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
-MATCH_SEARCH_CACHE_VERSION = "v8"
+MATCH_SEARCH_CACHE_VERSION = "v9"
 
 EXPLORE_CACHE_SECONDS = 15 * 60
 EXPLORE_MAX_CANDIDATES = 60
 
-MATCH_MAX_CANDIDATES = 30
-MATCH_DIETARY_ENRICHMENT_LIMIT = 10
-MATCH_MENU_ANALYSIS_LIMIT = 3
-MATCH_PHOTO_LIMIT = 15
+MATCH_MIN_SCORE = 80
+MATCH_PAGE_SIZE = 20
+MATCH_MAX_PAGE_SIZE = 20
+MATCH_MAX_RESULTS = 60
+MATCH_PHOTO_LIMIT = 20
 
 
 def _get_session_search_cache_key(
@@ -108,7 +102,6 @@ def _get_session_search_cache_key(
         f"{MATCH_SEARCH_CACHE_VERSION}:"
         f"{session.pk}"
     )
-
 
 def _get_enriched_session_restaurants(
     session,
@@ -165,8 +158,13 @@ def _get_enriched_session_restaurants(
         session
     )
 
-    latitude = float(session.latitude)
-    longitude = float(session.longitude)
+    latitude = float(
+        session.latitude
+    )
+
+    longitude = float(
+        session.longitude
+    )
 
     search_arguments = {
         "latitude": latitude,
@@ -255,87 +253,66 @@ def _get_enriched_session_restaurants(
 
     preliminary_scored = (
         score_and_sort_restaurants(
-            restaurants=merged_restaurants,
+            restaurants=(
+                merged_restaurants
+            ),
             session=session,
         )
     )
 
-    ordered_restaurants = [
-        item.restaurant
-        for item in preliminary_scored[
-            :MATCH_MAX_CANDIDATES
-        ]
+    strong_matches = [
+        item
+        for item in preliminary_scored
+        if item.match_score
+        >= MATCH_MIN_SCORE
     ]
 
-    try:
-        enriched_restaurants = (
-            enrich_restaurants_with_dietary_details(
-                ordered_restaurants,
-                limit=(
-                    MATCH_DIETARY_ENRICHMENT_LIMIT
-                    if dietary_slugs
-                    else 0
-                ),
-                max_workers=4,
-            )
-        )
-    except Exception as error:
-        logger.exception(
-            (
-                "Dietary review enrichment failed "
-                "for pick session %s: %s"
-            ),
-            session.pk,
-            error,
-        )
+    if len(strong_matches) >= 20:
+        ninety_plus = [
+            item
+            for item in strong_matches
+            if item.match_score >= 90
+        ]
 
-        enriched_restaurants = (
-            ordered_restaurants
-        )
+        eighty_five_plus = [
+            item
+            for item in strong_matches
+            if item.match_score >= 85
+        ]
 
-    if dietary_slugs:
-        try:
-            analyze_official_menus(
-                restaurants=(
-                    enriched_restaurants
-                ),
-                dietary_slugs=(
-                    dietary_slugs
-                ),
-                limit=(
-                    MATCH_MENU_ANALYSIS_LIMIT
-                ),
-                max_workers=3,
-            )
-        except Exception as error:
-            logger.exception(
-                (
-                    "Official menu analysis failed "
-                    "for pick session %s: %s"
-                ),
-                session.pk,
-                error,
+        if len(ninety_plus) >= 20:
+            selected_matches = (
+                ninety_plus
             )
 
-    try:
-        enriched_restaurants = (
-            resolve_restaurant_photos(
-                enriched_restaurants,
-                limit=MATCH_PHOTO_LIMIT,
+        elif len(eighty_five_plus) >= 20:
+            selected_matches = (
+                eighty_five_plus
             )
+
+        else:
+            selected_matches = (
+                strong_matches
+            )
+
+    else:
+        selected_matches = (
+            strong_matches
         )
-    except Exception as error:
-        logger.exception(
-            (
-                "Restaurant photo resolution failed "
-                "for pick session %s: %s"
-            ),
-            session.pk,
-            error,
-        )
+
+    selected_matches = (
+        selected_matches[
+            :MATCH_MAX_RESULTS
+        ]
+    )
+
+    restaurants = [
+        item.restaurant
+        for item in selected_matches
+    ]
 
     result = (
-        enriched_restaurants,
+        restaurants,
         preferred_primary_types,
         dietary_slugs,
         required_dietary_slugs,
@@ -351,7 +328,6 @@ def _get_enriched_session_restaurants(
     )
 
     return result
-
 
 def _get_group_vote_matches(
     session,
@@ -1376,6 +1352,26 @@ class PickSessionViewSet(viewsets.ModelViewSet):
     ):
         session = self.get_object()
 
+        try:
+            page = int(
+                request.data.get(
+                    "page",
+                    1,
+                )
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            page = 1
+
+        page = max(
+            page,
+            1,
+        )
+
+        page_size = MATCH_PAGE_SIZE
+
         if session.status in (
             PickSessionStatus.COMPLETED,
             PickSessionStatus.CANCELLED,
@@ -1475,11 +1471,88 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             )
         )
 
-        matches = [
-            scored_restaurant.to_dict()
-            for scored_restaurant
-            in scored_restaurants
+        total_matches = len(
+            scored_restaurants
+        )
+
+        start_index = (
+            page - 1
+        ) * page_size
+
+        end_index = (
+            start_index
+            + page_size
+        )
+
+        page_scored_restaurants = (
+            scored_restaurants[
+                start_index:end_index
+            ]
+        )
+
+        page_restaurants = [
+            item.restaurant
+            for item in page_scored_restaurants
         ]
+
+        try:
+            page_restaurants = (
+                resolve_restaurant_photos(
+                    page_restaurants,
+                    limit=len(
+                        page_restaurants
+                    ),
+                )
+            )
+        except Exception as error:
+            logger.exception(
+                (
+                    "Restaurant photo resolution "
+                    "failed for page %s of "
+                    "pick session %s: %s"
+                ),
+                page,
+                session.pk,
+                error,
+            )
+
+        photo_restaurants_by_id = {
+            restaurant.external_id:
+                restaurant
+            for restaurant
+            in page_restaurants
+        }
+
+        matches = []
+
+        for scored_restaurant in (
+            page_scored_restaurants
+        ):
+            restaurant = (
+                photo_restaurants_by_id.get(
+                    scored_restaurant
+                    .restaurant
+                    .external_id,
+                    scored_restaurant.restaurant,
+                )
+            )
+
+            data = (
+                scored_restaurant.to_dict()
+            )
+
+            data["photo_url"] = (
+                restaurant.photo_url
+            )
+
+            matches.append(
+                data
+            )
+
+        has_more = (
+            end_index
+            < total_matches
+        )
 
         target_positions = [
             {
@@ -1554,11 +1627,24 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                     "dietary_queries": (
                         dietary_slugs
                     ),
-                    "scored_match_count": len(
-                        matches
+                    "scored_match_count": (
+                        total_matches
                     ),
                 },
-                "match_count": len(matches),
+                "match_count": total_matches,
+                "returned_count": len(
+                    matches
+                ),
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "has_more": has_more,
+                    "next_page": (
+                        page + 1
+                        if has_more
+                        else None
+                    ),
+                },
                 "matches": matches,
             },
         )
