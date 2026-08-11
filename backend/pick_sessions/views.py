@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import timedelta
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -106,6 +107,8 @@ def _get_session_search_cache_key(
 def _get_enriched_session_restaurants(
     session,
 ):
+    total_started_at = time.perf_counter()
+
     if (
         session.latitude is None
         or session.longitude is None
@@ -120,11 +123,24 @@ def _get_enriched_session_restaurants(
         )
     )
 
+    cache_started_at = time.perf_counter()
+
     cached_result = cache.get(
         cache_key
     )
 
     if cached_result is not None:
+        logger.warning(
+            (
+                "[PICK-PERF] session=%s "
+                "cache_hit=true cache_lookup=%.2fs "
+                "backend_search_total=%.2fs"
+            ),
+            session.pk,
+            time.perf_counter() - cache_started_at,
+            time.perf_counter() - total_started_at,
+        )
+
         return cached_result
 
     preferred_primary_types = (
@@ -158,6 +174,12 @@ def _get_enriched_session_restaurants(
         session
     )
 
+    preferred_cuisine_slugs = (
+        get_session_preferred_cuisine_slugs(
+            session
+        )
+    )
+
     latitude = float(
         session.latitude
     )
@@ -181,11 +203,10 @@ def _get_enriched_session_restaurants(
         ),
     }
 
-    with ThreadPoolExecutor(
-        max_workers=3
-    ) as executor:
-        nearby_future = executor.submit(
-            search_nearby_restaurants,
+    def run_nearby_search():
+        started_at = time.perf_counter()
+
+        result = search_nearby_restaurants(
             **search_arguments,
             preferred_primary_types=(
                 preferred_primary_types
@@ -195,17 +216,85 @@ def _get_enriched_session_restaurants(
             resolve_photos=False,
         )
 
+        logger.warning(
+            (
+                "[PICK-PERF] session=%s "
+                "nearby=%.2fs count=%s"
+            ),
+            session.pk,
+            time.perf_counter() - started_at,
+            len(result),
+        )
+
+        return result
+
+    def run_dining_style_search():
+        started_at = time.perf_counter()
+
+        result = search_dining_style_restaurants(
+            **search_arguments,
+            dining_style_slugs=(
+                dining_style_slugs
+            ),
+            location_label=(
+                session.location_label
+            ),
+            resolve_photos=False,
+        )
+
+        logger.warning(
+            (
+                "[PICK-PERF] session=%s "
+                "dining=%.2fs count=%s"
+            ),
+            session.pk,
+            time.perf_counter() - started_at,
+            len(result),
+        )
+
+        return result
+
+    def run_dietary_search():
+        started_at = time.perf_counter()
+
+        result = search_dietary_restaurants(
+            **search_arguments,
+            dietary_slugs=(
+                dietary_slugs
+            ),
+            preferred_cuisine_slugs=(
+                preferred_cuisine_slugs
+            ),
+            location_label=(
+                session.location_label
+            ),
+            resolve_photos=False,
+        )
+
+        logger.warning(
+            (
+                "[PICK-PERF] session=%s "
+                "dietary=%.2fs count=%s"
+            ),
+            session.pk,
+            time.perf_counter() - started_at,
+            len(result),
+        )
+
+        return result
+
+    google_started_at = time.perf_counter()
+
+    with ThreadPoolExecutor(
+        max_workers=3
+    ) as executor:
+        nearby_future = executor.submit(
+            run_nearby_search
+        )
+
         dining_style_future = (
             executor.submit(
-                search_dining_style_restaurants,
-                **search_arguments,
-                dining_style_slugs=(
-                    dining_style_slugs
-                ),
-                location_label=(
-                    session.location_label
-                ),
-                resolve_photos=False,
+                run_dining_style_search
             )
         )
 
@@ -213,20 +302,7 @@ def _get_enriched_session_restaurants(
 
         if dietary_slugs:
             dietary_future = executor.submit(
-                search_dietary_restaurants,
-                **search_arguments,
-                dietary_slugs=(
-                    dietary_slugs
-                ),
-                preferred_cuisine_slugs=(
-                    get_session_preferred_cuisine_slugs(
-                        session
-                    )
-                ),
-                location_label=(
-                    session.location_label
-                ),
-                resolve_photos=False,
+                run_dietary_search
             )
 
         nearby_restaurants = (
@@ -243,6 +319,22 @@ def _get_enriched_session_restaurants(
             else []
         )
 
+    logger.warning(
+        (
+            "[PICK-PERF] session=%s "
+            "google_parallel_total=%.2fs "
+            "nearby_count=%s dining_count=%s "
+            "dietary_count=%s"
+        ),
+        session.pk,
+        time.perf_counter() - google_started_at,
+        len(nearby_restaurants),
+        len(dining_style_restaurants),
+        len(dietary_restaurants),
+    )
+
+    merge_started_at = time.perf_counter()
+
     merged_restaurants = (
         merge_restaurant_results(
             nearby_restaurants,
@@ -250,6 +342,18 @@ def _get_enriched_session_restaurants(
             dietary_restaurants,
         )
     )
+
+    logger.warning(
+        (
+            "[PICK-PERF] session=%s "
+            "merge=%.2fs merged_count=%s"
+        ),
+        session.pk,
+        time.perf_counter() - merge_started_at,
+        len(merged_restaurants),
+    )
+
+    scoring_started_at = time.perf_counter()
 
     preliminary_scored = (
         score_and_sort_restaurants(
@@ -260,6 +364,16 @@ def _get_enriched_session_restaurants(
         )
     )
 
+    logger.warning(
+        (
+            "[PICK-PERF] session=%s "
+            "scoring=%.2fs scored_count=%s"
+        ),
+        session.pk,
+        time.perf_counter() - scoring_started_at,
+        len(preliminary_scored),
+    )
+
     strong_matches = [
         item
         for item in preliminary_scored
@@ -267,19 +381,19 @@ def _get_enriched_session_restaurants(
         >= MATCH_MIN_SCORE
     ]
 
+    ninety_plus = [
+        item
+        for item in strong_matches
+        if item.match_score >= 90
+    ]
+
+    eighty_five_plus = [
+        item
+        for item in strong_matches
+        if item.match_score >= 85
+    ]
+
     if len(strong_matches) >= 20:
-        ninety_plus = [
-            item
-            for item in strong_matches
-            if item.match_score >= 90
-        ]
-
-        eighty_five_plus = [
-            item
-            for item in strong_matches
-            if item.match_score >= 85
-        ]
-
         if len(ninety_plus) >= 20:
             selected_matches = (
                 ninety_plus
@@ -306,6 +420,21 @@ def _get_enriched_session_restaurants(
         ]
     )
 
+    logger.warning(
+        (
+            "[PICK-PERF] session=%s "
+            "strong_80_plus=%s "
+            "strong_85_plus=%s "
+            "strong_90_plus=%s "
+            "selected_pool=%s"
+        ),
+        session.pk,
+        len(strong_matches),
+        len(eighty_five_plus),
+        len(ninety_plus),
+        len(selected_matches),
+    )
+
     restaurants = [
         item.restaurant
         for item in selected_matches
@@ -319,12 +448,25 @@ def _get_enriched_session_restaurants(
         preferred_dietary_slugs,
     )
 
+    cache_set_started_at = time.perf_counter()
+
     cache.set(
         cache_key,
         result,
         timeout=(
             MATCH_SEARCH_CACHE_SECONDS
         ),
+    )
+
+    logger.warning(
+        (
+            "[PICK-PERF] session=%s "
+            "cache_set=%.2fs "
+            "backend_search_total=%.2fs"
+        ),
+        session.pk,
+        time.perf_counter() - cache_set_started_at,
+        time.perf_counter() - total_started_at,
     )
 
     return result
@@ -1350,6 +1492,8 @@ class PickSessionViewSet(viewsets.ModelViewSet):
         request,
         id=None,
     ):
+        request_started_at = time.perf_counter()
+
         session = self.get_object()
 
         try:
@@ -1495,6 +1639,8 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             for item in page_scored_restaurants
         ]
 
+        photo_started_at = time.perf_counter()
+
         try:
             page_restaurants = (
                 resolve_restaurant_photos(
@@ -1515,6 +1661,18 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                 session.pk,
                 error,
             )
+
+        logger.warning(
+            (
+                "[PICK-PERF] session=%s "
+                "page=%s photos=%.2fs "
+                "photo_count=%s"
+            ),
+            session.pk,
+            page,
+            time.perf_counter() - photo_started_at,
+            len(page_restaurants),
+        )
 
         photo_restaurants_by_id = {
             restaurant.external_id:
@@ -1585,6 +1743,19 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             session=session,
             user=request.user,
             matches=matches,
+        )
+
+        logger.warning(
+            (
+                "[PICK-PERF] session=%s "
+                "page=%s match_request_total=%.2fs "
+                "returned_count=%s total_matches=%s"
+            ),
+            session.pk,
+            page,
+            time.perf_counter() - request_started_at,
+            len(matches),
+            total_matches,
         )
 
         return Response(
