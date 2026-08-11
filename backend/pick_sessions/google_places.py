@@ -38,8 +38,12 @@ MAX_GOOGLE_DETAIL_WORKERS = 6
 MAX_GOOGLE_PHOTO_WORKERS = 6
 PLACE_DIETARY_DETAILS_CACHE_SECONDS = 6 * 60 * 60
 PHOTO_URL_CACHE_SECONDS = 24 * 60 * 60
-GENERIC_NEARBY_SUBSEARCH_RADIUS_FACTOR = 0.55
-GENERIC_NEARBY_SUBSEARCH_OFFSET_FACTOR = 0.72
+NEARBY_SEARCH_CACHE_SECONDS = 5 * 60
+MAX_NEARBY_CANDIDATES = 180
+MAX_PREFERRED_NEARBY_TYPES = 8
+PREFERRED_TYPES_PER_REQUEST = 2
+GENERIC_NEARBY_SUBSEARCH_RADIUS_FACTOR = 0.68
+GENERIC_NEARBY_SUBSEARCH_OFFSET_FACTOR = 0.55
 
 logger = logging.getLogger(__name__)
 
@@ -2627,14 +2631,6 @@ def _perform_generic_nearby_coverage(
     radius_meters: float,
     max_results: int,
 ) -> list[dict[str, Any]]:
-    """
-    Google Nearby Search returns at most 20 places for a circle.
-
-    A single large generic restaurant circle can therefore omit nearby
-    restaurants in a dense area. Search one center circle plus six
-    overlapping offset circles and merge by Google Place ID.
-    """
-
     sub_radius = max(
         min(
             radius_meters
@@ -2658,11 +2654,9 @@ def _perform_generic_nearby_coverage(
 
     for bearing in (
         0,
-        60,
-        120,
+        90,
         180,
-        240,
-        300,
+        270,
     ):
         search_centers.append(
             _offset_coordinates(
@@ -2683,9 +2677,8 @@ def _perform_generic_nearby_coverage(
     ] = {}
 
     with ThreadPoolExecutor(
-        max_workers=min(
-            MAX_GOOGLE_SEARCH_WORKERS,
-            len(search_centers),
+        max_workers=len(
+            search_centers
         )
     ) as executor:
         futures = [
@@ -2739,7 +2732,6 @@ def _perform_generic_nearby_coverage(
     )
 
 
-
 def search_nearby_restaurants(
     *,
     latitude: float,
@@ -2781,18 +2773,48 @@ def search_nearby_restaurants(
         )
     )
 
-    search_groups = [
-        [primary_type]
-        for primary_type
-        in preferred_types
+    preferred_types = (
+        preferred_types[
+            :MAX_PREFERRED_NEARBY_TYPES
+        ]
+    )
+
+    preferred_search_groups = [
+        preferred_types[
+            index:
+            index
+            + PREFERRED_TYPES_PER_REQUEST
+        ]
+        for index in range(
+            0,
+            len(preferred_types),
+            PREFERRED_TYPES_PER_REQUEST,
+        )
     ]
 
-    if (
-        include_generic_fallback
-        or not search_groups
-    ):
-        search_groups.append(
-            ["restaurant"]
+    cache_key = (
+        "pick-sumn:nearby-search:"
+        f"{round(latitude, 3)}:"
+        f"{round(longitude, 3)}:"
+        f"{int(radius_miles)}:"
+        f"{int(open_now)}:"
+        f"{int(include_delivery)}:"
+        f"{int(include_drive_through)}:"
+        f"{','.join(preferred_types)}:"
+        f"{int(include_generic_fallback)}"
+    )
+
+    cached_restaurants = cache.get(
+        cache_key
+    )
+
+    if cached_restaurants is not None:
+        if not resolve_photos:
+            return cached_restaurants
+
+        return _add_photo_urls(
+            restaurants=cached_restaurants,
+            api_key=api_key,
         )
 
     restaurants_by_id: dict[
@@ -2800,51 +2822,71 @@ def search_nearby_restaurants(
         NearbyRestaurant,
     ] = {}
 
-    successful_request_count = 0
     request_errors: list[str] = []
+    successful_request_count = 0
+
+    future_to_group = {}
+
+    total_outer_jobs = (
+        len(preferred_search_groups)
+        + (
+            1
+            if (
+                include_generic_fallback
+                or not preferred_search_groups
+            )
+            else 0
+        )
+    )
 
     with ThreadPoolExecutor(
         max_workers=min(
             MAX_GOOGLE_SEARCH_WORKERS,
-            max(len(search_groups), 1),
+            max(
+                total_outer_jobs,
+                1,
+            ),
         )
     ) as executor:
-        future_to_group = {}
-
         for primary_type_group in (
-            search_groups
+            preferred_search_groups
         ):
-            if primary_type_group == [
-                "restaurant"
-            ]:
-                future = executor.submit(
-                    _perform_generic_nearby_coverage,
-                    api_key=api_key,
-                    latitude=latitude,
-                    longitude=longitude,
-                    radius_meters=radius_meters,
-                    max_results=(
-                        per_request_count
-                    ),
-                )
-            else:
-                future = executor.submit(
-                    _perform_nearby_request,
-                    api_key=api_key,
-                    latitude=latitude,
-                    longitude=longitude,
-                    radius_meters=radius_meters,
-                    primary_types=(
-                        primary_type_group
-                    ),
-                    max_results=(
-                        per_request_count
-                    ),
-                )
+            future = executor.submit(
+                _perform_nearby_request,
+                api_key=api_key,
+                latitude=latitude,
+                longitude=longitude,
+                radius_meters=radius_meters,
+                primary_types=(
+                    primary_type_group
+                ),
+                max_results=(
+                    per_request_count
+                ),
+            )
 
             future_to_group[
                 future
             ] = primary_type_group
+
+        if (
+            include_generic_fallback
+            or not preferred_search_groups
+        ):
+            generic_future = executor.submit(
+                _perform_generic_nearby_coverage,
+                api_key=api_key,
+                latitude=latitude,
+                longitude=longitude,
+                radius_meters=radius_meters,
+                max_results=(
+                    per_request_count
+                ),
+            )
+
+            future_to_group[
+                generic_future
+            ] = ["restaurant"]
 
         for future in as_completed(
             future_to_group
@@ -2901,6 +2943,14 @@ def search_nearby_restaurants(
                 if restaurant is None:
                     continue
 
+                if (
+                    restaurant.distance_miles
+                    is not None
+                    and restaurant.distance_miles
+                    > float(radius_miles)
+                ):
+                    continue
+
                 if not _passes_service_filters(
                     restaurant,
                     open_now=open_now,
@@ -2916,7 +2966,6 @@ def search_nearby_restaurants(
                 restaurants_by_id[
                     restaurant.external_id
                 ] = restaurant
-
 
     if (
         successful_request_count == 0
@@ -2946,6 +2995,29 @@ def search_nearby_restaurants(
             ),
             -restaurant.user_rating_count,
         )
+    )
+
+    restaurants = restaurants[
+        :MAX_NEARBY_CANDIDATES
+    ]
+
+    cache.set(
+        cache_key,
+        restaurants,
+        timeout=(
+            NEARBY_SEARCH_CACHE_SECONDS
+        ),
+    )
+
+    logger.warning(
+        (
+            "[PICK-NEARBY] preferred_types=%s "
+            "preferred_groups=%s "
+            "returned=%s"
+        ),
+        len(preferred_types),
+        len(preferred_search_groups),
+        len(restaurants),
     )
 
     if not resolve_photos:
