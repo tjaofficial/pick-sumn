@@ -200,6 +200,56 @@ class UserAppSettings(models.Model):
 
 
 
+class PushDeviceToken(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="push_device_tokens",
+    )
+
+    expo_push_token = models.CharField(
+        max_length=255,
+        unique=True,
+    )
+
+    platform = models.CharField(
+        max_length=20,
+        blank=True,
+    )
+
+    device_id = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    last_registered_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        ordering = (
+            "-last_registered_at",
+        )
+
+    def __str__(self):
+        return (
+            f"{self.user} - "
+            f"{self.platform or 'device'}"
+        )
+
+
 class FeedbackType(models.TextChoices):
     GENERAL = "general", "General Feedback"
     FEATURE = "feature", "Feature Request"

@@ -11,9 +11,11 @@ from .models import (
     FriendRequestPrivacy,
     Friendship,
     FriendshipStatus,
+    PushDeviceToken,
     UserAppSettings,
     SocialIdentity,
 )
+from .push_notifications import send_push_notification
 from .social_auth import (
     SocialAuthError,
     get_or_create_social_user,
@@ -27,6 +29,7 @@ from .serializers import (
     FriendRequestSerializer,
     FriendSearchResultSerializer,
     MyFriendCodeSerializer,
+    PushDeviceTokenSerializer,
     RegisterSerializer,
     UserAppSettingsSerializer,
     UserSerializer,
@@ -35,6 +38,42 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+
+def _send_friend_request_push(
+    *,
+    sender,
+    target,
+):
+    target_settings = (
+        get_user_app_settings(
+            target
+        )
+    )
+
+    if not (
+        target_settings
+        .notification_friend_requests
+    ):
+        return
+
+    sender_name = (
+        sender.get_full_name()
+        or sender.display_name
+        or sender.email
+    )
+
+    send_push_notification(
+        user=target,
+        title="New Friend Request",
+        body=(
+            f"{sender_name} wants to "
+            "add you as a friend."
+        ),
+        data={
+            "kind": "friend_request",
+        },
+    )
 
 
 def friendship_between(user_a, user_b):
@@ -397,6 +436,12 @@ class SendFriendRequestView(APIView):
             existing.blocked_by = None
             existing.responded_at = None
             existing.save()
+
+            _send_friend_request_push(
+                sender=request.user,
+                target=target,
+            )
+
             return Response(
                 {"detail": "Friend request sent."},
                 status=status.HTTP_200_OK,
@@ -421,6 +466,12 @@ class SendFriendRequestView(APIView):
             to_user=target,
             status=FriendshipStatus.PENDING,
         )
+
+        _send_friend_request_push(
+            sender=request.user,
+            target=target,
+        )
+
         return Response(
             {"detail": "Friend request sent."},
             status=status.HTTP_201_CREATED,
@@ -519,6 +570,80 @@ class MyFriendCodeView(APIView):
         )
         return Response(serializer.data)
 
+
+
+class PushDeviceTokenView(APIView):
+    permission_classes = (
+        permissions.IsAuthenticated,
+    )
+
+    def post(self, request):
+        serializer = (
+            PushDeviceTokenSerializer(
+                data=request.data,
+                context={
+                    "request": request,
+                },
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        token = serializer.save()
+
+        return Response(
+            {
+                "expo_push_token": (
+                    token.expo_push_token
+                ),
+                "platform": (
+                    token.platform
+                ),
+                "device_id": (
+                    token.device_id
+                ),
+                "is_active": (
+                    token.is_active
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        expo_push_token = str(
+            request.data.get(
+                "expo_push_token",
+                "",
+            )
+        ).strip()
+
+        if not expo_push_token:
+            return Response(
+                {
+                    "detail": (
+                        "expo_push_token "
+                        "is required."
+                    )
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        PushDeviceToken.objects.filter(
+            user=request.user,
+            expo_push_token=(
+                expo_push_token
+            ),
+        ).update(
+            is_active=False
+        )
+
+        return Response(
+            status=status.HTTP_204_NO_CONTENT,
+        )
 
 
 class CurrentAppSettingsView(

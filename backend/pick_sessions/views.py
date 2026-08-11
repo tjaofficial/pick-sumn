@@ -5,6 +5,7 @@ import random
 from concurrent.futures import ThreadPoolExecutor
 
 from accounts.models import UserAppSettings
+from accounts.push_notifications import send_push_messages
 from preferences.models import UserDietaryPreference
 
 from django.core.cache import cache
@@ -634,6 +635,7 @@ def _create_group_vote_invites(
     )
 
     notification_rows = []
+    push_messages = []
 
     for participant in invitees:
         if not _notification_enabled(
@@ -644,6 +646,12 @@ def _create_group_vote_invites(
         ):
             continue
 
+        title = "Group Vote Invitation"
+        message = (
+            f"{host_name} invited you to vote "
+            "on where the group should eat."
+        )
+
         notification_rows.append(
             PickSessionNotification(
                 user=participant.user,
@@ -652,17 +660,36 @@ def _create_group_vote_invites(
                     PickSessionNotificationKind
                     .GROUP_VOTE_INVITE
                 ),
-                title="Group Vote Invitation",
-                message=(
-                    f"{host_name} invited you to vote "
-                    "on where the group should eat."
-                ),
+                title=title,
+                message=message,
             )
+        )
+
+        push_messages.append(
+            {
+                "user_id": (
+                    participant.user_id
+                ),
+                "title": title,
+                "body": message,
+                "data": {
+                    "kind": (
+                        "group_vote_invite"
+                    ),
+                    "session_id": str(
+                        session.id
+                    ),
+                },
+            }
         )
 
     PickSessionNotification.objects.bulk_create(
         notification_rows,
         ignore_conflicts=True,
+    )
+
+    send_push_messages(
+        push_messages
     )
 
 
@@ -685,6 +712,7 @@ def _create_group_vote_started_notifications(
     )
 
     notification_rows = []
+    push_messages = []
 
     for participant in participants:
         if not _notification_enabled(
@@ -695,6 +723,12 @@ def _create_group_vote_started_notifications(
         ):
             continue
 
+        title = "Group Vote Started"
+        message = (
+            "Your group vote is ready. "
+            "Cast your vote now."
+        )
+
         notification_rows.append(
             PickSessionNotification(
                 user=participant.user,
@@ -703,17 +737,36 @@ def _create_group_vote_started_notifications(
                     PickSessionNotificationKind
                     .GROUP_VOTE_STARTED
                 ),
-                title="Group Vote Started",
-                message=(
-                    "Your group vote is ready. "
-                    "Cast your vote now."
-                ),
+                title=title,
+                message=message,
             )
+        )
+
+        push_messages.append(
+            {
+                "user_id": (
+                    participant.user_id
+                ),
+                "title": title,
+                "body": message,
+                "data": {
+                    "kind": (
+                        "group_vote_started"
+                    ),
+                    "session_id": str(
+                        session.id
+                    ),
+                },
+            }
         )
 
     PickSessionNotification.objects.bulk_create(
         notification_rows,
         ignore_conflicts=True,
+    )
+
+    send_push_messages(
+        push_messages
     )
 
 
@@ -735,6 +788,7 @@ def _create_group_vote_result_notifications(
     )
 
     notification_rows = []
+    push_messages = []
 
     for participant in participants:
         if not _notification_enabled(
@@ -745,6 +799,11 @@ def _create_group_vote_result_notifications(
         ):
             continue
 
+        title = "Group Vote Complete"
+        message = (
+            f"{winner.name} won the group vote."
+        )
+
         notification_rows.append(
             PickSessionNotification(
                 user=participant.user,
@@ -753,16 +812,39 @@ def _create_group_vote_result_notifications(
                     PickSessionNotificationKind
                     .GROUP_VOTE_COMPLETED
                 ),
-                title="Group Vote Complete",
-                message=(
-                    f"{winner.name} won the group vote."
-                ),
+                title=title,
+                message=message,
             )
+        )
+
+        push_messages.append(
+            {
+                "user_id": (
+                    participant.user_id
+                ),
+                "title": title,
+                "body": message,
+                "data": {
+                    "kind": (
+                        "group_vote_completed"
+                    ),
+                    "session_id": str(
+                        session.id
+                    ),
+                    "selected_restaurant_external_id": (
+                        winner.external_id
+                    ),
+                },
+            }
         )
 
     PickSessionNotification.objects.bulk_create(
         notification_rows,
         ignore_conflicts=True,
+    )
+
+    send_push_messages(
+        push_messages
     )
 
 
@@ -782,6 +864,7 @@ def _create_restaurant_selected_notifications(
     )
 
     rows = []
+    push_messages = []
 
     for participant in participants:
         if not _notification_enabled(
@@ -792,6 +875,12 @@ def _create_restaurant_selected_notifications(
         ):
             continue
 
+        title = "Restaurant Selected"
+        message = (
+            f"{session.selected_restaurant_name} "
+            "is where your group is eating."
+        )
+
         rows.append(
             PickSessionNotification(
                 user=participant.user,
@@ -800,17 +889,40 @@ def _create_restaurant_selected_notifications(
                     PickSessionNotificationKind
                     .RESTAURANT_SELECTED
                 ),
-                title="Restaurant Selected",
-                message=(
-                    f"{session.selected_restaurant_name} "
-                    "is where your group is eating."
-                ),
+                title=title,
+                message=message,
             )
+        )
+
+        push_messages.append(
+            {
+                "user_id": (
+                    participant.user_id
+                ),
+                "title": title,
+                "body": message,
+                "data": {
+                    "kind": (
+                        "restaurant_selected"
+                    ),
+                    "session_id": str(
+                        session.id
+                    ),
+                    "selected_restaurant_external_id": (
+                        session
+                        .selected_restaurant_external_id
+                    ),
+                },
+            }
         )
 
     PickSessionNotification.objects.bulk_create(
         rows,
         ignore_conflicts=True,
+    )
+
+    send_push_messages(
+        push_messages
     )
 
 
@@ -835,6 +947,8 @@ def _create_dietary_feedback_notifications(
         )
     )
 
+    push_messages = []
+
     for preference in preferences:
         dietary_slug = (
             preference.dietary_tag.slug
@@ -852,25 +966,68 @@ def _create_dietary_feedback_notifications(
                 .title()
         )
 
-        PickSessionNotification.objects.get_or_create(
-            user=user,
-            session=session,
-            kind=(
-                PickSessionNotificationKind
-                .DIETARY_FEEDBACK
-            ),
-            dietary_slug=dietary_slug,
-            defaults={
-                "title": (
-                    f"How was the {dietary_label} experience?"
-                ),
-                "message": (
-                    f"Share how {session.selected_restaurant_name} "
-                    f"handled your {dietary_label} needs. "
-                    "Your experience can help other diners."
-                ),
-            },
+        title = (
+            f"How was the "
+            f"{dietary_label} experience?"
         )
+
+        message = (
+            f"Share how "
+            f"{session.selected_restaurant_name} "
+            f"handled your {dietary_label} needs. "
+            "Your experience can help other diners."
+        )
+
+        _, created = (
+            PickSessionNotification.objects
+            .get_or_create(
+                user=user,
+                session=session,
+                kind=(
+                    PickSessionNotificationKind
+                    .DIETARY_FEEDBACK
+                ),
+                dietary_slug=dietary_slug,
+                defaults={
+                    "title": title,
+                    "message": message,
+                },
+            )
+        )
+
+        if not created:
+            continue
+
+        push_messages.append(
+            {
+                "user_id": user.id,
+                "title": title,
+                "body": message,
+                "data": {
+                    "kind": (
+                        "dietary_feedback"
+                    ),
+                    "session_id": str(
+                        session.id
+                    ),
+                    "dietary_slug": (
+                        dietary_slug
+                    ),
+                    "restaurant_name": (
+                        session
+                        .selected_restaurant_name
+                    ),
+                    "selected_restaurant_external_id": (
+                        session
+                        .selected_restaurant_external_id
+                    ),
+                },
+            }
+        )
+
+    send_push_messages(
+        push_messages
+    )
 
 
 def _record_search_and_impressions(

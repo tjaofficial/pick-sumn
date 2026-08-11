@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import * as Notifications from "expo-notifications";
 import {
   ShieldCheck,
   UserPlus,
@@ -9,7 +10,6 @@ import {
   AppState,
   Modal,
   Pressable,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
@@ -41,12 +41,29 @@ import type {
   PickSessionNotification,
 } from "@/features/pickSessions/types";
 import {
+  registerForPushNotifications,
+} from "@/features/notifications/pushNotificationsService";
+import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
 import {
   createThemedStyleSheet,
   themeColor,
 } from "@/theme/themedStyleSheet";
+
+
+const FALLBACK_POLL_INTERVAL_MS =
+  15_000;
+
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 
 type LiveNotificationsContextValue = {
@@ -78,6 +95,105 @@ function getFriendRequestName(
     || request.user.display_name
     || request.user.email
   );
+}
+
+
+function openPushNotification(
+  data?: Record<string, unknown>,
+) {
+  if (!data) {
+    return;
+  }
+  const kind = String(
+    data.kind
+    ?? "",
+  );
+
+  const sessionId = String(
+    data.session_id
+    ?? "",
+  );
+
+  if (kind === "friend_request") {
+    router.push(
+      "/notifications",
+    );
+
+    return;
+  }
+
+  if (
+    kind === "group_vote_invite"
+    || kind === "group_vote_started"
+  ) {
+    if (!sessionId) {
+      return;
+    }
+
+    router.push({
+      pathname:
+        "/pick-votes/[id]",
+      params: {
+        id: sessionId,
+      },
+    });
+
+    return;
+  }
+
+  if (
+    kind === "group_vote_completed"
+    || kind === "restaurant_selected"
+  ) {
+    if (!sessionId) {
+      return;
+    }
+
+    router.push({
+      pathname:
+        "/restaurants/[sessionId]/[optionId]",
+      params: {
+        sessionId,
+        optionId: "selected",
+      },
+    });
+
+    return;
+  }
+
+  if (kind === "dietary_feedback") {
+    const placeId = String(
+      data
+        .selected_restaurant_external_id
+      ?? "",
+    );
+
+    const dietarySlug = String(
+      data.dietary_slug
+      ?? "",
+    );
+
+    if (
+      !placeId
+      || !dietarySlug
+    ) {
+      return;
+    }
+
+    router.push({
+      pathname:
+        "/restaurants/[placeId]/dietary",
+      params: {
+        placeId,
+        dietarySlug,
+        restaurantName: String(
+          data.restaurant_name
+          ?? "",
+        ),
+        sourceUrl: "",
+      },
+    });
+  }
 }
 
 
@@ -129,6 +245,9 @@ export function LiveNotificationsProvider({
       AppState.currentState,
     );
 
+  const refreshInFlight =
+    useRef(false);
+
 
   const refreshNotifications =
     useCallback(
@@ -139,6 +258,12 @@ export function LiveNotificationsProvider({
           setFriendRequest(null);
           return;
         }
+
+        if (refreshInFlight.current) {
+          return;
+        }
+
+        refreshInFlight.current = true;
 
         try {
           const [
@@ -176,6 +301,10 @@ export function LiveNotificationsProvider({
                   item.kind
                   === "group_vote_invite"
                   || item.kind
+                  === "group_vote_started"
+                  || item.kind
+                  === "group_vote_completed"
+                  || item.kind
                   === "restaurant_selected"
                   || item.kind
                   === "dietary_feedback"
@@ -193,8 +322,8 @@ export function LiveNotificationsProvider({
             nextInvitation,
           );
         } catch {
-          // Silent polling failure.
-          // The next poll will try again.
+        } finally {
+          refreshInFlight.current = false;
         }
       },
       [isAuthenticated],
@@ -213,6 +342,9 @@ export function LiveNotificationsProvider({
 
     void refreshNotifications();
 
+    void registerForPushNotifications()
+      .catch(() => null);
+
     const interval =
       setInterval(
         () => {
@@ -223,10 +355,10 @@ export function LiveNotificationsProvider({
             void refreshNotifications();
           }
         },
-        2000,
+        FALLBACK_POLL_INTERVAL_MS,
       );
 
-    const subscription =
+    const appStateSubscription =
       AppState.addEventListener(
         "change",
         (nextState) => {
@@ -247,9 +379,50 @@ export function LiveNotificationsProvider({
         },
       );
 
+    const receivedSubscription =
+      Notifications
+        .addNotificationReceivedListener(
+          () => {
+            void refreshNotifications();
+          },
+        );
+
+    const responseSubscription =
+      Notifications
+        .addNotificationResponseReceivedListener(
+          (response) => {
+            void refreshNotifications();
+
+            const data =
+              response.notification
+                .request
+                .content
+                .data;
+
+            openPushNotification(
+              data
+            );
+          },
+        );
+
+    const lastResponse =
+  Notifications
+    .getLastNotificationResponse();
+
+if (lastResponse) {
+  openPushNotification(
+    lastResponse.notification
+      .request
+      .content
+      .data,
+  );
+}
+
     return () => {
       clearInterval(interval);
-      subscription.remove();
+      appStateSubscription.remove();
+      receivedSubscription.remove();
+      responseSubscription.remove();
     };
   }, [
     isAuthenticated,
@@ -270,7 +443,6 @@ export function LiveNotificationsProvider({
         currentInvitation.id,
       );
     } catch {
-      // Still open the vote screen.
     }
 
     dismissedVoteIds.current.add(
@@ -327,6 +499,8 @@ export function LiveNotificationsProvider({
     if (
       currentInvitation.kind
       === "restaurant_selected"
+      || currentInvitation.kind
+      === "group_vote_completed"
     ) {
       router.push({
         pathname:
@@ -596,7 +770,13 @@ export function LiveNotificationsProvider({
                 : invitation?.kind
                   === "restaurant_selected"
                   ? "Restaurant Selected"
-                  : "Group Vote Invitation"}
+                  : invitation?.kind
+                    === "group_vote_completed"
+                    ? "Group Vote Complete"
+                    : invitation?.kind
+                      === "group_vote_started"
+                      ? "Group Vote Started"
+                      : "Group Vote Invitation"}
             </Text>
 
             <Text
@@ -625,6 +805,8 @@ export function LiveNotificationsProvider({
                   ? "Share Experience"
                   : invitation?.kind
                     === "restaurant_selected"
+                    || invitation?.kind
+                      === "group_vote_completed"
                     ? "View Restaurant"
                     : "Open Vote"}
               </Text>

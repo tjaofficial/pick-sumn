@@ -35,6 +35,18 @@ export default ({
       ],
       "expo-router",
       [
+        "expo-location",
+        {
+          locationWhenInUsePermission:
+            (
+              "Pick Sum’N uses your location to find "
+              + "nearby restaurants and rank food matches "
+              + "based on the search distance you choose."
+            ),
+        },
+      ],
+      "expo-notifications",
+      [
         "expo-splash-screen",
         {
           backgroundColor: "#208AEF",
@@ -129,7 +141,7 @@ export default ({
     ios: {
       bundleIdentifier:
         "com.picksumn.app",
-      buildNumber: "4",
+      buildNumber: "5",
       usesAppleSignIn: true,
       associatedDomains: [
         "applinks:picksumn.com",
@@ -143,7 +155,7 @@ export default ({
 
     android: {
       package: "com.picksumn.app",
-      versionCode: 2,
+      versionCode: 3,
       permissions: [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",

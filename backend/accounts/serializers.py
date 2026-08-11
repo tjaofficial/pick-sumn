@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from .models import (
     FeedbackSubmission,
+    PushDeviceToken,
     UserAppSettings,
 )
 
@@ -324,3 +325,76 @@ class SignInMethodsSerializer(serializers.Serializer):
     apple = serializers.BooleanField()
     google = serializers.BooleanField()
     facebook = serializers.BooleanField()
+
+
+class PushDeviceTokenSerializer(
+    serializers.ModelSerializer
+):
+    class Meta:
+        model = PushDeviceToken
+
+        fields = (
+            "expo_push_token",
+            "platform",
+            "device_id",
+        )
+
+    def validate_expo_push_token(
+        self,
+        value,
+    ):
+        cleaned_value = value.strip()
+
+        if not (
+            cleaned_value.startswith(
+                "ExponentPushToken["
+            )
+            or cleaned_value.startswith(
+                "ExpoPushToken["
+            )
+        ):
+            raise serializers.ValidationError(
+                (
+                    "A valid Expo push token "
+                    "is required."
+                )
+            )
+
+        return cleaned_value
+
+    def create(
+        self,
+        validated_data,
+    ):
+        user = self.context[
+            "request"
+        ].user
+
+        token = validated_data[
+            "expo_push_token"
+        ]
+
+        push_token, _ = (
+            PushDeviceToken.objects
+            .update_or_create(
+                expo_push_token=token,
+                defaults={
+                    "user": user,
+                    "platform": (
+                        validated_data.get(
+                            "platform",
+                            "",
+                        )
+                    ),
+                    "device_id": (
+                        validated_data.get(
+                            "device_id",
+                            "",
+                        )
+                    ),
+                    "is_active": True,
+                },
+            )
+        )
+
+        return push_token
