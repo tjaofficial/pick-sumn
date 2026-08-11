@@ -28,12 +28,12 @@ import {
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Linking,
   Modal,
   Pressable,
   RefreshControl,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -54,7 +54,7 @@ import type {
   PickSessionMatchesResponse,
 } from "@/features/pickSessions/types";
 import {
-  getSavedRestaurantStatus,
+  getSavedRestaurantStatuses,
   removeSavedRestaurantByExternalId,
   saveRestaurant,
 } from "@/features/savedRestaurants/savedRestaurantsService";
@@ -661,6 +661,10 @@ type RestaurantCardProps = {
   onSelect: () => void;
   isSelecting: boolean;
   allowSelection: boolean;
+  savedStatus?: boolean;
+  onSavedStatusChange: (
+    isSaved: boolean,
+  ) => void;
 };
 
 
@@ -671,6 +675,8 @@ function RestaurantCard({
   onSelect,
   isSelecting,
   allowSelection,
+  savedStatus,
+  onSavedStatusChange,
 }: RestaurantCardProps) {
   const placeType =
     restaurant.primary_type_display_name
@@ -711,53 +717,18 @@ function RestaurantCard({
     setDietaryExpanded,
   ] = useState(false);
 
-  const [
-    isSaved,
-    setIsSaved,
-  ] = useState(false);
+  const isSaved = (
+    savedStatus ?? false
+  );
 
-  const [
-    isCheckingSaved,
-    setIsCheckingSaved,
-  ] = useState(true);
+  const isCheckingSaved = (
+    savedStatus === undefined
+  );
 
   const [
     isSaving,
     setIsSaving,
   ] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadSavedStatus() {
-      try {
-        setIsCheckingSaved(true);
-
-        const status =
-          await getSavedRestaurantStatus(
-            restaurant.external_id,
-          );
-
-        if (isMounted) {
-          setIsSaved(status.is_saved);
-        }
-      } catch {
-        if (isMounted) {
-          setIsSaved(false);
-        }
-      } finally {
-        if (isMounted) {
-          setIsCheckingSaved(false);
-        }
-      }
-    }
-
-    void loadSavedStatus();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [restaurant.external_id]);
 
   async function toggleSavedRestaurant() {
     if (isSaving || isCheckingSaved) {
@@ -772,7 +743,7 @@ function RestaurantCard({
           restaurant.external_id,
         );
 
-        setIsSaved(false);
+        onSavedStatusChange(false);
         return;
       }
 
@@ -815,7 +786,7 @@ function RestaurantCard({
           restaurant.takeout,
       });
 
-      setIsSaved(true);
+      onSavedStatusChange(true);
     } catch (requestError) {
       Alert.alert(
         "Unable to update favorites",
@@ -1765,6 +1736,18 @@ export default function MatchesScreen() {
   ] = useState(false);
 
   const [
+    isLoadingMore,
+    setIsLoadingMore,
+  ] = useState(false);
+
+  const [
+    savedStatuses,
+    setSavedStatuses,
+  ] = useState<
+    Record<string, boolean>
+  >({});
+
+  const [
     error,
     setError,
   ] = useState<string | null>(null);
@@ -1859,7 +1842,10 @@ export default function MatchesScreen() {
   }
 
   const loadMatches = useCallback(
-    async () => {
+    async (
+      page = 1,
+      append = false,
+    ) => {
       if (!sessionId) {
         setResults(null);
 
@@ -1869,6 +1855,7 @@ export default function MatchesScreen() {
 
         setIsLoading(false);
         setIsRefreshing(false);
+        setIsLoadingMore(false);
 
         return;
       }
@@ -1879,9 +1866,97 @@ export default function MatchesScreen() {
         const response =
           await getPickSessionMatches(
             sessionId,
+            {
+              page,
+              includePhotos: false,
+            },
           );
 
-        setResults(response);
+        const pageIds = (
+          response.matches
+            .map(
+              (restaurant) =>
+                restaurant.external_id,
+            )
+            .filter(Boolean)
+        );
+
+        if (append) {
+          setResults(
+            (currentResults) => {
+              if (!currentResults) {
+                return response;
+              }
+
+              const existingIds =
+                new Set(
+                  currentResults.matches.map(
+                    (restaurant) =>
+                      restaurant.external_id,
+                  ),
+                );
+
+              const newMatches =
+                response.matches.filter(
+                  (restaurant) =>
+                    !existingIds.has(
+                      restaurant.external_id,
+                    ),
+                );
+
+              return {
+                ...response,
+                matches: [
+                  ...currentResults.matches,
+                  ...newMatches,
+                ],
+              };
+            },
+          );
+        } else {
+          setResults(response);
+        }
+
+        if (pageIds.length > 0) {
+          try {
+            const pageStatuses =
+              await getSavedRestaurantStatuses(
+                pageIds,
+              );
+
+            setSavedStatuses(
+              (currentStatuses) => ({
+                ...currentStatuses,
+                ...pageStatuses,
+              }),
+            );
+          } catch {
+            setSavedStatuses(
+              (currentStatuses) => {
+                const nextStatuses = {
+                  ...currentStatuses,
+                };
+
+                for (
+                  const externalId
+                  of pageIds
+                ) {
+                  if (
+                    nextStatuses[
+                      externalId
+                    ] === undefined
+                  ) {
+                    nextStatuses[
+                      externalId
+                    ] = false;
+                  }
+                }
+
+                return nextStatuses;
+              },
+            );
+          }
+        }
       } catch (requestError) {
         setError(
           getApiErrorMessage(
@@ -1892,10 +1967,39 @@ export default function MatchesScreen() {
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
+        setIsLoadingMore(false);
       }
     },
     [sessionId],
   );
+
+  const loadMoreMatches = useCallback(
+    async () => {
+      if (
+        !results
+        || isLoadingMore
+        || decisionMode !== "ranked"
+        || !results.pagination.has_more
+        || !results.pagination.next_page
+      ) {
+        return;
+      }
+
+      setIsLoadingMore(true);
+
+      await loadMatches(
+        results.pagination.next_page,
+        true,
+      );
+    },
+    [
+      decisionMode,
+      isLoadingMore,
+      loadMatches,
+      results,
+    ],
+  );
+
 
   useFocusEffect(
     useCallback(() => {
@@ -1954,7 +2058,8 @@ export default function MatchesScreen() {
 
   async function handleRefresh() {
     setIsRefreshing(true);
-    await loadMatches();
+    setSavedStatuses({});
+    await loadMatches(1, false);
   }
 
   if (isLoading) {
@@ -2018,9 +2123,11 @@ export default function MatchesScreen() {
         </Text>
 
         <Pressable
-          onPress={() =>
-            void loadMatches()
-          }
+          onPress={() => {
+            setIsRefreshing(true);
+            setSavedStatuses({});
+            void loadMatches(1, false);
+          }}
           style={styles.topBarButton}
         >
           <RefreshCw
@@ -2030,7 +2137,66 @@ export default function MatchesScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
+      <FlatList
+        data={
+          error
+            ? []
+            : displayedMatches
+        }
+        keyExtractor={(restaurant) =>
+          restaurant.external_id
+        }
+        renderItem={({
+          item: restaurant,
+          index,
+        }) => (
+          <RestaurantCard
+            restaurant={restaurant}
+            rank={index + 1}
+            requestedDietarySlugs={
+              results?.session
+                .requested_dietary_slugs
+              ?? []
+            }
+            onSelect={() =>
+              confirmSelection(
+                restaurant,
+              )
+            }
+            isSelecting={
+              selectingRestaurantId
+              === restaurant.external_id
+            }
+            allowSelection={
+              decisionMode
+              !== "group_vote"
+            }
+            savedStatus={
+              savedStatuses[
+                restaurant.external_id
+              ]
+            }
+            onSavedStatusChange={(
+              isSaved,
+            ) =>
+              setSavedStatuses(
+                (currentStatuses) => ({
+                  ...currentStatuses,
+                  [
+                    restaurant.external_id
+                  ]: isSaved,
+                }),
+              )
+            }
+          />
+        )}
+        ItemSeparatorComponent={() => (
+          <View
+            style={
+              styles.matchSeparator
+            }
+          />
+        )}
         contentContainerStyle={
           styles.content
         }
@@ -2044,255 +2210,254 @@ export default function MatchesScreen() {
             tintColor={themeColor("#F3344A", "color")}
           />
         }
-      >
-        <View style={styles.hero}>
-          <View style={styles.heroIcon}>
-            <Sparkles
-              size={30}
-              color={themeColor("#FFFFFF", "color")}
-            />
-          </View>
-
-          <Text style={styles.heroTitle}>
-            {headingText}
-          </Text>
-
-          <Text
-            style={
-              styles.heroDescription
-            }
-          >
-            {descriptionText}
-          </Text>
-
-          {!!results && (
-            <View
-              style={styles.heroMetaRow}
-            >
-              <View
-                style={
-                  styles.heroMetaItem
-                }
-              >
-                <MapPin
-                  size={16}
-                  color={themeColor("#F7A4AE", "color")}
-                />
-
-                <Text
-                  style={
-                    styles.heroMetaText
-                  }
-                  numberOfLines={1}
-                >
-                  {
-                    results.session
-                      .location_label
-                  }
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.heroMetaItem
-                }
-              >
-                <Navigation
-                  size={16}
-                  color={themeColor("#F7A4AE", "color")}
-                />
-
-                <Text
-                  style={
-                    styles.heroMetaText
-                  }
-                >
-                  Within{" "}
-                  {
-                    results.session
-                      .search_radius_miles
-                  }{" "}
-                  miles
-                </Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        {error && (
-          <View style={styles.errorCard}>
-            <Text
-              style={styles.errorTitle}
-            >
-              Matches unavailable
-            </Text>
-
-            <Text
-              style={styles.errorText}
-            >
-              {error}
-            </Text>
-
-            <Pressable
-              onPress={() => {
-                if (!sessionId) {
-                  router.replace(
-                    "/(tabs)/pick",
-                  );
-                  return;
-                }
-
-                void loadMatches();
-              }}
-              style={styles.retryButton}
-            >
-              {sessionId ? (
-                <RefreshCw
-                  size={18}
-                  color={themeColor("#FFFFFF", "color")}
-                />
-              ) : (
+        onEndReached={() => {
+          void loadMoreMatches();
+        }}
+        onEndReachedThreshold={0.45}
+        ListHeaderComponent={
+          <>
+            <View style={styles.hero}>
+              <View style={styles.heroIcon}>
                 <Sparkles
-                  size={18}
+                  size={30}
                   color={themeColor("#FFFFFF", "color")}
                 />
-              )}
+              </View>
+
+              <Text style={styles.heroTitle}>
+                {headingText}
+              </Text>
 
               <Text
                 style={
-                  styles.retryButtonText
+                  styles.heroDescription
                 }
               >
-                {sessionId
-                  ? "Try Again"
-                  : "Go Pick Sum’N"}
+                {descriptionText}
               </Text>
-            </Pressable>
-          </View>
-        )}
 
-        {!error
-          && displayedMatches.length
-            === 0 && (
-          <View style={styles.emptyCard}>
+              {!!results && (
+                <View
+                  style={styles.heroMetaRow}
+                >
+                  <View
+                    style={
+                      styles.heroMetaItem
+                    }
+                  >
+                    <MapPin
+                      size={16}
+                      color={themeColor("#F7A4AE", "color")}
+                    />
+
+                    <Text
+                      style={
+                        styles.heroMetaText
+                      }
+                      numberOfLines={1}
+                    >
+                      {
+                        results.session
+                          .location_label
+                      }
+                    </Text>
+                  </View>
+
+                  <View
+                    style={
+                      styles.heroMetaItem
+                    }
+                  >
+                    <Navigation
+                      size={16}
+                      color={themeColor("#F7A4AE", "color")}
+                    />
+
+                    <Text
+                      style={
+                        styles.heroMetaText
+                      }
+                    >
+                      Within{" "}
+                      {
+                        results.session
+                          .search_radius_miles
+                      }{" "}
+                      miles
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {error && (
+              <View style={styles.errorCard}>
+                <Text
+                  style={styles.errorTitle}
+                >
+                  Matches unavailable
+                </Text>
+
+                <Text
+                  style={styles.errorText}
+                >
+                  {error}
+                </Text>
+
+                <Pressable
+                  onPress={() => {
+                    if (!sessionId) {
+                      router.replace(
+                        "/(tabs)/pick",
+                      );
+                      return;
+                    }
+
+                    void loadMatches(
+                      1,
+                      false,
+                    );
+                  }}
+                  style={styles.retryButton}
+                >
+                  {sessionId ? (
+                    <RefreshCw
+                      size={18}
+                      color={themeColor("#FFFFFF", "color")}
+                    />
+                  ) : (
+                    <Sparkles
+                      size={18}
+                      color={themeColor("#FFFFFF", "color")}
+                    />
+                  )}
+
+                  <Text
+                    style={
+                      styles.retryButtonText
+                    }
+                  >
+                    {sessionId
+                      ? "Try Again"
+                      : "Go Pick Sum’N"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {!error
+              && displayedMatches.length
+                > 0 && (
+              <View
+                style={styles.resultsHeader}
+              >
+                <Text
+                  style={styles.resultsTitle}
+                >
+                  {decisionMode
+                    === "pick_for_us"
+                    ? "Tonight’s Pick"
+                    : `${results?.match_count
+                        ?? displayedMatches.length} Match${
+                        (
+                          results?.match_count
+                          ?? displayedMatches.length
+                        ) === 1
+                          ? ""
+                          : "es"
+                      }`}
+                </Text>
+
+                {decisionMode
+                  !== "pick_for_us" && (
+                    <SortSelect
+                      selectedValue={
+                        sortOption
+                      }
+                      onChange={
+                        setSortOption
+                      }
+                    />
+                  )}
+              </View>
+            )}
+          </>
+        }
+        ListEmptyComponent={
+          !error ? (
+            <View style={styles.emptyCard}>
+              <View
+                style={styles.emptyIcon}
+              >
+                <Store
+                  size={34}
+                  color={themeColor("#F3344A", "color")}
+                />
+              </View>
+
+              <Text
+                style={styles.emptyTitle}
+              >
+                No matches found
+              </Text>
+
+              <Text
+                style={styles.emptyText}
+              >
+                Try increasing the distance
+                or turning off some filters.
+              </Text>
+
+              <Pressable
+                onPress={() =>
+                  router.replace(
+                    "/pick/setup",
+                  )
+                }
+                style={
+                  styles.adjustButton
+                }
+              >
+                <Text
+                  style={
+                    styles.adjustButtonText
+                  }
+                >
+                  Adjust Filters
+                </Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          isLoadingMore ? (
             <View
-              style={styles.emptyIcon}
+              style={
+                styles.loadMoreFooter
+              }
             >
-              <Store
-                size={34}
+              <ActivityIndicator
+                size="small"
                 color={themeColor("#F3344A", "color")}
               />
-            </View>
 
-            <Text
-              style={styles.emptyTitle}
-            >
-              No matches found
-            </Text>
-
-            <Text
-              style={styles.emptyText}
-            >
-              Try increasing the distance
-              or turning off some filters.
-            </Text>
-
-            <Pressable
-              onPress={() =>
-                router.replace(
-                  "/pick/setup",
-                )
-              }
-              style={
-                styles.adjustButton
-              }
-            >
               <Text
                 style={
-                  styles.adjustButtonText
+                  styles.loadMoreText
                 }
               >
-                Adjust Filters
+                Loading more matches...
               </Text>
-            </Pressable>
-          </View>
-        )}
-
-        {!error
-          && displayedMatches.length
-            > 0 && (
-          <>
-            <View
-              style={styles.resultsHeader}
-            >
-              <Text
-                style={styles.resultsTitle}
-              >
-                {decisionMode
-                  === "pick_for_us"
-                  ? "Tonight’s Pick"
-                  : `${displayedMatches.length} Match${
-                      displayedMatches.length
-                      === 1
-                        ? ""
-                        : "es"
-                    }`}
-              </Text>
-
-              {decisionMode
-                !== "pick_for_us" && (
-                <SortSelect
-                  selectedValue={
-                    sortOption
-                  }
-                  onChange={
-                    setSortOption
-                  }
-                />
-              )}
             </View>
-
+          ) : (
             <View
-              style={styles.matchesList}
-            >
-              {displayedMatches.map(
-                (
-                  restaurant,
-                  index,
-                ) => (
-                  <RestaurantCard
-                    key={
-                      restaurant.external_id
-                    }
-                    restaurant={
-                      restaurant
-                    }
-                    rank={index + 1}
-                    requestedDietarySlugs={
-                      results?.session
-                        .requested_dietary_slugs
-                      ?? []
-                    }
-                    onSelect={() =>
-                      confirmSelection(
-                        restaurant,
-                      )
-                    }
-                    isSelecting={
-                      selectingRestaurantId
-                      === restaurant.external_id
-                    }
-                    allowSelection={
-                      decisionMode
-                      !== "group_vote"
-                    }
-                  />
-                ),
-              )}
-            </View>
-          </>
-        )}
-      </ScrollView>
+              style={
+                styles.listBottomSpacer
+              }
+            />
+          )
+        }
+      />
     </SafeAreaView>
   );
 }
@@ -2522,6 +2687,28 @@ const styles = createThemedStyleSheet({
 
   matchesList: {
     gap: 13,
+  },
+
+  matchSeparator: {
+    height: 13,
+  },
+
+  loadMoreFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 20,
+  },
+
+  loadMoreText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#69707C",
+  },
+
+  listBottomSpacer: {
+    height: 26,
   },
 
   restaurantCard: {

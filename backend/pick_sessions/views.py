@@ -1516,6 +1516,13 @@ class PickSessionViewSet(viewsets.ModelViewSet):
 
         page_size = MATCH_PAGE_SIZE
 
+        include_photos = bool(
+            request.data.get(
+                "include_photos",
+                False,
+            )
+        )
+
         if session.status in (
             PickSessionStatus.COMPLETED,
             PickSessionStatus.CANCELLED,
@@ -1639,69 +1646,87 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             for item in page_scored_restaurants
         ]
 
-        photo_started_at = time.perf_counter()
+        photo_restaurants_by_id = {}
 
-        try:
-            page_restaurants = (
-                resolve_restaurant_photos(
-                    page_restaurants,
-                    limit=len(
-                        page_restaurants
-                    ),
+        if include_photos:
+            photo_started_at = (
+                time.perf_counter()
+            )
+
+            try:
+                page_restaurants = (
+                    resolve_restaurant_photos(
+                        page_restaurants,
+                        limit=len(
+                            page_restaurants
+                        ),
+                    )
                 )
-            )
-        except Exception as error:
-            logger.exception(
+            except Exception as error:
+                logger.exception(
+                    (
+                        "Restaurant photo resolution "
+                        "failed for page %s of "
+                        "pick session %s: %s"
+                    ),
+                    page,
+                    session.pk,
+                    error,
+                )
+
+            logger.warning(
                 (
-                    "Restaurant photo resolution "
-                    "failed for page %s of "
-                    "pick session %s: %s"
+                    "[PICK-PERF] session=%s "
+                    "page=%s photos=%.2fs "
+                    "photo_count=%s"
                 ),
-                page,
                 session.pk,
-                error,
+                page,
+                (
+                    time.perf_counter()
+                    - photo_started_at
+                ),
+                len(page_restaurants),
             )
 
-        logger.warning(
-            (
-                "[PICK-PERF] session=%s "
-                "page=%s photos=%.2fs "
-                "photo_count=%s"
-            ),
-            session.pk,
-            page,
-            time.perf_counter() - photo_started_at,
-            len(page_restaurants),
-        )
-
-        photo_restaurants_by_id = {
-            restaurant.external_id:
-                restaurant
-            for restaurant
-            in page_restaurants
-        }
+            photo_restaurants_by_id = {
+                restaurant.external_id:
+                    restaurant
+                for restaurant
+                in page_restaurants
+            }
+        else:
+            logger.warning(
+                (
+                    "[PICK-PERF] session=%s "
+                    "page=%s photos=skipped"
+                ),
+                session.pk,
+                page,
+            )
 
         matches = []
 
         for scored_restaurant in (
             page_scored_restaurants
         ):
-            restaurant = (
-                photo_restaurants_by_id.get(
-                    scored_restaurant
-                    .restaurant
-                    .external_id,
-                    scored_restaurant.restaurant,
-                )
-            )
-
             data = (
                 scored_restaurant.to_dict()
             )
 
-            data["photo_url"] = (
-                restaurant.photo_url
-            )
+            if include_photos:
+                restaurant = (
+                    photo_restaurants_by_id.get(
+                        scored_restaurant
+                        .restaurant
+                        .external_id,
+                        scored_restaurant.restaurant,
+                    )
+                )
+
+                data["photo_url"] = (
+                    restaurant.photo_url
+                )
 
             matches.append(
                 data

@@ -294,7 +294,20 @@ export type PickSessionMatchSummary = {
 
 export type PickSessionMatchesResponse = {
   session: PickSessionMatchSummary;
+  search: {
+    preferred_primary_types: string[];
+    candidate_count: number;
+    dietary_queries: string[];
+    scored_match_count: number;
+  };
   match_count: number;
+  returned_count: number;
+  pagination: {
+    page: number;
+    page_size: number;
+    has_more: boolean;
+    next_page: number | null;
+  };
   matches: NearbyRestaurantMatch[];
 };
 

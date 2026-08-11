@@ -1248,6 +1248,10 @@ export default function MapScreen() {
       const matchesResponse =
         await getPickSessionMatches(
           currentSession.id,
+          {
+            page: 1,
+            includePhotos: true,
+          },
         );
 
       setResponse(matchesResponse);

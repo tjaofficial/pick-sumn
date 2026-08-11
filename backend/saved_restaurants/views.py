@@ -208,6 +208,83 @@ class SavedRestaurantStatusView(APIView):
         )
 
 
+class SavedRestaurantBulkStatusView(APIView):
+    permission_classes = (
+        IsAuthenticated,
+    )
+
+    def post(self, request):
+        external_ids = request.data.get(
+            "external_ids",
+            [],
+        )
+
+        if not isinstance(
+            external_ids,
+            list,
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "external_ids must be a list."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        cleaned_ids = []
+
+        for value in external_ids[:100]:
+            external_id = str(
+                value or ""
+            ).strip()
+
+            if (
+                external_id
+                and external_id
+                not in cleaned_ids
+            ):
+                cleaned_ids.append(
+                    external_id
+                )
+
+        if not cleaned_ids:
+            return Response(
+                {
+                    "statuses": {},
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        saved_ids = set(
+            SavedRestaurant.objects
+            .filter(
+                user=request.user,
+                external_id__in=cleaned_ids,
+            )
+            .values_list(
+                "external_id",
+                flat=True,
+            )
+        )
+
+        return Response(
+            {
+                "statuses": {
+                    external_id: (
+                        external_id
+                        in saved_ids
+                    )
+                    for external_id
+                    in cleaned_ids
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class SavedRestaurantDeleteByExternalIdView(
     APIView
 ):

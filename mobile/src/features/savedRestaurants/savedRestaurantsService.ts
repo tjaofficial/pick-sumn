@@ -30,6 +30,29 @@ export async function getSavedRestaurantStatus(
 }
 
 
+export async function getSavedRestaurantStatuses(
+  externalIds: string[],
+): Promise<Record<string, boolean>> {
+  if (externalIds.length === 0) {
+    return {};
+  }
+
+  const response = await apiRequest<{
+    statuses: Record<string, boolean>;
+  }>(
+    "/api/saved-restaurants/status/bulk/",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        external_ids: externalIds,
+      }),
+    },
+  );
+
+  return response.statuses;
+}
+
+
 export async function saveRestaurant(
   payload: SaveRestaurantPayload,
 ): Promise<SavedRestaurant> {

@@ -143,11 +143,20 @@ export async function startPickSessionMatching(
 
 export async function getPickSessionMatches(
   sessionId: string,
+  options: {
+    page?: number;
+    includePhotos?: boolean;
+  } = {},
 ): Promise<PickSessionMatchesResponse> {
   return apiRequest<PickSessionMatchesResponse>(
     `/api/pick-sessions/${sessionId}/matches/`,
     {
       method: "POST",
+      body: JSON.stringify({
+        page: options.page ?? 1,
+        include_photos:
+          options.includePhotos ?? false,
+      }),
     },
   );
 }

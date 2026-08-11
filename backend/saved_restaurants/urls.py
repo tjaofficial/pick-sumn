@@ -5,6 +5,7 @@ from .views import (
     SavedRestaurantDetailView,
     SavedRestaurantListCreateView,
     SavedRestaurantStatusView,
+    SavedRestaurantBulkStatusView,
 )
 
 
@@ -18,6 +19,11 @@ urlpatterns = [
         "status/",
         SavedRestaurantStatusView.as_view(),
         name="saved-restaurant-status",
+    ),
+    path(
+        "status/bulk/",
+        SavedRestaurantBulkStatusView.as_view(),
+        name="saved-restaurant-bulk-status",
     ),
     path(
         "remove/",
