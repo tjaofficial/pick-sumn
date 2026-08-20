@@ -133,7 +133,7 @@ export default ({
 
     name: "Pick Sum'N",
     slug: "pick-sumn",
-    version: "1.0.0",
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "picksumn",
@@ -142,7 +142,6 @@ export default ({
     ios: {
       bundleIdentifier:
         "com.picksumn.app",
-      buildNumber: "5",
       usesAppleSignIn: true,
       associatedDomains: [
         "applinks:picksumn.com",
