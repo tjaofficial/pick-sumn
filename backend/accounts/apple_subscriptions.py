@@ -79,14 +79,14 @@ def get_apple_app_account_token(user) -> str:
     )
 
 
-def _get_private_key() -> str:
+def _get_private_key() -> bytes:
     raw = os.environ.get(
         "APPLE_IAP_PRIVATE_KEY",
         "",
     ).strip()
 
     if raw:
-        return raw.replace("\\n", "\n")
+        return raw.replace("\\n", "\n").encode("utf-8")
 
     encoded = os.environ.get(
         "APPLE_IAP_PRIVATE_KEY_BASE64",
@@ -95,9 +95,7 @@ def _get_private_key() -> str:
 
     if encoded:
         try:
-            return base64.b64decode(
-                encoded
-            ).decode("utf-8")
+            return base64.b64decode(encoded)
         except Exception as exc:
             raise AppleSubscriptionError(
                 "APPLE_IAP_PRIVATE_KEY_BASE64 is invalid."
