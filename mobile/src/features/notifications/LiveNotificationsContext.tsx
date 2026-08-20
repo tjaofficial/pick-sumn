@@ -1,5 +1,5 @@
+import * as Device from "expo-device";
 import { router } from "expo-router";
-import * as Notifications from "expo-notifications";
 import {
   ShieldCheck,
   UserPlus,
@@ -41,9 +41,6 @@ import type {
   PickSessionNotification,
 } from "@/features/pickSessions/types";
 import {
-  registerForPushNotifications,
-} from "@/features/notifications/pushNotificationsService";
-import {
   getApiErrorMessage,
 } from "@/services/getApiErrorMessage";
 import {
@@ -54,16 +51,6 @@ import {
 
 const FALLBACK_POLL_INTERVAL_MS =
   15_000;
-
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
 
 
 type LiveNotificationsContextValue = {
@@ -340,10 +327,126 @@ export function LiveNotificationsProvider({
       return;
     }
 
+    let isCancelled = false;
+
+    let receivedSubscription:
+      { remove: () => void }
+      | null = null;
+
+    let responseSubscription:
+      { remove: () => void }
+      | null = null;
+
+
     void refreshNotifications();
 
-    void registerForPushNotifications()
-      .catch(() => null);
+
+    async function configurePushNotifications() {
+      /*
+       * Never even load expo-notifications inside an iOS Simulator.
+       *
+       * The simulator/dev client currently being used does not include
+       * ExpoPushTokenManager. Importing expo-notifications at all causes
+       * Metro to evaluate PushTokenManager.native.js and crash before our
+       * previous try/catch fallback can help.
+       *
+       * Real iOS/Android devices still use push normally. Simulator runs
+       * keep using the existing 15-second polling fallback.
+       */
+      if (!Device.isDevice) {
+        return;
+      }
+
+      try {
+        const Notifications =
+          await import(
+            "expo-notifications"
+          );
+
+        if (isCancelled) {
+          return;
+        }
+
+        Notifications
+          .setNotificationHandler({
+            handleNotification:
+              async () => ({
+                shouldPlaySound: true,
+                shouldSetBadge: true,
+                shouldShowBanner: true,
+                shouldShowList: true,
+              }),
+          });
+
+        try {
+          const {
+            registerForPushNotifications,
+          } = await import(
+            "@/features/notifications/pushNotificationsService"
+          );
+
+          if (!isCancelled) {
+            await registerForPushNotifications();
+          }
+        } catch {
+          /*
+           * Registration failure must not prevent polling or app startup.
+           */
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        receivedSubscription =
+          Notifications
+            .addNotificationReceivedListener(
+              () => {
+                void refreshNotifications();
+              },
+            );
+
+        responseSubscription =
+          Notifications
+            .addNotificationResponseReceivedListener(
+              (response) => {
+                void refreshNotifications();
+
+                const data =
+                  response.notification
+                    .request
+                    .content
+                    .data;
+
+                openPushNotification(
+                  data,
+                );
+              },
+            );
+
+        const lastResponse =
+          Notifications
+            .getLastNotificationResponse();
+
+        if (lastResponse) {
+          openPushNotification(
+            lastResponse.notification
+              .request
+              .content
+              .data,
+          );
+        }
+      } catch {
+        /*
+         * If a real-device dev build is stale or push setup is otherwise
+         * unavailable, keep the app alive and continue polling.
+         */
+      }
+    }
+
+
+    void configurePushNotifications();
+
 
     const interval =
       setInterval(
@@ -357,6 +460,7 @@ export function LiveNotificationsProvider({
         },
         FALLBACK_POLL_INTERVAL_MS,
       );
+
 
     const appStateSubscription =
       AppState.addEventListener(
@@ -379,50 +483,22 @@ export function LiveNotificationsProvider({
         },
       );
 
-    const receivedSubscription =
-      Notifications
-        .addNotificationReceivedListener(
-          () => {
-            void refreshNotifications();
-          },
-        );
-
-    const responseSubscription =
-      Notifications
-        .addNotificationResponseReceivedListener(
-          (response) => {
-            void refreshNotifications();
-
-            const data =
-              response.notification
-                .request
-                .content
-                .data;
-
-            openPushNotification(
-              data
-            );
-          },
-        );
-
-    const lastResponse =
-  Notifications
-    .getLastNotificationResponse();
-
-if (lastResponse) {
-  openPushNotification(
-    lastResponse.notification
-      .request
-      .content
-      .data,
-  );
-}
 
     return () => {
-      clearInterval(interval);
-      appStateSubscription.remove();
-      receivedSubscription.remove();
-      responseSubscription.remove();
+      isCancelled = true;
+
+      clearInterval(
+        interval,
+      );
+
+      appStateSubscription
+        .remove();
+
+      receivedSubscription
+        ?.remove();
+
+      responseSubscription
+        ?.remove();
     };
   }, [
     isAuthenticated,

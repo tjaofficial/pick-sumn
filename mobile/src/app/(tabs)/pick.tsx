@@ -181,10 +181,7 @@ export default function PickScreen() {
     && draft.longitude !== null
     && draft.longitude !== undefined,
   );
-  const filtersComplete = (
-    draft.filtersReviewed
-    && draft.diningStyleIds.length > 0
-  );
+  const filtersComplete = draft.filtersReviewed;
   const setupComplete = peopleComplete && locationComplete && filtersComplete;
   const canStart = setupComplete && creatingMode === null;
 
@@ -208,12 +205,20 @@ export default function PickScreen() {
 
   const filterSummary = useMemo(() => {
     if (!filtersComplete) {
-      return "Choose dining styles and review extra filters";
+      return "Review filters for this meal";
     }
 
     const values: string[] = [
-      ...draft.diningStyleNames,
+      draft.diningStyleNames.length > 0
+        ? draft.diningStyleNames.join(", ")
+        : "All dining styles",
     ];
+
+    if (draft.priceFilterEnabled) {
+      values.push(
+        `${"$".repeat(draft.priceMin)}–${"$".repeat(draft.priceMax)}`,
+      );
+    }
 
     if (draft.openNow) {
       values.push("Open now");
@@ -226,6 +231,9 @@ export default function PickScreen() {
     return values.join(" · ");
   }, [
     draft.diningStyleNames,
+    draft.priceFilterEnabled,
+    draft.priceMin,
+    draft.priceMax,
     draft.openNow,
     draft.somethingNew,
     filtersComplete,
@@ -256,9 +264,14 @@ export default function PickScreen() {
         latitude: roundCoordinate(draft.latitude),
         longitude: roundCoordinate(draft.longitude),
         search_radius_miles: draft.searchRadiusMiles,
-        price_min: draft.priceMin,
-        price_max: draft.priceMax,
+        ...(draft.priceFilterEnabled
+          ? {
+              price_min: draft.priceMin,
+              price_max: draft.priceMax,
+            }
+          : {}),
         open_now: draft.openNow,
+        gluten_free_filter_enabled: draft.glutenFreeMatchesOnly,
         dining_style_ids: draft.diningStyleIds,
         something_new: draft.somethingNew,
         cuisine_ids: draft.cuisineIds,
@@ -364,7 +377,7 @@ export default function PickScreen() {
       "Reset session setup?",
       (
         "This will clear Who’s Eating, location, "
-        + "search radius, dining styles, and extra filters."
+        + "search radius, and session filters."
       ),
       [
         {

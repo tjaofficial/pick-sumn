@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Bell,
   ChevronRight,
+  Crown,
   FileText,
   HelpCircle,
   LockKeyhole,
@@ -34,6 +35,9 @@ import {
 import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
+import {
+  usePlus,
+} from "@/features/plus/PlusContext";
 
 
 type SettingsRowProps = {
@@ -127,6 +131,10 @@ export default function AppSettingsScreen() {
 
   const colors = useTheme();
 
+  const {
+    isPlus,
+  } = usePlus();
+
   return (
     <SafeAreaView
       style={[
@@ -181,6 +189,57 @@ export default function AppSettingsScreen() {
           false
         }
       >
+        <Text
+          style={[
+            styles.sectionTitle,
+            {
+              color:
+                colors.text,
+            },
+          ]}
+        >
+          Pick Sum’N Plus
+        </Text>
+
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor:
+                colors.surface,
+              borderColor:
+                colors.border,
+            },
+          ]}
+        >
+          <SettingsRow
+            icon={
+              <Crown
+                size={21}
+                color={themeColor(
+                  "#C67A00",
+                  "color",
+                )}
+              />
+            }
+            title={
+              isPlus
+                ? "Pick Sum’N Plus"
+                : "Upgrade to Pick Sum’N Plus"
+            }
+            subtitle={
+              isPlus
+                ? "Your premium features are active"
+                : "Larger groups, extended radius, advanced dining filters, and more"
+            }
+            onPress={() =>
+              router.push(
+                "/settings/plus",
+              )
+            }
+          />
+        </View>
+
         <Text style={[styles.sectionTitle, { color: colors.text }]}>
           Preferences
         </Text>

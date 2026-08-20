@@ -22,7 +22,43 @@ import type {
   RestaurantDietaryCommunityReport,
   RestaurantDietaryDetailResponse,
   SubmitRestaurantDietaryReportInput,
+  SessionDietaryPreview,
 } from "./types";
+
+
+const MATCH_RESPONSE_CACHE_TTL_MS =
+  30 * 60 * 1000;
+
+type MatchCacheEntry = {
+  expiresAt: number;
+  response: PickSessionMatchesResponse;
+};
+
+const matchResponseCache =
+  new Map<string, MatchCacheEntry>();
+
+function getMatchCacheKey(
+  sessionId: string,
+  page: number,
+  includePhotos: boolean,
+): string {
+  return `${sessionId}:${page}:${includePhotos ? "photos" : "plain"}`;
+}
+
+export function clearPickSessionMatchCache(
+  sessionId?: string,
+): void {
+  if (!sessionId) {
+    matchResponseCache.clear();
+    return;
+  }
+
+  for (const key of matchResponseCache.keys()) {
+    if (key.startsWith(`${sessionId}:`)) {
+      matchResponseCache.delete(key);
+    }
+  }
+}
 
 
 export async function getActivePickSessions(): Promise<
@@ -146,19 +182,57 @@ export async function getPickSessionMatches(
   options: {
     page?: number;
     includePhotos?: boolean;
+    forceRefresh?: boolean;
   } = {},
 ): Promise<PickSessionMatchesResponse> {
-  return apiRequest<PickSessionMatchesResponse>(
-    `/api/pick-sessions/${sessionId}/matches/`,
-    {
-      method: "POST",
-      body: JSON.stringify({
-        page: options.page ?? 1,
-        include_photos:
-          options.includePhotos ?? false,
-      }),
-    },
+  const page = options.page ?? 1;
+  const includePhotos =
+    options.includePhotos ?? false;
+  const forceRefresh =
+    options.forceRefresh ?? false;
+  const cacheKey = getMatchCacheKey(
+    sessionId,
+    page,
+    includePhotos,
   );
+
+  if (!forceRefresh) {
+    const cached = matchResponseCache.get(cacheKey);
+
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.response;
+    }
+
+    if (!includePhotos) {
+      const photoCached = matchResponseCache.get(
+        getMatchCacheKey(sessionId, page, true),
+      );
+
+      if (photoCached && photoCached.expiresAt > Date.now()) {
+        return photoCached.response;
+      }
+    }
+  }
+
+  const response =
+    await apiRequest<PickSessionMatchesResponse>(
+      `/api/pick-sessions/${sessionId}/matches/`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          page,
+          include_photos: includePhotos,
+        }),
+      },
+    );
+
+  matchResponseCache.set(cacheKey, {
+    expiresAt:
+      Date.now() + MATCH_RESPONSE_CACHE_TTL_MS,
+    response,
+  });
+
+  return response;
 }
 
 
@@ -198,6 +272,25 @@ export async function getExploreNearbyRestaurants(
   );
 }
 
+
+
+export async function getSessionDietaryPreview(
+  input: {
+    groupId?: string | null;
+    participantIds: number[];
+  },
+): Promise<SessionDietaryPreview> {
+  return apiRequest<SessionDietaryPreview>(
+    "/api/pick-sessions/dietary-preview/",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        group_id: input.groupId ?? null,
+        participant_ids: input.participantIds,
+      }),
+    },
+  );
+}
 
 
 export async function prepareGroupVote(

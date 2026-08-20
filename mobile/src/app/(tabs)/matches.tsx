@@ -46,6 +46,7 @@ import {
 } from "react";
 
 import {
+  getCurrentPickSession,
   getPickSessionMatches,
   selectPickSessionRestaurant,
 } from "@/features/pickSessions/pickSessionsService";
@@ -66,6 +67,13 @@ import {
 import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
+import {
+  getAppSettings,
+  updateAppSettings,
+} from "@/features/settings/settingsService";
+import type {
+  MatchesViewMode,
+} from "@/features/settings/types";
 
 
 type SortOption =
@@ -665,6 +673,7 @@ type RestaurantCardProps = {
   onSavedStatusChange: (
     isSaved: boolean,
   ) => void;
+  viewMode: MatchesViewMode;
 };
 
 
@@ -677,6 +686,7 @@ function RestaurantCard({
   allowSelection,
   savedStatus,
   onSavedStatusChange,
+  viewMode,
 }: RestaurantCardProps) {
   const placeType =
     restaurant.primary_type_display_name
@@ -788,18 +798,100 @@ function RestaurantCard({
 
       onSavedStatusChange(true);
     } catch (requestError) {
-      Alert.alert(
-        "Unable to update favorites",
-        getApiErrorMessage(
-          requestError,
-          isSaved
-            ? "Unable to remove this restaurant from your saved restaurants."
-            : "Unable to save this restaurant.",
-        ),
+      const message = getApiErrorMessage(
+        requestError,
+        isSaved
+          ? "Unable to remove this restaurant from your saved restaurants."
+          : "Unable to save this restaurant.",
       );
+
+      if (
+        !isSaved
+        && message.toLowerCase().includes("pick sum'n plus")
+      ) {
+        Alert.alert(
+          "Free favorites limit reached",
+          message,
+          [
+            { text: "Not Now", style: "cancel" },
+            {
+              text: "View Plus",
+              onPress: () =>
+                router.push({
+                  pathname: "/settings/plus",
+                  params: { source: "saved-restaurants" },
+                }),
+            },
+          ],
+        );
+      } else {
+        Alert.alert(
+          "Unable to update favorites",
+          message,
+        );
+      }
     } finally {
       setIsSaving(false);
     }
+  }
+
+  if (viewMode === "compact") {
+    return (
+      <Pressable
+        onPress={onSelect}
+        style={({ pressed }) => [
+          styles.compactCard,
+          pressed && styles.buttonPressed,
+        ]}
+      >
+        <View style={styles.compactRank}>
+          <Text style={styles.compactRankText}>#{rank}</Text>
+        </View>
+        <View style={styles.compactBody}>
+          <View style={styles.compactTitleRow}>
+            <Text style={styles.compactName} numberOfLines={1}>
+              {restaurant.name}
+            </Text>
+            <Text style={styles.compactScore}>{restaurant.match_score}%</Text>
+          </View>
+          <Text style={styles.compactMeta} numberOfLines={1}>
+            {placeType} · {getPriceText(restaurant)} · {restaurant.distance_miles !== null ? `${restaurant.distance_miles.toFixed(1)} mi` : "Distance unavailable"}
+          </Text>
+          <View style={styles.compactBottomRow}>
+            <View style={styles.compactRating}>
+              <Star size={14} color={themeColor("#E3A008", "color")} fill="#E3A008" />
+              <Text style={styles.compactRatingText}>
+                {restaurant.rating !== null ? restaurant.rating.toFixed(1) : "No rating"}
+              </Text>
+            </View>
+            {requestedDietarySlugs.includes("gluten-free") && (
+              <View style={styles.compactDietaryPill}>
+                <ShieldCheck size={13} color={themeColor("#168B4F", "color")} />
+                <Text style={styles.compactDietaryText}>GF priority</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <Pressable
+          disabled={isSaving || isCheckingSaved}
+          onPress={(event) => {
+            event.stopPropagation();
+            void toggleSavedRestaurant();
+          }}
+          style={styles.compactHeart}
+        >
+          {isSaving || isCheckingSaved ? (
+            <ActivityIndicator size="small" color={themeColor("#F3344A", "color")} />
+          ) : (
+            <Heart
+              size={19}
+              color={themeColor("#F3344A", "color")}
+              fill={isSaved ? "#F3344A" : "transparent"}
+            />
+          )}
+        </Pressable>
+      </Pressable>
+    );
   }
 
   return (
@@ -1710,13 +1802,21 @@ export default function MatchesScreen() {
     decisionMode?: string | string[];
   }>();
 
-  const sessionId = getStringParam(
+  const routeSessionId = getStringParam(
     params.sessionId,
   );
 
-  const decisionMode = getStringParam(
+  const routeDecisionMode = getStringParam(
     params.decisionMode,
   );
+
+  const [resolvedSessionId, setResolvedSessionId] =
+    useState(routeSessionId);
+  const [resolvedDecisionMode, setResolvedDecisionMode] =
+    useState(routeDecisionMode);
+
+  const sessionId = resolvedSessionId;
+  const decisionMode = resolvedDecisionMode;
 
   const [
     results,
@@ -1758,6 +1858,35 @@ export default function MatchesScreen() {
   ] = useState<SortOption>(
     "best_match",
   );
+
+  const [viewMode, setViewMode] = useState<MatchesViewMode>("detailed");
+  const [isSavingViewMode, setIsSavingViewMode] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadViewMode() {
+      try {
+        const settings = await getAppSettings();
+        if (mounted) setViewMode(settings.matches_view_mode ?? "detailed");
+      } catch {
+      }
+    }
+    void loadViewMode();
+    return () => { mounted = false; };
+  }, []);
+
+  async function toggleViewMode() {
+    const next: MatchesViewMode = viewMode === "detailed" ? "compact" : "detailed";
+    setViewMode(next);
+    try {
+      setIsSavingViewMode(true);
+      await updateAppSettings({ matches_view_mode: next });
+    } catch {
+      setViewMode(viewMode);
+    } finally {
+      setIsSavingViewMode(false);
+    }
+  }
 
 
   const [
@@ -1845,118 +1974,86 @@ export default function MatchesScreen() {
     async (
       page = 1,
       append = false,
+      forceRefresh = false,
     ) => {
-      if (!sessionId) {
-        setResults(null);
-
-        setError(
-          "No Pick Session was provided. Start a new session from the Pick Sum’N tab.",
-        );
-
-        setIsLoading(false);
-        setIsRefreshing(false);
-        setIsLoadingMore(false);
-
-        return;
-      }
-
       try {
         setError(null);
 
+        const currentSession =
+          await getCurrentPickSession();
+
+        const targetSessionId =
+          currentSession?.id
+          || routeSessionId;
+
+        const targetDecisionMode =
+          currentSession?.decision_mode
+          || routeDecisionMode;
+
+        if (!targetSessionId) {
+          setResults(null);
+          setResolvedSessionId("");
+          setResolvedDecisionMode("");
+          setError(
+            "No active Pick Session. Start a session from the Pick Sum’N tab.",
+          );
+          setIsLoading(false);
+          setIsRefreshing(false);
+          setIsLoadingMore(false);
+          return;
+        }
+
+        setResolvedSessionId(targetSessionId);
+        setResolvedDecisionMode(targetDecisionMode);
+
         const response =
           await getPickSessionMatches(
-            sessionId,
+            targetSessionId,
             {
               page,
               includePhotos: false,
+              forceRefresh,
             },
           );
 
-        const pageIds = (
-          response.matches
-            .map(
-              (restaurant) =>
-                restaurant.external_id,
-            )
-            .filter(Boolean)
+        const pageIds = response.matches.map(
+          (restaurant) => restaurant.external_id,
         );
-
-        if (append) {
-          setResults(
-            (currentResults) => {
-              if (!currentResults) {
-                return response;
-              }
-
-              const existingIds =
-                new Set(
-                  currentResults.matches.map(
-                    (restaurant) =>
-                      restaurant.external_id,
-                  ),
-                );
-
-              const newMatches =
-                response.matches.filter(
-                  (restaurant) =>
-                    !existingIds.has(
-                      restaurant.external_id,
-                    ),
-                );
-
-              return {
-                ...response,
-                matches: [
-                  ...currentResults.matches,
-                  ...newMatches,
-                ],
-              };
-            },
-          );
-        } else {
-          setResults(response);
-        }
 
         if (pageIds.length > 0) {
           try {
-            const pageStatuses =
-              await getSavedRestaurantStatuses(
-                pageIds,
-              );
+            const statuses =
+              await getSavedRestaurantStatuses(pageIds);
 
-            setSavedStatuses(
-              (currentStatuses) => ({
-                ...currentStatuses,
-                ...pageStatuses,
-              }),
-            );
+            setSavedStatuses((current) => ({
+              ...current,
+              ...statuses,
+            }));
           } catch {
-            setSavedStatuses(
-              (currentStatuses) => {
-                const nextStatuses = {
-                  ...currentStatuses,
-                };
-
-                for (
-                  const externalId
-                  of pageIds
-                ) {
-                  if (
-                    nextStatuses[
-                      externalId
-                    ] === undefined
-                  ) {
-                    nextStatuses[
-                      externalId
-                    ] = false;
-                  }
-                }
-
-                return nextStatuses;
-              },
-            );
           }
         }
+
+        setResults((current) => {
+          if (!append || !current) {
+            return response;
+          }
+
+          const existingIds = new Set(
+            current.matches.map(
+              (restaurant) => restaurant.external_id,
+            ),
+          );
+
+          const newMatches = response.matches.filter(
+            (restaurant) => !existingIds.has(restaurant.external_id),
+          );
+
+          return {
+            ...response,
+            matches: [...current.matches, ...newMatches],
+            returned_count: current.returned_count + newMatches.length,
+          };
+        });
       } catch (requestError) {
         setError(
           getApiErrorMessage(
@@ -1970,7 +2067,7 @@ export default function MatchesScreen() {
         setIsLoadingMore(false);
       }
     },
-    [sessionId],
+    [routeDecisionMode, routeSessionId],
   );
 
   const loadMoreMatches = useCallback(
@@ -2006,6 +2103,7 @@ export default function MatchesScreen() {
       void loadMatches();
     }, [loadMatches]),
   );
+
 
   const displayedMatches = useMemo(
     () => {
@@ -2059,7 +2157,7 @@ export default function MatchesScreen() {
   async function handleRefresh() {
     setIsRefreshing(true);
     setSavedStatuses({});
-    await loadMatches(1, false);
+    await loadMatches(1, false, true);
   }
 
   if (isLoading) {
@@ -2176,6 +2274,7 @@ export default function MatchesScreen() {
                 restaurant.external_id
               ]
             }
+            viewMode={viewMode}
             onSavedStatusChange={(
               isSaved,
             ) =>
@@ -2290,6 +2389,20 @@ export default function MatchesScreen() {
               )}
             </View>
 
+            {!error
+              && results?.session.gluten_free_filter_enabled
+              && results.session.requested_dietary_slugs.includes("gluten-free") && (
+                <View style={styles.dietaryPriorityBanner}>
+                  <ShieldCheck size={18} color={themeColor("#168B4F", "color")} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.dietaryPriorityTitle}>Gluten-Free Matches Only is on</Text>
+                    <Text style={styles.dietaryPriorityText}>
+                      Gluten-free matching is influencing this session. You can change it from Session Filters.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
             {error && (
               <View style={styles.errorCard}>
                 <Text
@@ -2368,17 +2481,24 @@ export default function MatchesScreen() {
                       }`}
                 </Text>
 
-                {decisionMode
-                  !== "pick_for_us" && (
+                <View style={styles.resultsControls}>
+                  <Pressable
+                    onPress={() => void toggleViewMode()}
+                    disabled={isSavingViewMode}
+                    style={styles.viewModeButton}
+                  >
+                    <Text style={styles.viewModeButtonText}>
+                      {viewMode === "detailed" ? "Compact" : "Detailed"}
+                    </Text>
+                  </Pressable>
+
+                  {decisionMode !== "pick_for_us" && (
                     <SortSelect
-                      selectedValue={
-                        sortOption
-                      }
-                      onChange={
-                        setSortOption
-                      }
+                      selectedValue={sortOption}
+                      onChange={setSortOption}
                     />
                   )}
+                </View>
               </View>
             )}
           </>
@@ -2553,6 +2673,27 @@ const styles = createThemedStyleSheet({
     fontWeight: "700",
     color: "#F7A4AE",
   },
+
+  dietaryPriorityBanner: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginTop: 14, marginHorizontal: 20, padding: 13, borderWidth: 1, borderColor: "#B8E4CA", borderRadius: 16, backgroundColor: "#EFFAF3" },
+  dietaryPriorityTitle: { fontSize: 13, fontWeight: "900", color: "#116A3D" },
+  dietaryPriorityText: { marginTop: 3, fontSize: 11, lineHeight: 16, color: "#397A58" },
+  compactCard: { flexDirection: "row", alignItems: "center", minHeight: 86, padding: 12, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 18, backgroundColor: "#FFFFFF" },
+  compactRank: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 13, backgroundColor: "#FFF0F2" },
+  compactRankText: { fontSize: 12, fontWeight: "900", color: "#F3344A" },
+  compactBody: { flex: 1, marginLeft: 10 },
+  compactTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  compactName: { flex: 1, fontSize: 15, fontWeight: "900", color: "#07111F" },
+  compactScore: { fontSize: 14, fontWeight: "900", color: "#F3344A" },
+  compactMeta: { marginTop: 3, fontSize: 11, color: "#69707C" },
+  compactBottomRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
+  compactRating: { flexDirection: "row", alignItems: "center", gap: 4 },
+  compactRatingText: { fontSize: 10, fontWeight: "800", color: "#69707C" },
+  compactDietaryPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 4, borderRadius: 999, backgroundColor: "#E8F7EF" },
+  compactDietaryText: { fontSize: 9, fontWeight: "900", color: "#168B4F" },
+  compactHeart: { width: 38, height: 38, alignItems: "center", justifyContent: "center", marginLeft: 8, borderRadius: 13, backgroundColor: "#FFF7F8" },
+  resultsControls: { flexDirection: "row", alignItems: "center", gap: 8 },
+  viewModeButton: { minHeight: 42, alignItems: "center", justifyContent: "center", paddingHorizontal: 12, borderWidth: 1, borderColor: "#D9DDE3", borderRadius: 13, backgroundColor: "#FFFFFF" },
+  viewModeButtonText: { fontSize: 11, fontWeight: "900", color: "#343B46" },
 
   resultsHeader: {
     flexDirection: "row",

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from accounts.entitlements import get_user_entitlements
 from accounts.models import Friendship, FriendshipStatus
 from accounts.serializers import UserSerializer
 from django.db.models import Q
@@ -95,6 +96,7 @@ class PickSessionListSerializer(
             "price_min",
             "price_max",
             "open_now",
+            "gluten_free_filter_enabled",
             "something_new",
             "selected_restaurant_external_id",
             "selected_restaurant_name",
@@ -250,6 +252,11 @@ class PickSessionCreateSerializer(serializers.Serializer):
         default=True,
     )
 
+    gluten_free_filter_enabled = serializers.BooleanField(
+        required=False,
+        default=True,
+    )
+
     include_delivery = serializers.BooleanField(
         required=False,
         default=False,
@@ -285,9 +292,8 @@ class PickSessionCreateSerializer(serializers.Serializer):
 
     dining_style_ids = serializers.ListField(
         child=serializers.IntegerField(),
-        required=True,
-        allow_empty=False,
-        min_length=1,
+        required=False,
+        allow_empty=True,
     )
 
     def validate(self, attrs):
@@ -309,6 +315,86 @@ class PickSessionCreateSerializer(serializers.Serializer):
             )
 
         request = self.context["request"]
+
+        entitlements = (
+            get_user_entitlements(
+                request.user
+            )
+        )
+
+        requested_radius = attrs.get(
+            "search_radius_miles"
+        )
+
+        if (
+            requested_radius is not None
+            and requested_radius
+            > entitlements[
+                "max_search_radius_miles"
+            ]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "search_radius_miles": (
+                        "Pick Sum'N Plus is required "
+                        "for an extended search radius."
+                    )
+                }
+            )
+
+        requested_price_min = attrs.get(
+            "price_min",
+            1,
+        )
+
+        requested_price_max = attrs.get(
+            "price_max",
+            4,
+        )
+
+        price_filter_requested = (
+            requested_price_min > 1
+            or requested_price_max < 4
+        )
+
+        if (
+            price_filter_requested
+            and not entitlements[
+                "advanced_price_filter"
+            ]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "Pick Sum'N Plus is required "
+                        "to filter by price range."
+                    )
+                }
+            )
+
+        if (
+            not entitlements[
+                "advanced_dining_filters"
+            ]
+            and (
+                attrs.get(
+                    "include_delivery",
+                    False,
+                )
+                or attrs.get(
+                    "include_drive_through",
+                    False,
+                )
+            )
+        ):
+            raise serializers.ValidationError(
+                {
+                    "detail": (
+                        "Pick Sum'N Plus is required "
+                        "for advanced dining filters."
+                    )
+                }
+            )
 
         group_id = attrs.get("group_id")
         group = None
@@ -411,6 +497,42 @@ class PickSessionCreateSerializer(serializers.Serializer):
 
         attrs["participant_users"] = participant_users
 
+        selected_participant_ids = {
+            user.id
+            for user in participant_users
+            if user.id != request.user.id
+        }
+
+        requested_participant_count = (
+            1
+            + len(
+                selected_participant_ids
+            )
+        )
+
+        max_participants = (
+            entitlements[
+                "max_participants"
+            ]
+        )
+
+        if (
+            max_participants is not None
+            and requested_participant_count
+            > max_participants
+        ):
+            raise serializers.ValidationError(
+                {
+                    "participant_ids": (
+                        "Free accounts can start a "
+                        "Pick Sum'N session with up to "
+                        f"{max_participants} people total. "
+                        "Upgrade to Pick Sum'N Plus for "
+                        "larger groups."
+                    )
+                }
+            )
+
         cuisine_ids = attrs.get("cuisine_ids", [])
 
         cuisines = list(
@@ -436,6 +558,21 @@ class PickSessionCreateSerializer(serializers.Serializer):
             [],
         )
 
+        if (
+            dining_style_ids
+            and not entitlements[
+                "advanced_dining_filters"
+            ]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "dining_style_ids": (
+                        "Dining Styles are a "
+                        "Pick Sum'N Plus feature."
+                    )
+                }
+            )
+
         dining_styles = list(
             DiningStyle.objects.filter(
                 id__in=dining_style_ids,
@@ -444,14 +581,14 @@ class PickSessionCreateSerializer(serializers.Serializer):
         )
 
         if (
-            not dining_styles
-            or len(dining_styles)
+            len(dining_styles)
             != len(set(dining_style_ids))
         ):
             raise serializers.ValidationError(
                 {
                     "dining_style_ids": (
-                        "Choose at least one valid dining style."
+                        "One or more dining styles "
+                        "are invalid."
                     )
                 }
             )

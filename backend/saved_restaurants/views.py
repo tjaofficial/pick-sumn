@@ -1,3 +1,5 @@
+from accounts.entitlements import get_user_entitlements
+
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -33,6 +35,51 @@ class SavedRestaurantListCreateView(APIView):
         )
 
     def post(self, request):
+        external_id = str(
+            request.data.get(
+                "external_id",
+                "",
+            )
+            or ""
+        ).strip()
+
+        already_saved = (
+            SavedRestaurant.objects
+            .filter(
+                user=request.user,
+                external_id=external_id,
+            )
+            .exists()
+        )
+
+        entitlements = get_user_entitlements(
+            request.user
+        )
+
+        max_saved_restaurants = entitlements.get(
+            "max_saved_restaurants"
+        )
+
+        if (
+            not already_saved
+            and max_saved_restaurants is not None
+            and SavedRestaurant.objects.filter(
+                user=request.user
+            ).count() >= max_saved_restaurants
+        ):
+            return Response(
+                {
+                    "detail": (
+                        f"You have reached the Free limit of "
+                        f"{max_saved_restaurants} saved restaurants. "
+                        "Pick Sum'N Plus unlocks unlimited saved restaurants."
+                    ),
+                    "code": "plus_required",
+                    "limit": max_saved_restaurants,
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         serializer = SavedRestaurantSerializer(
             data=request.data,
             context={

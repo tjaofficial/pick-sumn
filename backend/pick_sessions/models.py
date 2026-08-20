@@ -156,6 +156,13 @@ class PickSession(models.Model):
     )
 
     open_now = models.BooleanField(default=True)
+    gluten_free_filter_enabled = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether gluten-free dietary matching should be applied "
+            "for this session when selected participants have it set."
+        ),
+    )
     include_delivery = models.BooleanField(default=False)
     include_drive_through = models.BooleanField(default=False)
     something_new = models.BooleanField(default=False)

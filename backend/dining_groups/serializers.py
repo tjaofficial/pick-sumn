@@ -48,7 +48,7 @@ def _secure_media_url(
     return clean_url
 
 
-from accounts.serializers import UserSerializer
+from accounts.serializers import FriendUserSerializer
 from .models import (
     DiningGroup,
     DiningGroupInvitation,
@@ -59,7 +59,7 @@ from .services import create_dining_group
 
 
 class DiningGroupMemberSerializer(serializers.ModelSerializer):
-    user = UserSerializer(read_only=True)
+    user = FriendUserSerializer(read_only=True)
     role_display = serializers.CharField(
         source="get_role_display",
         read_only=True,
@@ -89,6 +89,9 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
     member_count = serializers.IntegerField(read_only=True)
     current_user_role = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
+    plus_group = serializers.SerializerMethodField()
+    member_limit = serializers.SerializerMethodField()
+    available_member_slots = serializers.SerializerMethodField()
 
     class Meta:
         model = DiningGroup
@@ -100,6 +103,9 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
             "join_code",
             "member_count",
             "current_user_role",
+            "plus_group",
+            "member_limit",
+            "available_member_slots",
             "is_active",
             "created_at",
             "updated_at",
@@ -114,6 +120,29 @@ class DiningGroupListSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+    def get_plus_group(self, obj):
+        return bool(obj.created_by.has_plus_access)
+
+    def get_member_limit(self, obj):
+        return None if obj.created_by.has_plus_access else 3
+
+    def get_available_member_slots(self, obj):
+        if obj.created_by.has_plus_access:
+            return None
+
+        active_count = obj.memberships.filter(is_active=True).count()
+        pending_user_ids = set(
+            obj.invitations.filter(
+                status="pending",
+                invited_user__isnull=False,
+            ).values_list("invited_user_id", flat=True)
+        )
+        active_user_ids = set(
+            obj.memberships.filter(is_active=True).values_list("user_id", flat=True)
+        )
+        pending_count = len(pending_user_ids - active_user_ids)
+        return max(0, 3 - active_count - pending_count)
 
     def get_image(self, obj):
         if not obj.image:
@@ -200,7 +229,7 @@ class DiningGroupInvitationSerializer(serializers.ModelSerializer):
         source="group.name",
         read_only=True,
     )
-    invited_by = UserSerializer(
+    invited_by = FriendUserSerializer(
         read_only=True,
     )
 

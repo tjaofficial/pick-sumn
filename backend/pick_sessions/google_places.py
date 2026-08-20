@@ -28,11 +28,11 @@ METERS_PER_MILE = 1609.344
 MAX_GOOGLE_RADIUS_METERS = 50000.0
 MAX_GOOGLE_RESULTS_PER_REQUEST = 20
 MAX_COMBINED_RESULTS = 100
-MAX_PHOTOS_TO_RESOLVE = 15
+MAX_PHOTOS_TO_RESOLVE = 10
 MAX_DIETARY_TEXT_RESULTS = 20
 MAX_REVIEW_ENRICHMENTS = 12
 MAX_TEXT_SEARCH_PAGES = 1
-MAX_DIETARY_QUERIES_PER_SLUG = 4
+MAX_DIETARY_QUERIES_PER_SLUG = 2
 MAX_GOOGLE_SEARCH_WORKERS = 6
 MAX_GOOGLE_DETAIL_WORKERS = 6
 MAX_GOOGLE_PHOTO_WORKERS = 6
@@ -41,7 +41,7 @@ PHOTO_URL_CACHE_SECONDS = 24 * 60 * 60
 NEARBY_SEARCH_CACHE_SECONDS = 5 * 60
 MAX_NEARBY_CANDIDATES = 180
 MAX_PREFERRED_NEARBY_TYPES = 8
-PREFERRED_TYPES_PER_REQUEST = 2
+PREFERRED_TYPES_PER_REQUEST = 4
 GENERIC_NEARBY_SUBSEARCH_RADIUS_FACTOR = 0.68
 GENERIC_NEARBY_SUBSEARCH_OFFSET_FACTOR = 0.55
 
@@ -837,40 +837,43 @@ def _normalize_primary_types(
 
 def _build_headers(
     api_key: str,
+    *,
+    include_delivery: bool = False,
+    include_dine_in: bool = False,
+    include_takeout: bool = False,
 ) -> dict[str, str]:
+    fields = [
+        "places.id",
+        "places.displayName",
+        "places.formattedAddress",
+        "places.location",
+        "places.primaryType",
+        "places.primaryTypeDisplayName",
+        "places.types",
+        "places.rating",
+        "places.userRatingCount",
+        "places.priceLevel",
+        "places.regularOpeningHours",
+        "places.currentOpeningHours",
+        "places.websiteUri",
+        "places.googleMapsUri",
+        "places.nationalPhoneNumber",
+        "places.internationalPhoneNumber",
+        "places.businessStatus",
+        "places.photos",
+    ]
+
+    if include_delivery:
+        fields.append("places.delivery")
+    if include_dine_in:
+        fields.append("places.dineIn")
+    if include_takeout:
+        fields.append("places.takeout")
+
     return {
-        "Content-Type": (
-            "application/json"
-        ),
+        "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": ",".join(
-            (
-                "places.id",
-                "places.displayName",
-                "places.formattedAddress",
-                "places.location",
-                "places.primaryType",
-                "places.primaryTypeDisplayName",
-                "places.types",
-                "places.rating",
-                "places.userRatingCount",
-                "places.priceLevel",
-                "places.regularOpeningHours",
-                "places.currentOpeningHours",
-                "places.websiteUri",
-                "places.googleMapsUri",
-                "places.nationalPhoneNumber",
-                "places.internationalPhoneNumber",
-                "places.delivery",
-                "places.dineIn",
-                "places.takeout",
-                "places.servesBeer",
-                "places.servesWine",
-                "places.servesCocktails",
-                "places.businessStatus",
-                "places.photos",
-            )
-        ),
+        "X-Goog-FieldMask": ",".join(fields),
     }
 
 
@@ -936,6 +939,9 @@ def _perform_nearby_request(
     radius_meters: float,
     primary_types: list[str],
     max_results: int,
+    include_delivery: bool = False,
+    include_dine_in: bool = False,
+    include_takeout: bool = False,
 ) -> list[dict[str, Any]]:
     request_body = (
         _build_request_body(
@@ -947,12 +953,25 @@ def _perform_nearby_request(
         )
     )
 
+    logger.warning(
+        "[PICK-GOOGLE-CALL] kind=nearby tier=%s types=%s",
+        (
+            "enterprise_atmosphere"
+            if any((include_delivery, include_dine_in, include_takeout))
+            else "enterprise"
+        ),
+        primary_types,
+    )
+
     try:
         response = requests.post(
             GOOGLE_NEARBY_SEARCH_URL,
             json=request_body,
             headers=_build_headers(
-                api_key
+                api_key,
+                include_delivery=include_delivery,
+                include_dine_in=include_dine_in,
+                include_takeout=include_takeout,
             ),
             timeout=15,
         )
@@ -1001,6 +1020,9 @@ def _build_text_search_headers(
     api_key: str,
     *,
     include_contextual_content: bool,
+    include_delivery: bool = False,
+    include_dine_in: bool = False,
+    include_takeout: bool = False,
 ) -> dict[str, str]:
     fields = [
         "places.id",
@@ -1010,21 +1032,7 @@ def _build_text_search_headers(
         "places.primaryType",
         "places.primaryTypeDisplayName",
         "places.types",
-        "places.rating",
-        "places.userRatingCount",
-        "places.priceLevel",
-        "places.regularOpeningHours",
-        "places.currentOpeningHours",
-        "places.websiteUri",
         "places.googleMapsUri",
-        "places.nationalPhoneNumber",
-        "places.internationalPhoneNumber",
-        "places.delivery",
-        "places.dineIn",
-        "places.takeout",
-        "places.servesBeer",
-        "places.servesWine",
-        "places.servesCocktails",
         "places.photos",
         "places.businessStatus",
         "places.movedPlace",
@@ -1032,17 +1040,17 @@ def _build_text_search_headers(
         "nextPageToken",
     ]
 
-    if include_contextual_content:
-        fields.append(
-            "contextualContents"
-        )
+    if include_delivery:
+        fields.append("places.delivery")
+    if include_dine_in:
+        fields.append("places.dineIn")
+    if include_takeout:
+        fields.append("places.takeout")
 
     return {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": ",".join(
-            fields
-        ),
+        "X-Goog-FieldMask": ",".join(fields),
     }
 
 
@@ -1166,6 +1174,9 @@ def _perform_text_search_request_once(
     longitude: float,
     radius_meters: float,
     include_contextual_content: bool,
+    include_delivery: bool = False,
+    include_dine_in: bool = False,
+    include_takeout: bool = False,
 ) -> list[dict[str, Any]]:
     base_request_body = {
         "textQuery": text_query,
@@ -1200,6 +1211,16 @@ def _perform_text_search_request_once(
                 "pageToken"
             ] = next_page_token
 
+        logger.warning(
+            "[PICK-GOOGLE-CALL] kind=text tier=%s query=%r",
+            (
+                "enterprise_atmosphere"
+                if any((include_delivery, include_dine_in, include_takeout))
+                else "pro"
+            ),
+            text_query,
+        )
+
         try:
             response = requests.post(
                 GOOGLE_TEXT_SEARCH_URL,
@@ -1209,6 +1230,9 @@ def _perform_text_search_request_once(
                     include_contextual_content=(
                         include_contextual_content
                     ),
+                    include_delivery=include_delivery,
+                    include_dine_in=include_dine_in,
+                    include_takeout=include_takeout,
                 ),
                 timeout=8,
             )
@@ -1309,6 +1333,9 @@ def _perform_text_search_request(
     latitude: float,
     longitude: float,
     radius_meters: float,
+    include_delivery: bool = False,
+    include_dine_in: bool = False,
+    include_takeout: bool = False,
 ) -> list[dict[str, Any]]:
     try:
         return _perform_text_search_request_once(
@@ -1317,7 +1344,10 @@ def _perform_text_search_request(
             latitude=latitude,
             longitude=longitude,
             radius_meters=radius_meters,
-            include_contextual_content=True,
+            include_contextual_content=False,
+            include_delivery=include_delivery,
+            include_dine_in=include_dine_in,
+            include_takeout=include_takeout,
         )
     except GooglePlacesError as contextual_error:
         logger.warning(
@@ -1336,6 +1366,9 @@ def _perform_text_search_request(
         longitude=longitude,
         radius_meters=radius_meters,
         include_contextual_content=False,
+        include_delivery=include_delivery,
+        include_dine_in=include_dine_in,
+        include_takeout=include_takeout,
     )
 
 
@@ -1582,6 +1615,20 @@ def search_dining_style_restaurants(
         )
     )
 
+    canonical_styles = {
+        _canonical_dining_style_slug(slug)
+        for slug in dining_style_slugs
+    }
+    include_dine_in_field = bool(
+        canonical_styles.intersection(
+            {"dine-in", "casual-dining", "fine-dining"}
+        )
+    )
+    include_takeout_field = "carryout" in canonical_styles
+    include_delivery_field = (
+        include_delivery or "delivery" in canonical_styles
+    )
+
     query_results: list[
         tuple[
             str,
@@ -1603,6 +1650,9 @@ def search_dining_style_restaurants(
                 latitude=latitude,
                 longitude=longitude,
                 radius_meters=radius_meters,
+                include_delivery=include_delivery_field,
+                include_dine_in=include_dine_in_field,
+                include_takeout=include_takeout_field,
             ): (
                 style_slug,
                 text_query,
@@ -1890,6 +1940,8 @@ def search_dietary_restaurants(
     open_now: bool = True,
     include_delivery: bool = False,
     include_drive_through: bool = False,
+    include_takeout: bool = False,
+    include_dine_in: bool = False,
     resolve_photos: bool = True,
 ) -> list[NearbyRestaurant]:
     api_key = _get_api_key()
@@ -1945,6 +1997,9 @@ def search_dietary_restaurants(
                     latitude=latitude,
                     longitude=longitude,
                     radius_meters=radius_meters,
+                    include_delivery=include_delivery,
+                    include_dine_in=include_dine_in,
+                    include_takeout=include_takeout,
                 ): text_query
                 for text_query in queries
             }
@@ -2383,6 +2438,10 @@ def _resolve_photo_url(
         f"{photo_name}/media"
     )
 
+    logger.warning(
+        "[PICK-GOOGLE-CALL] kind=photo tier=place_details_photos"
+    )
+
     try:
         response = requests.get(
             photo_media_url,
@@ -2630,6 +2689,9 @@ def _perform_generic_nearby_coverage(
     longitude: float,
     radius_meters: float,
     max_results: int,
+    include_delivery: bool = False,
+    include_dine_in: bool = False,
+    include_takeout: bool = False,
 ) -> list[dict[str, Any]]:
     sub_radius = max(
         min(
@@ -2654,9 +2716,8 @@ def _perform_generic_nearby_coverage(
 
     for bearing in (
         0,
-        90,
-        180,
-        270,
+        120,
+        240,
     ):
         search_centers.append(
             _offset_coordinates(
@@ -2692,6 +2753,9 @@ def _perform_generic_nearby_coverage(
                     "restaurant"
                 ],
                 max_results=max_results,
+                include_delivery=include_delivery,
+                include_dine_in=include_dine_in,
+                include_takeout=include_takeout,
             )
             for (
                 center_latitude,
@@ -2743,6 +2807,8 @@ def search_nearby_restaurants(
     open_now: bool = True,
     include_delivery: bool = False,
     include_drive_through: bool = False,
+    include_takeout: bool = False,
+    include_dine_in: bool = False,
     max_results_per_type: int = 20,
     include_generic_fallback: bool = True,
     resolve_photos: bool = True,
@@ -2800,6 +2866,8 @@ def search_nearby_restaurants(
         f"{int(open_now)}:"
         f"{int(include_delivery)}:"
         f"{int(include_drive_through)}:"
+        f"{int(include_takeout)}:"
+        f"{int(include_dine_in)}:"
         f"{','.join(preferred_types)}:"
         f"{int(include_generic_fallback)}"
     )
@@ -2863,6 +2931,9 @@ def search_nearby_restaurants(
                 max_results=(
                     per_request_count
                 ),
+                include_delivery=include_delivery,
+                include_dine_in=include_dine_in,
+                include_takeout=include_takeout,
             )
 
             future_to_group[
@@ -2882,6 +2953,9 @@ def search_nearby_restaurants(
                 max_results=(
                     per_request_count
                 ),
+                include_delivery=include_delivery,
+                include_dine_in=include_dine_in,
+                include_takeout=include_takeout,
             )
 
             future_to_group[

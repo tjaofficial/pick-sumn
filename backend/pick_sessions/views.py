@@ -4,9 +4,15 @@ from datetime import timedelta
 import random
 from concurrent.futures import ThreadPoolExecutor
 
-from accounts.models import UserAppSettings
+from accounts.entitlements import get_user_entitlements
+from accounts.models import (
+    Friendship,
+    FriendshipStatus,
+    UserAppSettings,
+)
 from accounts.push_notifications import send_push_messages
 from preferences.models import UserDietaryPreference
+from dining_groups.models import DiningGroup
 
 from django.core.cache import cache
 from django.db import transaction
@@ -84,7 +90,7 @@ ACTIVE_SESSION_STATUSES = (
 )
 
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
-MATCH_SEARCH_CACHE_VERSION = "v9"
+MATCH_SEARCH_CACHE_VERSION = "v11-phase-1-1-filters"
 
 EXPLORE_CACHE_SECONDS = 15 * 60
 EXPLORE_MAX_CANDIDATES = 60
@@ -162,6 +168,29 @@ def _get_enriched_session_restaurants(
         )
     )
 
+    canonical_dining_styles = {
+        str(style_slug)
+        .strip()
+        .lower()
+        .replace("_", "-")
+        .replace(" ", "-")
+        for style_slug in dining_style_slugs
+    }
+
+    include_takeout_field = (
+        "carryout" in canonical_dining_styles
+    )
+
+    include_dine_in_field = bool(
+        canonical_dining_styles.intersection(
+            {
+                "dine-in",
+                "casual-dining",
+                "fine-dining",
+            }
+        )
+    )
+
     dietary_slugs = (
         get_session_requested_dietary_slugs(
             session
@@ -215,6 +244,12 @@ def _get_enriched_session_restaurants(
             max_results_per_type=20,
             include_generic_fallback=True,
             resolve_photos=False,
+            include_takeout=(
+                include_takeout_field
+            ),
+            include_dine_in=(
+                include_dine_in_field
+            ),
         )
 
         logger.warning(
@@ -270,6 +305,12 @@ def _get_enriched_session_restaurants(
                 session.location_label
             ),
             resolve_photos=False,
+            include_takeout=(
+                include_takeout_field
+            ),
+            include_dine_in=(
+                include_dine_in_field
+            ),
         )
 
         logger.warning(
@@ -293,11 +334,14 @@ def _get_enriched_session_restaurants(
             run_nearby_search
         )
 
-        dining_style_future = (
-            executor.submit(
-                run_dining_style_search
+        dining_style_future = None
+
+        if dining_style_slugs:
+            dining_style_future = (
+                executor.submit(
+                    run_dining_style_search
+                )
             )
-        )
 
         dietary_future = None
 
@@ -312,6 +356,8 @@ def _get_enriched_session_restaurants(
 
         dining_style_restaurants = (
             dining_style_future.result()
+            if dining_style_future is not None
+            else []
         )
 
         dietary_restaurants = (
@@ -1383,6 +1429,76 @@ class PickSessionViewSet(viewsets.ModelViewSet):
 
         return PickSessionListSerializer
 
+    @action(
+        detail=False,
+        methods=("post",),
+        url_path="dietary-preview",
+    )
+    def dietary_preview(self, request):
+        raw_ids = request.data.get("participant_ids", [])
+        group_id = request.data.get("group_id")
+
+        participant_ids = {
+            int(value)
+            for value in raw_ids
+            if str(value).isdigit()
+        }
+        participant_ids.discard(request.user.id)
+
+        allowed_ids = set()
+
+        if group_id:
+            group = DiningGroup.objects.filter(
+                id=group_id,
+                is_active=True,
+                memberships__user=request.user,
+                memberships__is_active=True,
+            ).first()
+
+            if group:
+                allowed_ids = set(
+                    group.memberships.filter(
+                        is_active=True,
+                        user_id__in=participant_ids,
+                    ).values_list("user_id", flat=True)
+                )
+        elif participant_ids:
+            friendships = Friendship.objects.filter(
+                Q(
+                    from_user=request.user,
+                    to_user_id__in=participant_ids,
+                    status=FriendshipStatus.ACCEPTED,
+                )
+                | Q(
+                    to_user=request.user,
+                    from_user_id__in=participant_ids,
+                    status=FriendshipStatus.ACCEPTED,
+                )
+            )
+
+            for friendship in friendships:
+                allowed_ids.add(
+                    friendship.to_user_id
+                    if friendship.from_user_id == request.user.id
+                    else friendship.from_user_id
+                )
+
+        user_ids = {request.user.id, *allowed_ids}
+
+        gluten_preferences = UserDietaryPreference.objects.filter(
+            user_id__in=user_ids,
+            dietary_tag__slug__in=("gluten-free", "gluten_free"),
+        )
+
+        return Response(
+            {
+                "has_gluten_free": gluten_preferences.exists(),
+                "required_gluten_free": gluten_preferences.filter(
+                    is_required=True
+                ).exists(),
+            }
+        )
+
     @transaction.atomic
     def create(
         self,
@@ -1959,6 +2075,9 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                     "search_radius_miles": (
                         session
                         .search_radius_miles
+                    ),
+                    "gluten_free_filter_enabled": (
+                        session.gluten_free_filter_enabled
                     ),
                     "requested_dietary_slugs": (
                         dietary_slugs
@@ -3248,6 +3367,27 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             25,
         )
 
+        entitlements = get_user_entitlements(
+            request.user
+        )
+
+        max_radius = entitlements[
+            "max_search_radius_miles"
+        ]
+
+        if radius_miles > max_radius:
+            return Response(
+                {
+                    "detail": (
+                        "Pick Sum'N Plus is required "
+                        "for an extended search radius."
+                    ),
+                    "code": "plus_required",
+                    "max_search_radius_miles": max_radius,
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         raw_latitude = request.query_params.get(
             "latitude"
         )
@@ -3322,6 +3462,7 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                     include_drive_through=False,
                     max_results_per_type=20,
                     include_generic_fallback=True,
+                    resolve_photos=False,
                 )
             except GooglePlacesError as error:
                 return Response(

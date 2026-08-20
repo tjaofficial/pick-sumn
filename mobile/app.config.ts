@@ -34,6 +34,7 @@ export default ({
         },
       ],
       "expo-router",
+      "expo-iap",
       [
         "expo-location",
         {

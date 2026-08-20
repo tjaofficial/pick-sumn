@@ -4,6 +4,7 @@ import uuid
 
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils import timezone
 
 from .managers import UserManager
 
@@ -39,6 +40,30 @@ class AppTheme(models.TextChoices):
     DARK = "dark", "Dark"
 
 
+class MatchesViewMode(models.TextChoices):
+    DETAILED = "detailed", "Detailed"
+    COMPACT = "compact", "Compact"
+
+
+class SubscriptionTier(models.TextChoices):
+    FREE = "free", "Free"
+    PLUS = "plus", "Pick Sum'N Plus"
+
+
+class SubscriptionStatus(models.TextChoices):
+    INACTIVE = "inactive", "Inactive"
+    ACTIVE = "active", "Active"
+    GRACE_PERIOD = "grace_period", "Grace Period"
+    CANCELED = "canceled", "Canceled"
+    EXPIRED = "expired", "Expired"
+
+
+class SubscriptionProvider(models.TextChoices):
+    APPLE = "apple", "Apple App Store"
+    GOOGLE = "google", "Google Play"
+    MANUAL = "manual", "Manual / Internal"
+
+
 class User(AbstractUser):
     """Primary account model for Pick Sum'N."""
 
@@ -59,6 +84,50 @@ class User(AbstractUser):
         editable=False,
     )
 
+    subscription_tier = models.CharField(
+        max_length=20,
+        choices=SubscriptionTier.choices,
+        default=SubscriptionTier.FREE,
+    )
+    subscription_status = models.CharField(
+        max_length=30,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.INACTIVE,
+    )
+    subscription_provider = models.CharField(
+        max_length=20,
+        choices=SubscriptionProvider.choices,
+        blank=True,
+        default="",
+    )
+    subscription_product_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+    )
+    subscription_expires_at = models.DateTimeField(
+        blank=True,
+        null=True,
+    )
+
+
+    subscription_transaction_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+    )
+    subscription_original_transaction_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+    )
+    subscription_environment = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
@@ -76,6 +145,26 @@ class User(AbstractUser):
             self.friend_code = candidate
 
         return super().save(*args, **kwargs)
+
+    @property
+    def has_plus_access(self) -> bool:
+        if self.subscription_tier != SubscriptionTier.PLUS:
+            return False
+
+        if self.subscription_status not in (
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.GRACE_PERIOD,
+            SubscriptionStatus.CANCELED,
+        ):
+            return False
+
+        if (
+            self.subscription_expires_at is not None
+            and self.subscription_expires_at <= timezone.now()
+        ):
+            return False
+
+        return True
 
     def __str__(self):
         return self.display_name or self.email
@@ -183,6 +272,12 @@ class UserAppSettings(models.Model):
         max_length=20,
         choices=AppTheme.choices,
         default=AppTheme.LIGHT,
+    )
+
+    matches_view_mode = models.CharField(
+        max_length=20,
+        choices=MatchesViewMode.choices,
+        default=MatchesViewMode.DETAILED,
     )
 
     created_at = models.DateTimeField(

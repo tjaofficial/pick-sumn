@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   LocateFixed,
+  LockKeyhole,
   MapPin,
   Search,
 } from "lucide-react-native";
@@ -30,6 +31,9 @@ import {
 import {
   usePickDraft,
 } from "@/features/pickSessions/PickDraftContext";
+import {
+  usePlus,
+} from "@/features/plus/PlusContext";
 import {
   getLocationDetails,
   getLocationSuggestions,
@@ -116,6 +120,13 @@ export default function PickLocationScreen() {
     updateLocation,
   } = usePickDraft();
 
+  const {
+    entitlements,
+    isPlus,
+    isLoading:
+      isEntitlementsLoading,
+  } = usePlus();
+
   const [locationLabel, setLocationLabel] =
     useState(draft.locationLabel);
   const [latitude, setLatitude] =
@@ -138,6 +149,29 @@ export default function PickLocationScreen() {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
+
+  useEffect(() => {
+    if (
+      isEntitlementsLoading
+      || isPlus
+    ) {
+      return;
+    }
+
+    setSearchRadiusMiles(
+      (current) =>
+        Math.min(
+          current,
+          entitlements
+            .max_search_radius_miles,
+        ),
+    );
+  }, [
+    entitlements
+      .max_search_radius_miles,
+    isEntitlementsLoading,
+    isPlus,
+  ]);
 
   useEffect(() => {
     async function loadDefaults() {
@@ -181,9 +215,6 @@ export default function PickLocationScreen() {
             );
           }
 
-          setSearchRadiusMiles(
-            profile.default_search_radius_miles,
-          );
         }
       } catch (requestError) {
         setError(
@@ -613,17 +644,116 @@ export default function PickLocationScreen() {
           </View>
         )}
 
-        <Text style={styles.sectionTitle}>Search Distance</Text>
+        <View
+          style={
+            styles.distanceHeadingRow
+          }
+        >
+          <View>
+            <Text
+              style={styles.sectionTitle}
+            >
+              Search Distance
+            </Text>
+
+            {!isPlus && (
+              <Text
+                style={
+                  styles.plusHint
+                }
+              >
+                Pick Sum’N Plus unlocks
+                larger search areas.
+              </Text>
+            )}
+          </View>
+
+          {!isPlus && (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname:
+                    "/settings/plus",
+                  params: {
+                    source:
+                      "radius",
+                  },
+                })
+              }
+              style={
+                styles.plusBadge
+              }
+            >
+              <Text
+                style={
+                  styles.plusBadgeText
+                }
+              >
+                PLUS
+              </Text>
+            </Pressable>
+          )}
+        </View>
+
         <View style={styles.optionRow}>
           {RADIUS_OPTIONS.map((radius) => {
-            const selected = searchRadiusMiles === radius;
+            const selected =
+              searchRadiusMiles
+              === radius;
+
+            const locked =
+              !isPlus
+              && radius
+              > entitlements
+                .max_search_radius_miles;
+
             return (
               <Pressable
                 key={radius}
-                onPress={() => setSearchRadiusMiles(radius)}
-                style={[styles.radiusOption, selected && styles.radiusSelected]}
+                onPress={() => {
+                  if (locked) {
+                    router.push({
+                      pathname:
+                        "/settings/plus",
+                      params: {
+                        source:
+                          "radius",
+                      },
+                    });
+                    return;
+                  }
+
+                  setSearchRadiusMiles(
+                    radius,
+                  );
+                }}
+                style={[
+                  styles.radiusOption,
+                  selected
+                    && styles.radiusSelected,
+                  locked
+                    && styles.radiusLocked,
+                ]}
               >
-                <Text style={[styles.radiusText, selected && styles.radiusTextSelected]}>
+                {locked && (
+                  <LockKeyhole
+                    size={13}
+                    color={themeColor(
+                      "#69707C",
+                      "color",
+                    )}
+                  />
+                )}
+
+                <Text
+                  style={[
+                    styles.radiusText,
+                    selected
+                      && styles.radiusTextSelected,
+                    locked
+                      && styles.radiusTextLocked,
+                  ]}
+                >
                   {radius} mi
                 </Text>
               </Pressable>
@@ -771,11 +901,17 @@ const styles = createThemedStyleSheet({
   successRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
   successText: { fontSize: 12, fontWeight: "800", color: "#168B4F" },
   sectionTitle: { marginTop: 27, marginBottom: 11, fontSize: 20, fontWeight: "900", color: "#07111F" },
+  distanceHeadingRow: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 12 },
+  plusHint: { marginTop: -4, marginBottom: 10, fontSize: 11, lineHeight: 16, color: "#69707C" },
+  plusBadge: { marginBottom: 11, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "#FFF0D7" },
+  plusBadgeText: { fontSize: 10, fontWeight: "900", letterSpacing: 0.8, color: "#9A5A00" },
   optionRow: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
-  radiusOption: { minWidth: 60, alignItems: "center", paddingHorizontal: 13, paddingVertical: 11, borderWidth: 1, borderColor: "#D9DDE3", borderRadius: 14, backgroundColor: "#FFFFFF" },
+  radiusOption: { minWidth: 68, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 13, paddingVertical: 11, borderWidth: 1, borderColor: "#D9DDE3", borderRadius: 14, backgroundColor: "#FFFFFF" },
   radiusSelected: { borderColor: "#168B4F", backgroundColor: "#168B4F" },
+  radiusLocked: { borderStyle: "dashed", backgroundColor: "#F5F6F7" },
   radiusText: { fontSize: 13, fontWeight: "800", color: "#343B46" },
   radiusTextSelected: { color: "#FFFFFF" },
+  radiusTextLocked: { color: "#69707C" },
   errorCard: { marginTop: 18, padding: 14, borderWidth: 1, borderColor: "#F3C5C5", borderRadius: 16, backgroundColor: "#FFF1F1" },
   errorText: { color: "#9F2424", fontWeight: "700", textAlign: "center" },
   saveButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 58, marginTop: 25, borderRadius: 18, backgroundColor: "#F3344A" },

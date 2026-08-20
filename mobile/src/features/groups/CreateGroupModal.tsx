@@ -151,7 +151,10 @@ export function CreateGroupModal({
 
 const styles = createThemedStyleSheet({
   overlay: { flex: 1, justifyContent: "flex-end" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(7,17,31,0.48)" },
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(7,17,31,0.48)",
+  },
   sheet: { maxHeight: "88%", paddingHorizontal: 22, paddingTop: 10, paddingBottom: 30, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: "#FFF9F2" },
   handle: { width: 46, height: 5, alignSelf: "center", marginBottom: 18, borderRadius: 999, backgroundColor: "#D5D8DD" },
   header: { flexDirection: "row", justifyContent: "space-between", gap: 16, marginBottom: 24 },

@@ -50,6 +50,18 @@ def can_receive_group_invite(
     )
 
 
+def _group_member_limit(group):
+    return None if group.created_by.has_plus_access else 3
+
+
+def _group_has_capacity(group, additional_count=1):
+    limit = _group_member_limit(group)
+    if limit is None:
+        return True
+    active_count = group.memberships.filter(is_active=True).count()
+    return active_count + additional_count <= limit
+
+
 class DiningGroupViewSet(viewsets.ModelViewSet):
     permission_classes = (
         IsAuthenticated,
@@ -225,10 +237,28 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
         )
 
         group = get_object_or_404(
-            DiningGroup,
+            DiningGroup.objects.select_related("created_by"),
             join_code=join_code,
             is_active=True,
         )
+
+        existing_active = DiningGroupMember.objects.filter(
+            group=group,
+            user=request.user,
+            is_active=True,
+        ).exists()
+
+        if not existing_active and not _group_has_capacity(group):
+            return Response(
+                {
+                    "detail": (
+                        "This Free group has reached its 3-person limit. "
+                        "The group owner can upgrade to Pick Sum'N Plus "
+                        "for unlimited group members."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
 
         membership, created = (
@@ -403,12 +433,53 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             )
         )
 
-        invited_count = 0
-
-        for user_id in (
+        candidate_ids = (
             allowed_friend_ids
             - existing_member_ids
-        ):
+        )
+
+        pending_ids = set(
+            DiningGroupInvitation.objects.filter(
+                group=group,
+                status=InvitationStatus.PENDING,
+                invited_user_id__in=candidate_ids,
+            ).values_list("invited_user_id", flat=True)
+        )
+
+        truly_new_ids = candidate_ids - pending_ids
+        limit = _group_member_limit(group)
+
+        if limit is not None:
+            active_count = group.memberships.filter(is_active=True).count()
+            all_pending_ids = set(
+                DiningGroupInvitation.objects.filter(
+                    group=group,
+                    status=InvitationStatus.PENDING,
+                    invited_user__isnull=False,
+                ).values_list("invited_user_id", flat=True)
+            )
+            active_ids = set(
+                group.memberships.filter(is_active=True).values_list("user_id", flat=True)
+            )
+            pending_count = len(all_pending_ids - active_ids)
+            available_slots = max(0, limit - active_count - pending_count)
+
+            if len(truly_new_ids) > available_slots:
+                return Response(
+                    {
+                        "detail": (
+                            "Free groups can have up to 3 people total, "
+                            "including the owner. Upgrade the group owner "
+                            "to Pick Sum'N Plus for unlimited members."
+                        ),
+                        "available_slots": available_slots,
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        invited_count = 0
+
+        for user_id in candidate_ids:
             invitation = (
                 DiningGroupInvitation.objects.filter(
                     group=group,
@@ -540,6 +611,28 @@ class DiningGroupViewSet(viewsets.ModelViewSet):
             )
 
         if response_action == "accept":
+            invitation.group = DiningGroup.objects.select_related("created_by").get(
+                id=invitation.group_id
+            )
+
+            already_active = DiningGroupMember.objects.filter(
+                group=invitation.group,
+                user=request.user,
+                is_active=True,
+            ).exists()
+
+            if not already_active and not _group_has_capacity(invitation.group):
+                return Response(
+                    {
+                        "detail": (
+                            "This Free group has reached its 3-person limit. "
+                            "The group owner can upgrade to Pick Sum'N Plus "
+                            "for unlimited members."
+                        )
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             membership, _ = (
                 DiningGroupMember.objects.get_or_create(
                     group=invitation.group,

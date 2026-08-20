@@ -71,6 +71,7 @@ export type PickSession = {
   price_min: number;
   price_max: number;
   open_now: boolean;
+  gluten_free_filter_enabled: boolean;
   something_new: boolean;
   selected_restaurant_external_id: string;
   selected_restaurant_name: string;
@@ -114,6 +115,7 @@ export type CreatePickSessionInput = {
   price_min?: number;
   price_max?: number;
   open_now?: boolean;
+  gluten_free_filter_enabled?: boolean;
   dining_style_ids: number[];
   something_new?: boolean;
   cuisine_ids?: number[];
@@ -286,6 +288,7 @@ export type PickSessionMatchSummary = {
   decision_mode: DecisionMode;
   location_label: string;
   search_radius_miles: number;
+  gluten_free_filter_enabled: boolean;
   requested_dietary_slugs: string[];
   required_dietary_slugs: string[];
   preferred_dietary_slugs: string[];
@@ -478,4 +481,9 @@ export type SubmitRestaurantDietaryReportInput = {
   reaction_after_eating: boolean;
   notes: string;
   visited_at?: string | null;
+};
+
+export type SessionDietaryPreview = {
+  has_gluten_free: boolean;
+  required_gluten_free: boolean;
 };

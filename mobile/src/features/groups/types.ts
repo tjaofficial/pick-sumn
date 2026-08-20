@@ -5,7 +5,7 @@ export type GroupRole =
 
 export type DiningGroupMemberUser = {
   id: number;
-  email: string;
+  email?: string;
   display_name: string;
   first_name: string;
   last_name: string;
@@ -32,6 +32,9 @@ export type DiningGroup = {
   member_count: number;
   current_user_role:
     GroupRole | null;
+  plus_group: boolean;
+  member_limit: number | null;
+  available_member_slots: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

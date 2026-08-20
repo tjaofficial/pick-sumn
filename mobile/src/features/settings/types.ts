@@ -11,6 +11,10 @@ export type AppTheme =
   | "light"
   | "dark";
 
+export type MatchesViewMode =
+  | "detailed"
+  | "compact";
+
 export type AppSettings = {
   friend_request_privacy: FriendRequestPrivacy;
   group_invite_privacy: GroupInvitePrivacy;
@@ -22,24 +26,18 @@ export type AppSettings = {
   notification_session_results: boolean;
   notification_general: boolean;
   theme: AppTheme;
+  matches_view_mode: MatchesViewMode;
   updated_at: string;
 };
 
 export type UpdateAppSettingsInput =
-  Partial<
-    Omit<
-      AppSettings,
-      "updated_at"
-    >
-  >;
+  Partial<Omit<AppSettings, "updated_at">>;
 
 export type ChangePasswordInput = {
   current_password: string;
   new_password: string;
   new_password_confirm: string;
 };
-
-
 
 export type FeedbackType =
   | "general"

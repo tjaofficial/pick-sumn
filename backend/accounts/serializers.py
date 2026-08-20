@@ -142,7 +142,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
 class FriendUserSerializer(UserSerializer):
-    pass
+    email = serializers.SerializerMethodField()
+
+    def get_email(self, obj):
+        # Friend/group APIs must not expose another user's email address.
+        return ""
 
 
 class MyFriendCodeSerializer(UserSerializer):
@@ -203,6 +207,7 @@ class UserAppSettingsSerializer(serializers.ModelSerializer):
             "notification_session_results",
             "notification_general",
             "theme",
+            "matches_view_mode",
             "updated_at",
         )
         read_only_fields = (

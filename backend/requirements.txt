@@ -23,7 +23,7 @@ sqlparse==0.5.5
 typing_extensions==4.16.0
 urllib3==2.7.0
 whitenoise==6.12.0
-
+app-store-server-library==3.1.1
 pypdf==6.7.0
 google-auth==2.56.2
 cryptography==49.0.0

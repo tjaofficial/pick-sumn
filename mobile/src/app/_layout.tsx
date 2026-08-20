@@ -21,6 +21,9 @@ import {
   PickDraftProvider,
 } from "@/features/pickSessions/PickDraftContext";
 import {
+  PlusProvider,
+} from "@/features/plus/PlusContext";
+import {
   PendingGroupInviteHandler,
 } from "@/features/groups/PendingGroupInviteHandler";
 import {
@@ -168,6 +171,20 @@ function RootNavigator() {
         />
 
         <Stack.Screen
+          name="settings/plus"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
+          name="settings/plus-payment"
+          options={{
+            headerShown: false,
+          }}
+        />
+
+        <Stack.Screen
           name="settings/privacy-security"
           options={{
             headerShown: false,
@@ -285,12 +302,14 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <AuthProvider>
           <AppThemeProvider>
-            <PickDraftProvider>
-              <LiveNotificationsProvider>
+            <PlusProvider>
+              <PickDraftProvider>
+                <LiveNotificationsProvider>
                 <PendingGroupInviteHandler />
                 <RootNavigator />
-              </LiveNotificationsProvider>
-            </PickDraftProvider>
+                </LiveNotificationsProvider>
+              </PickDraftProvider>
+            </PlusProvider>
           </AppThemeProvider>
         </AuthProvider>
       </SafeAreaProvider>

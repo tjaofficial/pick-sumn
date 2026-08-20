@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Check,
   CircleUserRound,
+  LockKeyhole,
   Users,
 } from "lucide-react-native";
 import {
@@ -28,6 +29,7 @@ import type {
   DiningGroupMember,
 } from "@/features/groups/types";
 import { usePickDraft } from "@/features/pickSessions/PickDraftContext";
+import { usePlus } from "@/features/plus/PlusContext";
 import { getApiErrorMessage } from "@/services/getApiErrorMessage";
 import {
   createThemedStyleSheet,
@@ -42,7 +44,7 @@ function friendName(user: FriendUser): string {
     .filter(Boolean)
     .join(" ")
     .trim();
-  return fullName || user.display_name || user.email;
+  return fullName || user.display_name || "Pick Sum’N User";
 }
 
 function memberName(member: DiningGroupMember): string {
@@ -50,7 +52,7 @@ function memberName(member: DiningGroupMember): string {
     .filter(Boolean)
     .join(" ")
     .trim();
-  return member.nickname || fullName || member.user.display_name || member.user.email;
+  return member.nickname || fullName || member.user.display_name || "Pick Sum’N User";
 }
 
 export default function PickPeopleScreen() {
@@ -58,6 +60,12 @@ export default function PickPeopleScreen() {
 
   const { user } = useAuth();
   const { draft, updatePeople } = usePickDraft();
+  const { entitlements, isPlus } = usePlus();
+
+  const maxAdditionalParticipants =
+    entitlements.max_participants === null
+      ? null
+      : Math.max(0, entitlements.max_participants - 1);
 
   const [groups, setGroups] = useState<DiningGroup[]>([]);
   const [friends, setFriends] = useState<FriendListItem[]>([]);
@@ -115,12 +123,17 @@ export default function PickPeopleScreen() {
       setJustMe(false);
       const detail = await getGroup(group.id);
       setSelectedGroup(detail);
+      const otherMemberIds = detail.members
+        .filter((member) => member.user.id !== user?.id)
+        .map((member) => member.user.id);
+
+      const allowedMemberIds =
+        maxAdditionalParticipants === null
+          ? otherMemberIds
+          : otherMemberIds.slice(0, maxAdditionalParticipants);
+
       setSelectedParticipantIds(
-        new Set(
-          detail.members
-            .filter((member) => member.user.id !== user?.id)
-            .map((member) => member.user.id),
-        ),
+        new Set(allowedMemberIds),
       );
     } catch (requestError) {
       setError(
@@ -139,35 +152,60 @@ export default function PickPeopleScreen() {
     setError(null);
   }
 
-  function toggleFriend(friend: FriendListItem) {
-    const switchingFromGroup =
-      Boolean(selectedGroup) || justMe;
-
-    setJustMe(false);
-    setSelectedGroup(null);
-
-    setSelectedParticipantIds((current) => {
-      const next = switchingFromGroup
-        ? new Set<number>()
-        : new Set(current);
-
-      if (next.has(friend.user.id)) {
-        next.delete(friend.user.id);
-      } else {
-        next.add(friend.user.id);
-      }
-
-      return next;
+  function openGroupSizeUpgrade() {
+    router.push({
+      pathname: "/settings/plus",
+      params: { source: "group-size" },
     });
   }
 
+  function toggleFriend(friend: FriendListItem) {
+    const switchingFromGroup = Boolean(selectedGroup) || justMe;
+    const startingSelection = switchingFromGroup
+      ? new Set<number>()
+      : new Set(selectedParticipantIds);
+
+    if (startingSelection.has(friend.user.id)) {
+      startingSelection.delete(friend.user.id);
+      setJustMe(false);
+      setSelectedGroup(null);
+      setSelectedParticipantIds(startingSelection);
+      return;
+    }
+
+    if (
+      maxAdditionalParticipants !== null
+      && startingSelection.size >= maxAdditionalParticipants
+    ) {
+      openGroupSizeUpgrade();
+      return;
+    }
+
+    startingSelection.add(friend.user.id);
+    setJustMe(false);
+    setSelectedGroup(null);
+    setSelectedParticipantIds(startingSelection);
+  }
+
   function toggleGroupMember(userId: number) {
-    setSelectedParticipantIds((current) => {
-      const next = new Set(current);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
+    const next = new Set(selectedParticipantIds);
+
+    if (next.has(userId)) {
+      next.delete(userId);
+      setSelectedParticipantIds(next);
+      return;
+    }
+
+    if (
+      maxAdditionalParticipants !== null
+      && next.size >= maxAdditionalParticipants
+    ) {
+      openGroupSizeUpgrade();
+      return;
+    }
+
+    next.add(userId);
+    setSelectedParticipantIds(next);
   }
 
   function handleSave() {
@@ -309,6 +347,13 @@ export default function PickPeopleScreen() {
                 !selectedGroup &&
                 !justMe &&
                 selectedParticipantIds.has(friend.user.id);
+              const locked =
+                !isPlus
+                && !selected
+                && maxAdditionalParticipants !== null
+                && !selectedGroup
+                && !justMe
+                && selectedParticipantIds.size >= maxAdditionalParticipants;
               return (
                 <Pressable
                   key={friend.friendship_id}
@@ -328,9 +373,14 @@ export default function PickPeopleScreen() {
                     style={[
                       styles.checkCircle,
                       selected && styles.checkCircleSelected,
+                      locked && styles.checkCircleLocked,
                     ]}
                   >
-                    {selected && <Check size={16} color={themeColor("#FFFFFF", "color")} />}
+                    {selected ? (
+                      <Check size={16} color={themeColor("#FFFFFF", "color")} />
+                    ) : locked ? (
+                      <LockKeyhole size={14} color={themeColor("#9A5A00", "color")} />
+                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -343,11 +393,26 @@ export default function PickPeopleScreen() {
             <Text style={styles.memberSectionTitle}>
               Who is joining from {selectedGroup.name}?
             </Text>
+            {!isPlus
+              && maxAdditionalParticipants !== null
+              && selectedGroup.members.filter((member) => member.user.id !== user?.id).length > maxAdditionalParticipants && (
+              <Pressable onPress={openGroupSizeUpgrade} style={styles.groupLimitCard}>
+                <LockKeyhole size={18} color={themeColor("#9A5A00", "color")} />
+                <Text style={styles.groupLimitText}>
+                  Free sessions support {entitlements.max_participants} people total. Upgrade to use the full group.
+                </Text>
+              </Pressable>
+            )}
             {selectedGroup.members
               .filter((member) => member.user.id !== user?.id)
               .sort((a, b) => memberName(a).localeCompare(memberName(b)))
               .map((member) => {
                 const selected = selectedParticipantIds.has(member.user.id);
+                const locked =
+                  !isPlus
+                  && !selected
+                  && maxAdditionalParticipants !== null
+                  && selectedParticipantIds.size >= maxAdditionalParticipants;
                 return (
                   <Pressable
                     key={member.id}
@@ -364,9 +429,14 @@ export default function PickPeopleScreen() {
                       style={[
                         styles.checkCircle,
                         selected && styles.checkCircleSelected,
+                        locked && styles.checkCircleLocked,
                       ]}
                     >
-                      {selected && <Check size={16} color={themeColor("#FFFFFF", "color")} />}
+                      {selected ? (
+                        <Check size={16} color={themeColor("#FFFFFF", "color")} />
+                      ) : locked ? (
+                        <LockKeyhole size={14} color={themeColor("#9A5A00", "color")} />
+                      ) : null}
                     </View>
                   </Pressable>
                 );
@@ -484,6 +554,9 @@ const styles = createThemedStyleSheet({
   friendName: { flex: 1, fontSize: 15, fontWeight: "900", color: "#07111F" },
   checkCircle: { width: 27, height: 27, borderWidth: 2, borderColor: "#CDD1D7", borderRadius: 14 },
   checkCircleSelected: { alignItems: "center", justifyContent: "center", borderColor: "#F3344A", backgroundColor: "#F3344A" },
+  checkCircleLocked: { alignItems: "center", justifyContent: "center", borderColor: "#E8D3A7", backgroundColor: "#FFF4DC" },
+  groupLimitCard: { flexDirection: "row", alignItems: "center", gap: 9, padding: 12, borderWidth: 1, borderColor: "#E8D3A7", borderRadius: 15, backgroundColor: "#FFF8E9" },
+  groupLimitText: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: "700", color: "#775F3B" },
   memberSection: { marginTop: 24, gap: 9 },
   memberSectionTitle: { marginBottom: 2, fontSize: 18, fontWeight: "900", color: "#07111F" },
   emptyCard: { padding: 18, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 18, backgroundColor: "#FFFFFF" },

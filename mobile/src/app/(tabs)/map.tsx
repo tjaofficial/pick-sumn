@@ -8,6 +8,7 @@ import {
   Globe2,
   Heart,
   List,
+  LockKeyhole,
   LocateFixed,
   MapPin,
   Menu,
@@ -74,6 +75,9 @@ import {
 import {
   useAppTheme,
 } from "@/features/settings/AppThemeContext";
+import {
+  usePlus,
+} from "@/features/plus/PlusContext";
 
 const pickSumnLogo = require("../../../assets/images/pick-sumn-logo.png");
 
@@ -679,15 +683,35 @@ function RestaurantDetail({
 
       setIsSaved(true);
     } catch (requestError) {
-      Alert.alert(
-        "Unable to update favorites",
-        getApiErrorMessage(
-          requestError,
-          isSaved
-            ? "Unable to remove this restaurant from your saved restaurants."
-            : "Unable to save this restaurant.",
-        ),
+      const message = getApiErrorMessage(
+        requestError,
+        isSaved
+          ? "Unable to remove this restaurant from your saved restaurants."
+          : "Unable to save this restaurant.",
       );
+
+      if (
+        !isSaved
+        && message.toLowerCase().includes("pick sum'n plus")
+      ) {
+        Alert.alert(
+          "Free favorites limit reached",
+          message,
+          [
+            { text: "Not Now", style: "cancel" },
+            {
+              text: "View Plus",
+              onPress: () =>
+                router.push({
+                  pathname: "/settings/plus",
+                  params: { source: "saved-restaurants" },
+                }),
+            },
+          ],
+        );
+      } else {
+        Alert.alert("Unable to update favorites", message);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -1067,6 +1091,8 @@ function FilterToggle({
 export default function MapScreen() {
   useAppTheme();
 
+  const { entitlements, isPlus } = usePlus();
+
   const mapRef = useRef<RestaurantMapHandle | null>(null);
 
   const bottomSheetRef = useRef<BottomSheet | null>(null);
@@ -1377,6 +1403,17 @@ export default function MapScreen() {
       async (
         radiusMiles: number,
       ) => {
+        if (
+          !isPlus
+          && radiusMiles > entitlements.max_search_radius_miles
+        ) {
+          router.push({
+            pathname: "/settings/plus",
+            params: { source: "radius" },
+          });
+          return;
+        }
+
         try {
           setIsExploreRefreshing(true);
           setError(null);
@@ -1398,7 +1435,11 @@ export default function MapScreen() {
           setIsExploreRefreshing(false);
         }
       },
-      [loadExplore],
+      [
+        entitlements.max_search_radius_miles,
+        isPlus,
+        loadExplore,
+      ],
     );
 
   const matches =
@@ -1891,31 +1932,38 @@ export default function MapScreen() {
 
               <View style={styles.filterOptionRow}>
                 {EXPLORE_RADIUS_OPTIONS.map(
-                  (radius) => (
-                    <Pressable
-                      key={radius}
-                      onPress={() => {
-                        void applyExploreRadius(
-                          radius,
-                        );
-                      }}
-                      style={[
-                        styles.filterChip,
-                        exploreRadius === radius
-                          && styles.filterChipSelected,
-                      ]}
-                    >
-                      <Text
+                  (radius) => {
+                    const locked =
+                      !isPlus
+                      && radius > entitlements.max_search_radius_miles;
+
+                    return (
+                      <Pressable
+                        key={radius}
+                        onPress={() => {
+                          void applyExploreRadius(radius);
+                        }}
                         style={[
-                          styles.filterChipText,
-                          exploreRadius === radius
-                            && styles.filterChipTextSelected,
+                          styles.filterChip,
+                          exploreRadius === radius && styles.filterChipSelected,
+                          locked && styles.filterChipLocked,
                         ]}
                       >
-                        {radius} mi
-                      </Text>
-                    </Pressable>
-                  ),
+                        {locked && (
+                          <LockKeyhole size={12} color={themeColor("#9A5A00", "color")} />
+                        )}
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            exploreRadius === radius && styles.filterChipTextSelected,
+                            locked && styles.filterChipTextLocked,
+                          ]}
+                        >
+                          {radius} mi
+                        </Text>
+                      </Pressable>
+                    );
+                  },
                 )}
               </View>
 
@@ -1923,9 +1971,9 @@ export default function MapScreen() {
                 Price
               </Text>
 
-              <View style={styles.priceFilterRow}>
-                {[1, 2, 3, 4].map(
-                  (price) => {
+              {isPlus ? (
+                <View style={styles.priceFilterRow}>
+                  {[1, 2, 3, 4].map((price) => {
                     const selected =
                       price >= explorePriceMin
                       && price <= explorePriceMax;
@@ -1934,38 +1982,39 @@ export default function MapScreen() {
                       <Pressable
                         key={price}
                         onPress={() => {
-                          if (
-                            explorePriceMin === price
-                            && explorePriceMax === price
-                          ) {
+                          if (explorePriceMin === price && explorePriceMax === price) {
                             setExplorePriceMin(0);
                             setExplorePriceMax(4);
                             return;
                           }
-
                           setExplorePriceMin(price);
                           setExplorePriceMax(price);
                         }}
-                        style={[
-                          styles.filterChip,
-                          selected
-                            && styles.filterChipSelected,
-                        ]}
+                        style={[styles.filterChip, selected && styles.filterChipSelected]}
                       >
-                        <Text
-                          style={[
-                            styles.filterChipText,
-                            selected
-                              && styles.filterChipTextSelected,
-                          ]}
-                        >
+                        <Text style={[styles.filterChipText, selected && styles.filterChipTextSelected]}>
                           {"$".repeat(price)}
                         </Text>
                       </Pressable>
                     );
-                  },
-                )}
-              </View>
+                  })}
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() =>
+                    router.push({
+                      pathname: "/settings/plus",
+                      params: { source: "price" },
+                    })
+                  }
+                  style={styles.lockedExploreFilter}
+                >
+                  <LockKeyhole size={17} color={themeColor("#9A5A00", "color")} />
+                  <Text style={styles.lockedExploreFilterText}>
+                    All prices · Upgrade to Plus to narrow by price
+                  </Text>
+                </Pressable>
+              )}
 
               <FilterToggle
                 label="Open Now"
@@ -3026,5 +3075,31 @@ const styles = createThemedStyleSheet({
     fontSize: 14,
     fontWeight: "900",
     color: "#FFFFFF",
+  },
+
+  filterChipLocked: {
+    borderColor: "#E8D3A7",
+    backgroundColor: "#FFF8E9",
+  },
+  filterChipTextLocked: {
+    color: "#9A5A00",
+  },
+  lockedExploreFilter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E8D3A7",
+    borderRadius: 14,
+    backgroundColor: "#FFF8E9",
+  },
+  lockedExploreFilterText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "800",
+    color: "#775F3B",
   },
 });

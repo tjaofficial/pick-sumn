@@ -14,6 +14,7 @@ import {
   ChevronUp,
   Copy,
   Crown,
+  LockKeyhole,
   LogOut,
   Pencil,
   Share2,
@@ -79,7 +80,7 @@ function memberName(member: DiningGroupMember): string {
     .filter(Boolean)
     .join(" ")
     .trim();
-  return member.nickname || fullName || member.user.display_name || member.user.email;
+  return member.nickname || fullName || member.user.display_name || "Pick Sum’N User";
 }
 
 function friendName(user: FriendUser): string {
@@ -87,7 +88,7 @@ function friendName(user: FriendUser): string {
     .filter(Boolean)
     .join(" ")
     .trim();
-  return fullName || user.display_name || user.email;
+  return fullName || user.display_name || "Pick Sum’N User";
 }
 
 export default function GroupDetailScreen() {
@@ -192,13 +193,36 @@ export default function GroupDetailScreen() {
     group.current_user_role === "owner" ||
     group.current_user_role === "admin";
 
+  const availableMemberSlots =
+    group.available_member_slots;
+
+  const groupLimitReached =
+    availableMemberSlots !== null
+    && availableMemberSlots <= 0;
+
   const joinLink = `https://picksumn.com/join/${encodeURIComponent(group.join_code)}`;
 
   function toggleFriend(userId: number) {
     setSelectedFriendIds((current) => {
       const next = new Set(current);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
+
+      if (next.has(userId)) {
+        next.delete(userId);
+        return next;
+      }
+
+      if (
+        availableMemberSlots !== null
+        && next.size >= availableMemberSlots
+      ) {
+        router.push({
+          pathname: "/settings/plus",
+          params: { source: "group-size" },
+        });
+        return next;
+      }
+
+      next.add(userId);
       return next;
     });
   }
@@ -306,7 +330,7 @@ export default function GroupDetailScreen() {
             {
               user: {
                 id: member.user.id,
-                email: member.user.email,
+                email: "",
                 display_name:
                   member.user.display_name,
                 first_name:
@@ -658,6 +682,27 @@ export default function GroupDetailScreen() {
 
             {inviteFriendsOpen && (
               <View style={styles.collapseBody}>
+                {group.member_limit !== null && (
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: "/settings/plus",
+                        params: { source: "group-size" },
+                      })
+                    }
+                    style={styles.groupLimitCard}
+                  >
+                    <LockKeyhole size={18} color={themeColor("#9A5A00", "color")} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.groupLimitTitle}>
+                        Free groups: 3 people total
+                      </Text>
+                      <Text style={styles.groupLimitText}>
+                        You can add 2 people besides the owner. {group.available_member_slots ?? 0} slot{(group.available_member_slots ?? 0) === 1 ? "" : "s"} remaining.
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
                 {availableFriends.length === 0 ? (
                   <Text style={styles.emptyText}>
                     All of your friends are already in this group.
@@ -665,11 +710,15 @@ export default function GroupDetailScreen() {
                 ) : (
                   availableFriends.map((friend) => {
                     const selected = selectedFriendIds.has(friend.user.id);
+                    const locked =
+                      !selected
+                      && availableMemberSlots !== null
+                      && selectedFriendIds.size >= availableMemberSlots;
                     return (
                       <Pressable
                         key={friend.friendship_id}
                         onPress={() => toggleFriend(friend.user.id)}
-                        style={styles.friendRow}
+                        style={[styles.friendRow, locked && styles.friendRowLocked]}
                       >
                         <Avatar
                           imageUrl={friend.user.avatar}
@@ -677,14 +726,18 @@ export default function GroupDetailScreen() {
                           size={42}
                         />
                         <Text style={styles.friendName}>{friendName(friend.user)}</Text>
-                        <View
-                          style={[
-                            styles.selectCircle,
-                            selected && styles.selectCircleSelected,
-                          ]}
-                        >
-                          {selected && <Check size={15} color={themeColor("#FFFFFF", "color")} />}
-                        </View>
+                        {locked ? (
+                          <LockKeyhole size={18} color={themeColor("#69707C", "color")} />
+                        ) : (
+                          <View
+                            style={[
+                              styles.selectCircle,
+                              selected && styles.selectCircleSelected,
+                            ]}
+                          >
+                            {selected && <Check size={15} color={themeColor("#FFFFFF", "color")} />}
+                          </View>
+                        )}
                       </Pressable>
                     );
                   })
@@ -1113,6 +1166,10 @@ const styles = createThemedStyleSheet({
   addButton: { minHeight: 47, alignItems: "center", justifyContent: "center", marginTop: 10, borderRadius: 14, backgroundColor: "#F3344A" },
   addButtonText: { color: "#FFFFFF", fontWeight: "900" },
   disabled: { opacity: 0.4 },
+  groupLimitCard: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, padding: 12, borderWidth: 1, borderColor: "#E8D3A7", borderRadius: 14, backgroundColor: "#FFF8E9" },
+  groupLimitTitle: { fontSize: 12, fontWeight: "900", color: "#7A4700" },
+  groupLimitText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: "#775F3B" },
+  friendRowLocked: { opacity: 0.55 },
   emptyText: { fontSize: 12, lineHeight: 18, color: "#69707C" },
   shareBody: { alignItems: "center", padding: 16, paddingTop: 4 },
   qrBox: { padding: 12, borderRadius: 18, backgroundColor: "#FFFFFF" },

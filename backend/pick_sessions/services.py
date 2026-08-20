@@ -113,15 +113,15 @@ def create_pick_session(
         decision_mode=decision_mode,
         search_radius_miles=overrides.get(
             "search_radius_miles",
-            profile.default_search_radius_miles,
+            10,
         ),
         price_min=overrides.get(
             "price_min",
-            profile.default_price_min,
+            1,
         ),
         price_max=overrides.get(
             "price_max",
-            profile.default_price_max,
+            4,
         ),
         exclude_recent_days=overrides.get(
             "exclude_recent_days",
@@ -135,6 +135,10 @@ def create_pick_session(
         ),
         open_now=overrides.get(
             "open_now",
+            True,
+        ),
+        gluten_free_filter_enabled=overrides.get(
+            "gluten_free_filter_enabled",
             True,
         ),
         # These legacy fields are derived from the session dining

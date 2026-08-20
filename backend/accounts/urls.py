@@ -2,10 +2,14 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
+    AppleSubscriptionAccountTokenView,
+    AppleSubscriptionSyncView,
+    AppleSubscriptionVerifyView,
     BlockedUserListView,
     BlockUserView,
     ChangePasswordView,
     CurrentAppSettingsView,
+    CurrentEntitlementsView,
     CurrentUserView,
     DeleteAccountView,
     FeedbackSubmissionView,
@@ -34,6 +38,7 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("me/", CurrentUserView.as_view(), name="current-user"),
+    path("entitlements/", CurrentEntitlementsView.as_view(), name="current-entitlements"),
     path(
         "push-tokens/",
         PushDeviceTokenView.as_view(),
@@ -83,6 +88,21 @@ urlpatterns = [
         "delete-account/",
         DeleteAccountView.as_view(),
         name="delete-account",
+    ),
+    path(
+        "subscriptions/apple/account-token/",
+        AppleSubscriptionAccountTokenView.as_view(),
+        name="apple-subscription-account-token",
+    ),
+    path(
+        "subscriptions/apple/verify/",
+        AppleSubscriptionVerifyView.as_view(),
+        name="apple-subscription-verify",
+    ),
+    path(
+        "subscriptions/apple/sync/",
+        AppleSubscriptionSyncView.as_view(),
+        name="apple-subscription-sync",
     ),
     path(
         "feedback/",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 from django.contrib.auth import get_user_model
@@ -464,9 +464,25 @@ def get_session_participant_preferences(
         .distinct()
     )
 
-    return [
+    snapshots = [
         _build_participant_snapshot(user)
         for user in participant_users
+    ]
+
+    if getattr(session, "gluten_free_filter_enabled", True):
+        return snapshots
+
+    return [
+        replace(
+            snapshot,
+            required_dietary_slugs=(
+                snapshot.required_dietary_slugs - {"gluten-free"}
+            ),
+            preferred_dietary_slugs=(
+                snapshot.preferred_dietary_slugs - {"gluten-free"}
+            ),
+        )
+        for snapshot in snapshots
     ]
 
 
@@ -2630,6 +2646,48 @@ def _has_hard_dining_style_requirement(
     )
 
 
+def _restaurant_matches_session_price(
+    restaurant: NearbyRestaurant,
+    session: PickSession,
+) -> bool:
+    price_min = int(
+        getattr(
+            session,
+            "price_min",
+            1,
+        )
+        or 1
+    )
+
+    price_max = int(
+        getattr(
+            session,
+            "price_max",
+            4,
+        )
+        or 4
+    )
+
+    # 1 through 4 is the broad/default state and does not narrow matching.
+    if price_min <= 1 and price_max >= 4:
+        return True
+
+    restaurant_price = PRICE_LEVEL_MAP.get(
+        restaurant.price_level
+    )
+
+    # When a user explicitly pays to narrow by price, unknown price data
+    # cannot safely be treated as a match.
+    if restaurant_price is None:
+        return False
+
+    return (
+        price_min
+        <= restaurant_price
+        <= price_max
+    )
+
+
 def score_restaurant_for_session(
     *,
     restaurant: NearbyRestaurant,
@@ -2641,6 +2699,12 @@ def score_restaurant_for_session(
     relax_soft_filters: bool = False,
 ) -> ScoredRestaurant | None:
     warnings: list[str] = []
+
+    if not _restaurant_matches_session_price(
+        restaurant,
+        session,
+    ):
+        return None
 
     style_match = (
         _restaurant_matches_selected_dining_styles(

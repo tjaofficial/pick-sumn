@@ -558,12 +558,12 @@ export default function ProfileScreen() {
                 color={themeColor("#F3344A", "color")}
               />
             }
-            title="Default Search Settings"
-            subtitle={`${profile.default_search_radius_miles} miles · Price ${"$".repeat(
-              profile.default_price_min,
-            )}–${"$".repeat(
-              profile.default_price_max,
-            )}`}
+            title="Matching Preferences"
+            subtitle={
+              profile.exclude_recent_days > 0
+                ? `Hide restaurants visited within ${profile.exclude_recent_days} days`
+                : "Recently visited restaurants are allowed"
+            }
             onPress={() =>
               router.push(
                 "/profile/edit",

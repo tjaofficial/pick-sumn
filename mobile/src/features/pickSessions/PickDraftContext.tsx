@@ -26,6 +26,10 @@ export type PickDraftLocation = {
 export type PickDraftSessionFilters = {
   diningStyleIds: number[];
   diningStyleNames: string[];
+  priceFilterEnabled: boolean;
+  priceMin: number;
+  priceMax: number;
+  glutenFreeMatchesOnly: boolean;
   openNow: boolean;
   somethingNew: boolean;
   cuisineIds: number[];
@@ -35,13 +39,7 @@ export type PickDraftSessionFilters = {
 export type PickDraft =
   PickDraftPeople
   & PickDraftLocation
-  & PickDraftSessionFilters
-  & {
-    // These remain in the payload for backend compatibility.
-    // They are no longer edited during session setup.
-    priceMin: number;
-    priceMax: number;
-  };
+  & PickDraftSessionFilters;
 
 type PickDraftContextValue = {
   draft: PickDraft;
@@ -79,6 +77,10 @@ const DEFAULT_SESSION_FILTERS:
   PickDraftSessionFilters = {
     diningStyleIds: [],
     diningStyleNames: [],
+    priceFilterEnabled: false,
+    priceMin: 1,
+    priceMax: 4,
+    glutenFreeMatchesOnly: true,
     openNow: true,
     somethingNew: false,
     cuisineIds: [],
@@ -89,8 +91,6 @@ export const DEFAULT_PICK_DRAFT: PickDraft = {
   ...DEFAULT_PEOPLE,
   ...DEFAULT_LOCATION,
   ...DEFAULT_SESSION_FILTERS,
-  priceMin: 1,
-  priceMax: 4,
 };
 
 const PickDraftContext =
@@ -113,6 +113,8 @@ export function PickDraftProvider({
       ...people,
       participantIds: [...people.participantIds],
       participantNames: [...people.participantNames],
+      filtersReviewed: false,
+      glutenFreeMatchesOnly: true,
     }));
   }
 

@@ -7,6 +7,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from .entitlements import get_user_entitlements
+
+from .apple_subscriptions import (
+    AppleSubscriptionError,
+    APPLE_PLUS_PRODUCT_IDS,
+    get_apple_app_account_token,
+    sync_existing_apple_subscription,
+    verify_new_apple_purchase,
+)
 from .models import (
     FriendRequestPrivacy,
     Friendship,
@@ -175,6 +184,19 @@ class CurrentUserView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class CurrentEntitlementsView(APIView):
+    permission_classes = (
+        permissions.IsAuthenticated,
+    )
+
+    def get(self, request):
+        return Response(
+            get_user_entitlements(
+                request.user
+            )
+        )
 
 
 class LogoutView(APIView):
@@ -1032,4 +1054,214 @@ class SignInMethodsView(APIView):
 
         return Response(
             serializer.data
+        )
+
+class AppleSubscriptionAccountTokenView(
+    APIView
+):
+    permission_classes = (
+        permissions.IsAuthenticated,
+    )
+
+    def get(self, request):
+        return Response(
+            {
+                "app_account_token":
+                    get_apple_app_account_token(
+                        request.user
+                    ),
+            }
+        )
+
+
+class AppleSubscriptionVerifyView(
+    APIView
+):
+    permission_classes = (
+        permissions.IsAuthenticated,
+    )
+
+    def post(self, request):
+        transaction_id = str(
+            request.data.get(
+                "transaction_id",
+                "",
+            )
+            or ""
+        ).strip()
+
+        product_id = str(
+            request.data.get(
+                "product_id",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if not transaction_id:
+            return Response(
+                {
+                    "detail":
+                        "transaction_id is required.",
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        if (
+            product_id
+            not in APPLE_PLUS_PRODUCT_IDS
+        ):
+            return Response(
+                {
+                    "detail":
+                        "Unknown Pick Sum'N Plus product.",
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        try:
+            verify_new_apple_purchase(
+                user=request.user,
+                transaction_id=(
+                    transaction_id
+                ),
+                expected_product_id=(
+                    product_id
+                ),
+            )
+        except AppleSubscriptionError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+        except Exception:
+            return Response(
+                {
+                    "detail": (
+                        "Apple subscription "
+                        "verification is temporarily "
+                        "unavailable."
+                    ),
+                },
+                status=(
+                    status.HTTP_503_SERVICE_UNAVAILABLE
+                ),
+            )
+
+        return Response(
+            {
+                "detail": (
+                    "Your Pick Sum'N Plus "
+                    "subscription is active."
+                ),
+                "entitlements":
+                    get_user_entitlements(
+                        request.user
+                    ),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AppleSubscriptionSyncView(
+    APIView
+):
+    permission_classes = (
+        permissions.IsAuthenticated,
+    )
+
+    def post(self, request):
+        if (
+            request.user
+            .subscription_provider
+            != "apple"
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "No Apple subscription "
+                        "is linked to this account."
+                    ),
+                    "entitlements":
+                        get_user_entitlements(
+                            request.user
+                        ),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            sync_existing_apple_subscription(
+                user=request.user,
+            )
+        except AppleSubscriptionError as exc:
+            # Never grant Plus on a failed verification.
+            #
+            # If Apple's latest transaction is expired/revoked,
+            # immediately move the user back to Free. If Apple is
+            # merely unreachable, the generic exception below keeps
+            # the locally stored entitlement until its saved expiry.
+            detail = str(exc)
+
+            if (
+                "expired" in detail.lower()
+                or "revoked" in detail.lower()
+            ):
+                request.user.subscription_tier = (
+                    "free"
+                )
+                request.user.subscription_status = (
+                    "expired"
+                )
+                request.user.save(
+                    update_fields=(
+                        "subscription_tier",
+                        "subscription_status",
+                    )
+                )
+
+            return Response(
+                {
+                    "detail": detail,
+                    "entitlements":
+                        get_user_entitlements(
+                            request.user
+                        ),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception:
+            return Response(
+                {
+                    "detail": (
+                        "Apple subscription status "
+                        "could not be refreshed."
+                    ),
+                    "entitlements":
+                        get_user_entitlements(
+                            request.user
+                        ),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {
+                "detail": (
+                    "Apple subscription status refreshed."
+                ),
+                "entitlements":
+                    get_user_entitlements(
+                        request.user
+                    ),
+            },
+            status=status.HTTP_200_OK,
         )

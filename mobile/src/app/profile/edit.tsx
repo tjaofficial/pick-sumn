@@ -77,9 +77,6 @@ export default function EditProfileScreen() {
   const [isSelectingLocation, setIsSelectingLocation] =
     useState(false);
 
-  const [radius, setRadius] = useState("10");
-  const [priceMin, setPriceMin] = useState("1");
-  const [priceMax, setPriceMax] = useState("3");
   const [excludeDays, setExcludeDays] = useState("7");
 
   const [isLoading, setIsLoading] = useState(true);
@@ -119,15 +116,6 @@ export default function EditProfileScreen() {
               ),
         );
 
-        setRadius(
-          String(result.default_search_radius_miles),
-        );
-        setPriceMin(
-          String(result.default_price_min),
-        );
-        setPriceMax(
-          String(result.default_price_max),
-        );
         setExcludeDays(
           String(result.exclude_recent_days),
         );
@@ -247,9 +235,6 @@ export default function EditProfileScreen() {
   }
 
   async function handleSave() {
-    const radiusNumber = Number(radius);
-    const minimumPrice = Number(priceMin);
-    const maximumPrice = Number(priceMax);
     const recentDays = Number(excludeDays);
 
     if (!displayName.trim()) {
@@ -271,26 +256,12 @@ export default function EditProfileScreen() {
     }
 
     if (
-      !Number.isInteger(radiusNumber)
-      || radiusNumber < 1
+      !Number.isInteger(recentDays)
+      || recentDays < 0
+      || recentDays > 365
     ) {
-      setError("Search radius must be at least 1 mile.");
-      return;
-    }
-
-    if (
-      minimumPrice < 1
-      || minimumPrice > 4
-      || maximumPrice < 1
-      || maximumPrice > 4
-    ) {
-      setError("Price values must be between 1 and 4.");
-      return;
-    }
-
-    if (minimumPrice > maximumPrice) {
       setError(
-        "Minimum price cannot be greater than maximum price.",
+        "Recently visited days must be between 0 and 365.",
       );
       return;
     }
@@ -316,9 +287,6 @@ export default function EditProfileScreen() {
             ? defaultLocationLongitude
             : null,
 
-        default_search_radius_miles: radiusNumber,
-        default_price_min: minimumPrice,
-        default_price_max: maximumPrice,
         exclude_recent_days: recentDays,
       });
 
@@ -568,50 +536,7 @@ export default function EditProfileScreen() {
           )}
 
           <Text style={styles.sectionTitle}>
-            Default Match Settings
-          </Text>
-
-          <Text style={styles.label}>
-            Search radius in miles
-          </Text>
-
-          <TextInput
-            value={radius}
-            onChangeText={setRadius}
-            keyboardType="number-pad"
-            style={styles.input}
-          />
-
-          <View style={styles.twoColumnRow}>
-            <View style={styles.column}>
-              <Text style={styles.label}>
-                Minimum price
-              </Text>
-
-              <TextInput
-                value={priceMin}
-                onChangeText={setPriceMin}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
-
-            <View style={styles.column}>
-              <Text style={styles.label}>
-                Maximum price
-              </Text>
-
-              <TextInput
-                value={priceMax}
-                onChangeText={setPriceMax}
-                keyboardType="number-pad"
-                style={styles.input}
-              />
-            </View>
-          </View>
-
-          <Text style={styles.helpText}>
-            Price levels range from 1 ($) to 4 ($$$$).
+            Matching Preferences
           </Text>
 
           <Text style={styles.label}>
