@@ -548,6 +548,14 @@ def privacy_policy(request):
 </p>
 
 <p>
+  You can also review account deletion
+  instructions or request deletion at
+  <a href="/delete-account">
+    picksumn.com/delete-account
+  </a>.
+</p>
+
+<p>
   When you request deletion, information
   associated with your account will be
   handled according to applicable legal,
@@ -910,6 +918,122 @@ def support(request):
   accommodations, or allergy information
   directly with the restaurant.
 </p>
+""",
+    )
+
+
+
+def delete_account(request):
+    return _page(
+        title="Delete Account - Pick Sum'N",
+        body="""
+<p class="brand">PICK SUM'N</p>
+
+<h1>Delete Your Account</h1>
+
+<p>
+  You can permanently delete your Pick Sum'N
+  account and associated account data.
+</p>
+
+<h2>Delete your account in the app</h2>
+
+<p>
+  If you still have access to Pick Sum'N,
+  open the app and use the account deletion
+  option in Settings.
+</p>
+
+<p>
+  Account deletion is permanent and cannot
+  be undone.
+</p>
+
+<h2>If you no longer have access to the app</h2>
+
+<p>
+  You can request account deletion by
+  contacting Pick Sum'N Support from the
+  email address associated with your account.
+</p>
+
+<div class="contact-box">
+  <h2>Request account deletion</h2>
+
+  <p>
+    Email:
+    <a href="mailto:aackerman@voxoluniverse.com">
+      aackerman@voxoluniverse.com
+    </a>
+  </p>
+
+  <p>
+    Include the words
+    <strong>Delete My Pick Sum'N Account</strong>
+    in the subject or message.
+  </p>
+
+  <p>
+    For account security, we may need to
+    verify that the request comes from the
+    account owner before completing deletion.
+  </p>
+</div>
+
+<h2>What is deleted</h2>
+
+<p>
+  When your Pick Sum'N account is deleted,
+  account-linked information is removed,
+  including data such as:
+</p>
+
+<ul>
+  <li>Account and profile information.</li>
+  <li>Food, cuisine, dietary, and dining preferences.</li>
+  <li>Friend and group relationships associated with your account.</li>
+  <li>Saved restaurants, Pick sessions, selections, votes, and other account-linked app activity.</li>
+  <li>Profile or group media associated with your account where applicable.</li>
+</ul>
+
+<h2>Information that may be retained</h2>
+
+<p>
+  Limited information may be retained when
+  required for legal, security, fraud
+  prevention, accounting, dispute resolution,
+  or other legitimate compliance purposes.
+</p>
+
+<p>
+  Information retained for those purposes is
+  kept only for as long as required or
+  reasonably necessary for the applicable
+  purpose.
+</p>
+
+<h2>Need help?</h2>
+
+<p>
+  If you have questions about account deletion
+  or your data, contact Pick Sum'N Support.
+</p>
+
+<div class="actions">
+  <a
+    class="button primary"
+    href="mailto:aackerman@voxoluniverse.com?subject=Delete%20My%20Pick%20Sum%27N%20Account"
+  >
+    Request Account Deletion
+  </a>
+
+  <a
+    class="button secondary"
+    href="/support"
+  >
+    Contact Support
+  </a>
+</div>
 """,
     )
 

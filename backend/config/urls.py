@@ -32,6 +32,12 @@ urlpatterns = [
     ),
 
     path(
+        "delete-account",
+        public_views.delete_account,
+        name="delete-account",
+    ),
+
+    path(
         "join/<str:join_code>",
         public_views.group_invite,
         name="public-group-invite",
