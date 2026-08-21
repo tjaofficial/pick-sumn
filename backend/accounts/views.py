@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
 from django.db.models import Q
@@ -9,6 +11,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .entitlements import get_user_entitlements
 
+from .apple_notifications import (
+    AppleNotificationError,
+    process_apple_server_notification,
+)
 from .apple_subscriptions import (
     AppleSubscriptionError,
     APPLE_PLUS_PRODUCT_IDS,
@@ -47,6 +53,7 @@ from .serializers import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def _send_friend_request_push(
@@ -1143,6 +1150,9 @@ class AppleSubscriptionVerifyView(
                 ),
             )
         except Exception:
+            logger.exception(
+                "Unexpected Apple subscription verification failure."
+            )
             return Response(
                 {
                     "detail": (
@@ -1167,6 +1177,97 @@ class AppleSubscriptionVerifyView(
                         request.user
                     ),
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AppleSubscriptionNotificationView(
+    APIView
+):
+    # Apple, not a signed-in Pick Sum'N user, calls this endpoint.
+    authentication_classes = ()
+    permission_classes = (
+        permissions.AllowAny,
+    )
+
+    def post(self, request):
+        signed_payload = str(
+            request.data.get(
+                "signedPayload",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if not signed_payload:
+            return Response(
+                {
+                    "detail":
+                        "signedPayload is required.",
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        try:
+            result = (
+                process_apple_server_notification(
+                    signed_payload
+                )
+            )
+        except AppleNotificationError as exc:
+            logger.warning(
+                "Rejected Apple server notification: %s",
+                exc,
+            )
+            return Response(
+                {
+                    "detail": (
+                        "Apple notification could "
+                        "not be verified."
+                    )
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+        except AppleSubscriptionError as exc:
+            # Configuration or verifier setup failure. Return 503 so
+            # Apple can retry instead of permanently losing the event.
+            logger.exception(
+                "Apple notification processing is unavailable: %s",
+                exc,
+            )
+            return Response(
+                {
+                    "detail": (
+                        "Apple notification processing "
+                        "is temporarily unavailable."
+                    )
+                },
+                status=(
+                    status.HTTP_503_SERVICE_UNAVAILABLE
+                ),
+            )
+        except Exception:
+            logger.exception(
+                "Unexpected Apple server notification failure."
+            )
+            return Response(
+                {
+                    "detail": (
+                        "Apple notification processing "
+                        "is temporarily unavailable."
+                    )
+                },
+                status=(
+                    status.HTTP_503_SERVICE_UNAVAILABLE
+                ),
+            )
+
+        return Response(
+            result,
             status=status.HTTP_200_OK,
         )
 
@@ -1239,6 +1340,9 @@ class AppleSubscriptionSyncView(
                 status=status.HTTP_200_OK,
             )
         except Exception:
+            logger.exception(
+                "Unexpected Apple subscription sync failure."
+            )
             return Response(
                 {
                     "detail": (

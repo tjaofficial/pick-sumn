@@ -127,6 +127,9 @@ class User(AbstractUser):
         blank=True,
         default="",
     )
+    subscription_last_notification_signed_at = models.BigIntegerField(
+        default=0,
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

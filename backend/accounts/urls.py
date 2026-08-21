@@ -3,6 +3,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .views import (
     AppleSubscriptionAccountTokenView,
+    AppleSubscriptionNotificationView,
     AppleSubscriptionSyncView,
     AppleSubscriptionVerifyView,
     BlockedUserListView,
@@ -103,6 +104,11 @@ urlpatterns = [
         "subscriptions/apple/sync/",
         AppleSubscriptionSyncView.as_view(),
         name="apple-subscription-sync",
+    ),
+    path(
+        "subscriptions/apple/notifications/",
+        AppleSubscriptionNotificationView.as_view(),
+        name="apple-subscription-notifications",
     ),
     path(
         "feedback/",

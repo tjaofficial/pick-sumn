@@ -3,11 +3,11 @@ from __future__ import annotations
 import base64
 import os
 import uuid
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime, timezone as dt_timezone
 from typing import Any
 
-import jwt
 from appstoreserverlibrary.api_client import (
     APIException,
     AppStoreServerAPIClient,
@@ -15,6 +15,10 @@ from appstoreserverlibrary.api_client import (
 )
 from appstoreserverlibrary.models.Environment import (
     Environment,
+)
+from appstoreserverlibrary.signed_data_verifier import (
+    SignedDataVerifier,
+    VerificationException,
 )
 from appstoreserverlibrary.models.TransactionHistoryRequest import (
     Order,
@@ -30,6 +34,13 @@ from .models import (
 
 
 APPLE_BUNDLE_ID = "com.picksumn.app"
+APPLE_APP_ID = 6794431236
+
+_APPLE_ROOT_CERTIFICATE_NAMES = (
+    "AppleIncRootCertificate.cer",
+    "AppleRootCA-G2.cer",
+    "AppleRootCA-G3.cer",
+)
 
 APPLE_PLUS_MONTHLY_PRODUCT_ID = (
     "com.picksumn.app.plus.monthly"
@@ -154,38 +165,138 @@ def _client(
     )
 
 
-def _decode_apple_server_jws(
+
+def _get_apple_app_id() -> int:
+    raw = os.environ.get(
+        "APPLE_IAP_APP_APPLE_ID",
+        str(APPLE_APP_ID),
+    ).strip()
+
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise AppleSubscriptionError(
+            "APPLE_IAP_APP_APPLE_ID must be a numeric App Store app ID."
+        ) from exc
+
+
+def _load_apple_root_certificates() -> list[bytes]:
+    cert_dir = (
+        Path(__file__).resolve().parent
+        / "apple_root_certs"
+    )
+
+    certificates = []
+    missing = []
+
+    for name in _APPLE_ROOT_CERTIFICATE_NAMES:
+        path = cert_dir / name
+
+        if not path.exists():
+            missing.append(name)
+            continue
+
+        data = path.read_bytes()
+
+        if not data:
+            raise AppleSubscriptionError(
+                f"Apple root certificate {name} is empty."
+            )
+
+        certificates.append(data)
+
+    if missing:
+        raise AppleSubscriptionError(
+            (
+                "Apple root certificates are missing: "
+                + ", ".join(missing)
+                + ". Run backend/scripts/"
+                "download_apple_root_certs.py and deploy "
+                "the generated certificate files."
+            )
+        )
+
+    return certificates
+
+
+def _verifier(
+    environment: Environment,
+) -> SignedDataVerifier:
+    configured_bundle_id = (
+        os.environ.get(
+            "APPLE_IAP_BUNDLE_ID",
+            APPLE_BUNDLE_ID,
+        ).strip()
+        or APPLE_BUNDLE_ID
+    )
+
+    app_apple_id = (
+        _get_apple_app_id()
+        if environment == Environment.PRODUCTION
+        else None
+    )
+
+    return SignedDataVerifier(
+        _load_apple_root_certificates(),
+        True,
+        environment,
+        configured_bundle_id,
+        app_apple_id,
+    )
+
+
+def _transaction_object_to_payload(
+    transaction,
+) -> dict[str, Any]:
+    fields = (
+        "transactionId",
+        "originalTransactionId",
+        "bundleId",
+        "productId",
+        "appAccountToken",
+        "expiresDate",
+        "revocationDate",
+    )
+
+    return {
+        field: getattr(
+            transaction,
+            field,
+            None,
+        )
+        for field in fields
+    }
+
+
+def _verify_apple_server_transaction_jws(
     signed_transaction: str,
+    environment: Environment,
 ) -> dict[str, Any]:
     """
-    Decode ONLY a JWS returned directly by Apple's authenticated
-    App Store Server API.
+    Cryptographically verify a transaction JWS returned by Apple.
 
-    We intentionally do not decode the client-supplied purchaseToken.
-    The transaction ID from the client is first resolved by Apple over
-    authenticated HTTPS, then this function inspects Apple's response.
+    Verification checks Apple's certificate chain, bundle identifier,
+    environment, and (in production) App Store app ID using Apple's
+    official App Store Server Library.
     """
 
     try:
-        payload = jwt.decode(
-            signed_transaction,
-            options={
-                "verify_signature": False,
-                "verify_aud": False,
-            },
-            algorithms=["ES256"],
+        transaction = (
+            _verifier(
+                environment
+            )
+            .verify_and_decode_signed_transaction(
+                signed_transaction
+            )
         )
-    except Exception as exc:
+    except VerificationException as exc:
         raise AppleSubscriptionError(
-            "Apple returned an unreadable transaction."
+            "Apple returned a transaction that could not be verified."
         ) from exc
 
-    if not isinstance(payload, dict):
-        raise AppleSubscriptionError(
-            "Apple returned an invalid transaction payload."
-        )
-
-    return payload
+    return _transaction_object_to_payload(
+        transaction
+    )
 
 
 def _get_transaction_from_apple(
@@ -220,8 +331,9 @@ def _get_transaction_from_apple(
 
             return (
                 environment,
-                _decode_apple_server_jws(
-                    signed
+                _verify_apple_server_transaction_jws(
+                    signed,
+                    environment,
                 ),
             )
         except APIException as exc:
@@ -276,8 +388,9 @@ def _get_latest_transaction_history(
             or []
         ):
             payload = (
-                _decode_apple_server_jws(
-                    signed
+                _verify_apple_server_transaction_jws(
+                    signed,
+                    environment,
                 )
             )
 
