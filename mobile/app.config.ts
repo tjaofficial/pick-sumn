@@ -160,6 +160,9 @@ export default ({
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
       ],
+      blockedPermissions: [
+        "com.google.android.gms.permission.AD_ID",
+      ],
       adaptiveIcon: {
         backgroundColor: "#E6F4FE",
         foregroundImage:
