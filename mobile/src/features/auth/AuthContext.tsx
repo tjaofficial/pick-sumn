@@ -121,21 +121,22 @@ export function AuthProvider({
           return;
         }
 
-        const currentUser =
-          await getCurrentUser();
-
         const {
           capability,
           biometricUserId,
-        } = await loadBiometricState(
-          currentUser.id,
-        );
+        } = await loadBiometricState();
 
-        const shouldUnlock =
-          capability.available
-          && biometricUserId === currentUser.id;
+        /*
+         * If biometric unlock was enabled for the saved session,
+         * authenticate before using that session to make an API
+         * request. Never silently bypass the biometric gate just
+         * because biometrics became unavailable on the device.
+         */
+        if (biometricUserId !== null) {
+          if (!capability.available) {
+            return;
+          }
 
-        if (shouldUnlock) {
           const unlocked =
             await authenticateWithDevice(
               capability.label,
@@ -144,6 +145,30 @@ export function AuthProvider({
           if (!unlocked) {
             return;
           }
+        }
+
+        const currentUser =
+          await getCurrentUser();
+
+        /*
+         * The biometric preference is tied to one Pick Sum'N user.
+         * If the saved token belongs to a different account, clear
+         * the stale biometric preference rather than carrying it
+         * across accounts.
+         */
+        if (
+          biometricUserId !== null
+          && biometricUserId !== currentUser.id
+        ) {
+          await disableBiometricUnlock();
+
+          setBiometricEnabledState(
+            false,
+          );
+        } else {
+          await loadBiometricState(
+            currentUser.id,
+          );
         }
 
         setUser(
@@ -222,8 +247,15 @@ export function AuthProvider({
   async function logout() {
     await logoutRequest();
 
+    /*
+     * Explicit logout ends the trusted saved-session relationship.
+     * A future login must opt in to biometric unlock again.
+     */
+    await disableBiometricUnlock();
+
     setUser(null);
     setHasStoredSession(false);
+    setBiometricEnabledState(false);
   }
 
   async function refreshUser() {
@@ -258,23 +290,22 @@ export function AuthProvider({
     setHasStoredSession(true);
 
     try {
-      const currentUser =
-        await getCurrentUser();
-
       const {
         capability,
         biometricUserId,
-      } = await loadBiometricState(
-        currentUser.id,
-      );
+      } = await loadBiometricState();
 
       if (
         !capability.available
-        || biometricUserId !== currentUser.id
+        || biometricUserId === null
       ) {
         return false;
       }
 
+      /*
+       * Authenticate before using the saved access token to identify
+       * or load the user.
+       */
       const unlocked =
         await authenticateWithDevice(
           capability.label,
@@ -283,6 +314,25 @@ export function AuthProvider({
       if (!unlocked) {
         return false;
       }
+
+      const currentUser =
+        await getCurrentUser();
+
+      if (
+        biometricUserId !== currentUser.id
+      ) {
+        await disableBiometricUnlock();
+
+        setBiometricEnabledState(
+          false,
+        );
+
+        return false;
+      }
+
+      await loadBiometricState(
+        currentUser.id,
+      );
 
       setUser(
         currentUser,

@@ -111,6 +111,10 @@ def create_pick_session(
         group=group,
         title=title,
         decision_mode=decision_mode,
+        match_variety=overrides.get(
+            "match_variety",
+            "balanced",
+        ),
         search_radius_miles=overrides.get(
             "search_radius_miles",
             10,

@@ -31,6 +31,17 @@ class DecisionMode(models.TextChoices):
     ELIMINATION = "elimination", "Elimination Mode"
 
 
+class MatchVariety(models.TextChoices):
+    BALANCED = (
+        "balanced",
+        "Balanced Mix",
+    )
+    BEST = (
+        "best",
+        "Best Matches",
+    )
+
+
 class SelectionMethod(models.TextChoices):
     RANKED_MANUAL = (
         "ranked_manual",
@@ -110,6 +121,16 @@ class PickSession(models.Model):
         max_length=30,
         choices=DecisionMode.choices,
         default=DecisionMode.RANKED,
+    )
+
+    match_variety = models.CharField(
+        max_length=20,
+        choices=MatchVariety.choices,
+        default=MatchVariety.BALANCED,
+        help_text=(
+            "Controls whether ranked results stay in pure score order "
+            "or use a quality-preserving cuisine mix."
+        ),
     )
 
     latitude = models.DecimalField(

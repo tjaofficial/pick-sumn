@@ -7,12 +7,13 @@ import {
   HeartHandshake,
   LockKeyhole,
   MapPinned,
+  ExternalLink,
   SearchCheck,
   SlidersHorizontal,
   Users,
   UtensilsCrossed,
 } from "lucide-react-native";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { usePlus } from "@/features/plus/PlusContext";
@@ -81,6 +82,32 @@ export default function PlusScreen() {
               ? "Free accounts can save up to 5 restaurants."
               : "";
 
+  async function manageSubscription() {
+    if (Platform.OS !== "ios") {
+      Alert.alert(
+        "Subscription management",
+        "Google Play subscription management will be added with Android billing.",
+      );
+      return;
+    }
+
+    try {
+      const url = "https://apps.apple.com/account/subscriptions";
+      const supported = await Linking.canOpenURL(url);
+
+      if (!supported) {
+        throw new Error("Subscription settings are unavailable.");
+      }
+
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert(
+        "Unable to open subscriptions",
+        "Open the App Store, tap your profile, then choose Subscriptions to manage Pick Sum’N Plus.",
+      );
+    }
+  }
+
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]}>
       <View style={[styles.topBar, { borderBottomColor: colors.border }]}>
@@ -126,15 +153,25 @@ export default function PlusScreen() {
         ))}
 
         {isPlus ? (
-          <View style={styles.activeCard}>
-            <Crown size={24} color={themeColor("#168B4F", "color")} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.activeTitle}>Plus is active</Text>
-              <Text style={styles.activeText}>
-                Extended radius up to {entitlements.max_search_radius_miles} miles, unlimited favorites, and premium filters are unlocked.
-              </Text>
+          <>
+            <View style={styles.activeCard}>
+              <Crown size={24} color={themeColor("#168B4F", "color")} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.activeTitle}>Plus is active</Text>
+                <Text style={styles.activeText}>
+                  Extended radius up to {entitlements.max_search_radius_miles} miles, unlimited favorites, and premium filters are unlocked.
+                </Text>
+              </View>
             </View>
-          </View>
+
+            <Pressable
+              onPress={() => void manageSubscription()}
+              style={styles.manageButton}
+            >
+              <ExternalLink size={18} color={themeColor("#07111F", "color")} />
+              <Text style={styles.manageButtonText}>Manage Subscription</Text>
+            </Pressable>
+          </>
         ) : (
           <Pressable onPress={() => router.push("/settings/plus-payment")} style={styles.upgradeButton}>
             <Crown size={21} color={themeColor("#FFFFFF", "color")} />
@@ -173,5 +210,7 @@ const styles = createThemedStyleSheet({
   activeCard: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 22, padding: 17, borderWidth: 1, borderColor: "#B8E1C9", borderRadius: 18, backgroundColor: "#EFFAF3" },
   activeTitle: { fontSize: 15, fontWeight: "900", color: "#116A3D" },
   activeText: { marginTop: 3, fontSize: 11, lineHeight: 16, color: "#3B7656" },
+  manageButton: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 10, borderWidth: 1, borderColor: "#D9DDE3", borderRadius: 16, backgroundColor: "#FFFFFF" },
+  manageButtonText: { fontSize: 13, fontWeight: "900", color: "#07111F" },
   finePrint: { marginTop: 13, fontSize: 10, lineHeight: 15, color: "#7A808A", textAlign: "center" },
 });

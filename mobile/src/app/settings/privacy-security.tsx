@@ -218,12 +218,12 @@ export default function PrivacySecurityScreen() {
   const biometricSubtitle =
     biometricAvailable
       ? (
-          `Use ${biometricLabel} to unlock Pick Sum’N `
-          + "when you already have a saved session"
+          `Require ${biometricLabel} before restoring `
+          + "your saved Pick Sum’N session"
         )
       : (
           "Set up Face ID, Touch ID, or fingerprint "
-          + "in your phone settings to use quick unlock"
+          + "in your phone settings to protect saved-session unlock"
         );
 
   return (

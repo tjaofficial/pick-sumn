@@ -40,6 +40,7 @@ from .matching import (
     get_session_preferred_dining_style_slugs,
     get_session_requested_dietary_slugs,
     score_and_sort_restaurants,
+    choose_surprise_match,
 )
 from .models import (
     DecisionMode,
@@ -90,7 +91,7 @@ ACTIVE_SESSION_STATUSES = (
 )
 
 MATCH_SEARCH_CACHE_SECONDS = 30 * 60
-MATCH_SEARCH_CACHE_VERSION = "v11-phase-1-1-filters"
+MATCH_SEARCH_CACHE_VERSION = "v12-full-qualified-match-pool"
 
 EXPLORE_CACHE_SECONDS = 15 * 60
 EXPLORE_MAX_CANDIDATES = 60
@@ -408,6 +409,7 @@ def _get_enriched_session_restaurants(
                 merged_restaurants
             ),
             session=session,
+            apply_variety=False,
         )
     )
 
@@ -428,41 +430,31 @@ def _get_enriched_session_restaurants(
         >= MATCH_MIN_SCORE
     ]
 
-    ninety_plus = [
-        item
-        for item in strong_matches
-        if item.match_score >= 90
-    ]
-
     eighty_five_plus = [
         item
-        for item in strong_matches
+        for item in preliminary_scored
         if item.match_score >= 85
     ]
 
-    if len(strong_matches) >= 20:
-        if len(ninety_plus) >= 20:
-            selected_matches = (
-                ninety_plus
-            )
+    ninety_plus = [
+        item
+        for item in preliminary_scored
+        if item.match_score >= 90
+    ]
 
-        elif len(eighty_five_plus) >= 20:
-            selected_matches = (
-                eighty_five_plus
-            )
-
-        else:
-            selected_matches = (
-                strong_matches
-            )
-
-    else:
-        selected_matches = (
-            strong_matches
-        )
-
+    # Match score determines order, not basic eligibility.
+    #
+    # The scorer has already removed restaurants that violate hard
+    # session constraints (price, hard dining-style requirements,
+    # a participant's "Never" cuisine, etc.). Keeping only 80+ here
+    # caused otherwise valid nearby restaurants to disappear entirely,
+    # especially when only a handful crossed the arbitrary threshold.
+    #
+    # Preserve the full ranked qualified pool up to the existing
+    # MATCH_MAX_RESULTS cap. The Matches endpoint still paginates
+    # 20 at a time, and Balanced Mix is applied later after enrichment.
     selected_matches = (
-        selected_matches[
+        preliminary_scored[
             :MATCH_MAX_RESULTS
         ]
     )
@@ -470,12 +462,14 @@ def _get_enriched_session_restaurants(
     logger.warning(
         (
             "[PICK-PERF] session=%s "
+            "qualified_total=%s "
             "strong_80_plus=%s "
             "strong_85_plus=%s "
             "strong_90_plus=%s "
             "selected_pool=%s"
         ),
         session.pk,
+        len(preliminary_scored),
         len(strong_matches),
         len(eighty_five_plus),
         len(ninety_plus),
@@ -1895,6 +1889,25 @@ class PickSessionViewSet(viewsets.ModelViewSet):
             )
         )
 
+        if (
+            session.decision_mode
+            == DecisionMode.PICK_FOR_US
+        ):
+            surprise_match = (
+                choose_surprise_match(
+                    scored_restaurants=(
+                        scored_restaurants
+                    ),
+                    session=session,
+                )
+            )
+
+            scored_restaurants = (
+                [surprise_match]
+                if surprise_match is not None
+                else []
+            )
+
         total_matches = len(
             scored_restaurants
         )
@@ -2068,6 +2081,9 @@ class PickSessionViewSet(viewsets.ModelViewSet):
                     ),
                     "decision_mode": (
                         session.decision_mode
+                    ),
+                    "match_variety": (
+                        session.match_variety
                     ),
                     "location_label": (
                         session.location_label

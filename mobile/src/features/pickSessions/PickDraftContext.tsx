@@ -8,6 +8,10 @@ import type {
   PropsWithChildren,
 } from "react";
 
+import type {
+  MatchVariety,
+} from "./types";
+
 export type PickDraftPeople = {
   groupId: string | null;
   groupName: string;
@@ -24,6 +28,7 @@ export type PickDraftLocation = {
 };
 
 export type PickDraftSessionFilters = {
+  matchVariety: MatchVariety;
   diningStyleIds: number[];
   diningStyleNames: string[];
   priceFilterEnabled: boolean;
@@ -75,6 +80,7 @@ const DEFAULT_LOCATION: PickDraftLocation = {
 
 const DEFAULT_SESSION_FILTERS:
   PickDraftSessionFilters = {
+    matchVariety: "balanced",
     diningStyleIds: [],
     diningStyleNames: [],
     priceFilterEnabled: false,

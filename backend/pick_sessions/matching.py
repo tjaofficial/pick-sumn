@@ -16,6 +16,7 @@ from preferences.models import (
 from .google_places import NearbyRestaurant
 from .models import (
     PickSession,
+    MatchVariety,
     DietaryReportModerationStatus,
     RestaurantDietaryProfile,
     RestaurantDietaryReport,
@@ -2986,12 +2987,365 @@ def score_restaurant_for_session(
         ),
     )
 
+
+BALANCED_MATCH_SCORE_WINDOW = 6
+BALANCED_DIETARY_SCORE_WINDOW = 10
+BALANCED_REPEAT_PENALTY = 2.5
+SURPRISE_MIN_MATCH_SCORE = 80
+
+
+def _get_variety_cuisine_bucket(
+    *,
+    restaurant: NearbyRestaurant,
+    preferred_cuisine_slugs: list[str],
+) -> str:
+    """
+    Choose one representative cuisine bucket for result diversity.
+
+    Restaurants can have several cuisine classifications. Prefer the
+    cuisine the group actually ranks highest so a sushi restaurant can,
+    for example, count as Japanese rather than an arbitrary Google type.
+    """
+
+    restaurant_cuisines = (
+        _get_restaurant_cuisine_slugs(
+            restaurant
+        )
+    )
+
+    for cuisine_slug in preferred_cuisine_slugs:
+        if cuisine_slug in restaurant_cuisines:
+            return cuisine_slug
+
+    if restaurant_cuisines:
+        return sorted(
+            restaurant_cuisines
+        )[0]
+
+    return "other"
+
+
+def _apply_balanced_match_variety(
+    *,
+    scored_restaurants: list[ScoredRestaurant],
+    session: PickSession,
+    has_required_dietary: bool,
+) -> list[ScoredRestaurant]:
+    """
+    Reorder only strong, near-equivalent matches to improve cuisine variety.
+
+    The pure scorer remains authoritative. The strongest remaining match is
+    the anchor for each position, and only candidates within a small score
+    window may move ahead of it. Required-dietary priority tiers are never
+    crossed.
+    """
+
+    if (
+        len(scored_restaurants) <= 2
+        or getattr(
+            session,
+            "match_variety",
+            MatchVariety.BALANCED,
+        )
+        == MatchVariety.BEST
+    ):
+        return scored_restaurants
+
+    preferred_cuisine_slugs = (
+        get_session_preferred_cuisine_slugs(
+            session
+        )
+    )
+
+    cuisine_counts: dict[str, int] = {}
+    result: list[ScoredRestaurant] = []
+
+    tiers = sorted(
+        {
+            item.dietary_priority_tier
+            for item in scored_restaurants
+        }
+    )
+
+    for tier in tiers:
+        remaining = [
+            item
+            for item in scored_restaurants
+            if item.dietary_priority_tier
+            == tier
+        ]
+
+        while remaining:
+            anchor = remaining[0]
+
+            eligible = [
+                item
+                for item in remaining
+                if (
+                    item.match_score
+                    >= (
+                        anchor.match_score
+                        - BALANCED_MATCH_SCORE_WINDOW
+                    )
+                    and (
+                        not has_required_dietary
+                        or item.dietary_priority_score
+                        >= (
+                            anchor.dietary_priority_score
+                            - BALANCED_DIETARY_SCORE_WINDOW
+                        )
+                    )
+                )
+            ]
+
+            # Preserve the true strongest match at the start of the list.
+            if not result:
+                chosen = anchor
+            else:
+                indexed = {
+                    id(item): index
+                    for index, item
+                    in enumerate(remaining)
+                }
+
+                def balanced_key(
+                    item: ScoredRestaurant,
+                ) -> tuple[float, int]:
+                    bucket = (
+                        _get_variety_cuisine_bucket(
+                            restaurant=item.restaurant,
+                            preferred_cuisine_slugs=(
+                                preferred_cuisine_slugs
+                            ),
+                        )
+                    )
+
+                    repeat_penalty = (
+                        cuisine_counts.get(
+                            bucket,
+                            0,
+                        )
+                        * BALANCED_REPEAT_PENALTY
+                    )
+
+                    dietary_bonus = (
+                        item.dietary_priority_score
+                        * 0.05
+                        if has_required_dietary
+                        else 0.0
+                    )
+
+                    adjusted_quality = (
+                        item.match_score
+                        + dietary_bonus
+                        - repeat_penalty
+                    )
+
+                    return (
+                        adjusted_quality,
+                        -indexed[id(item)],
+                    )
+
+                chosen = max(
+                    eligible,
+                    key=balanced_key,
+                )
+
+            bucket = (
+                _get_variety_cuisine_bucket(
+                    restaurant=chosen.restaurant,
+                    preferred_cuisine_slugs=(
+                        preferred_cuisine_slugs
+                    ),
+                )
+            )
+
+            cuisine_counts[bucket] = (
+                cuisine_counts.get(
+                    bucket,
+                    0,
+                )
+                + 1
+            )
+
+            result.append(
+                chosen
+            )
+            remaining.remove(
+                chosen
+            )
+
+    return result
+
+
+def choose_surprise_match(
+    *,
+    scored_restaurants: list[ScoredRestaurant],
+    session: PickSession,
+) -> ScoredRestaurant | None:
+    """
+    Pick one stable, quality-weighted surprise from the full qualified pool.
+
+    Cuisine is chosen first, then a restaurant within that cuisine. This keeps
+    a cuisine with many listings from winning merely because it has more rows.
+    The PRNG is seeded by session ID, so refreshing the same session does not
+    reroll the answer.
+    """
+
+    if not scored_restaurants:
+        return None
+
+    qualified = [
+        item
+        for item in scored_restaurants
+        if item.match_score
+        >= SURPRISE_MIN_MATCH_SCORE
+    ]
+
+    if not qualified:
+        qualified = list(
+            scored_restaurants
+        )
+
+    required_dietary_slugs, _ = (
+        get_session_dietary_requirements(
+            session
+        )
+    )
+
+    if required_dietary_slugs:
+        best_tier = min(
+            item.dietary_priority_tier
+            for item in qualified
+        )
+
+        qualified = [
+            item
+            for item in qualified
+            if item.dietary_priority_tier
+            == best_tier
+        ]
+
+        if qualified:
+            best_dietary_score = max(
+                item.dietary_priority_score
+                for item in qualified
+            )
+
+            qualified = [
+                item
+                for item in qualified
+                if item.dietary_priority_score
+                >= (
+                    best_dietary_score
+                    - BALANCED_DIETARY_SCORE_WINDOW
+                )
+            ]
+
+    preferred_cuisine_slugs = (
+        get_session_preferred_cuisine_slugs(
+            session
+        )
+    )
+
+    cuisine_groups: dict[
+        str,
+        list[ScoredRestaurant],
+    ] = {}
+
+    for item in qualified:
+        bucket = (
+            _get_variety_cuisine_bucket(
+                restaurant=item.restaurant,
+                preferred_cuisine_slugs=(
+                    preferred_cuisine_slugs
+                ),
+            )
+        )
+
+        cuisine_groups.setdefault(
+            bucket,
+            [],
+        ).append(
+            item
+        )
+
+    if not cuisine_groups:
+        return qualified[0]
+
+    import random
+
+    rng = random.Random(
+        f"pick-sumn-surprise:{session.id}"
+    )
+
+    cuisine_names = list(
+        cuisine_groups.keys()
+    )
+
+    cuisine_weights = []
+
+    for cuisine_name in cuisine_names:
+        best_score = max(
+            item.match_score
+            for item
+            in cuisine_groups[cuisine_name]
+        )
+
+        # Higher-scoring cuisines are more likely, but every qualified
+        # cuisine keeps a real chance.
+        cuisine_weights.append(
+            max(
+                1.0,
+                float(
+                    best_score
+                    - SURPRISE_MIN_MATCH_SCORE
+                    + 4
+                )
+                ** 2,
+            )
+        )
+
+    chosen_cuisine = rng.choices(
+        cuisine_names,
+        weights=cuisine_weights,
+        k=1,
+    )[0]
+
+    restaurant_options = (
+        cuisine_groups[
+            chosen_cuisine
+        ]
+    )
+
+    restaurant_weights = [
+        max(
+            1.0,
+            float(
+                item.match_score
+                - SURPRISE_MIN_MATCH_SCORE
+                + 4
+            )
+            ** 2,
+        )
+        for item
+        in restaurant_options
+    ]
+
+    return rng.choices(
+        restaurant_options,
+        weights=restaurant_weights,
+        k=1,
+    )[0]
+
+
 def score_and_sort_restaurants(
     *,
     restaurants: list[
         NearbyRestaurant
     ],
     session: PickSession,
+    apply_variety: bool = True,
 ) -> list[ScoredRestaurant]:
     participants = (
         get_session_participant_preferences(
@@ -3106,4 +3460,15 @@ def score_and_sort_restaurants(
             )
         )
 
-    return scored_restaurants
+    if not apply_variety:
+        return scored_restaurants
+
+    return _apply_balanced_match_variety(
+        scored_restaurants=(
+            scored_restaurants
+        ),
+        session=session,
+        has_required_dietary=bool(
+            required_dietary_slugs
+        ),
+    )

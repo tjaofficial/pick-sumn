@@ -4,8 +4,10 @@ import {
   Check,
   Clock3,
   DollarSign,
+  ListOrdered,
   LockKeyhole,
   ShieldCheck,
+  Shuffle,
   Sparkles,
   UtensilsCrossed,
 } from "lucide-react-native";
@@ -22,6 +24,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getPreferenceOptions } from "@/features/preferences/preferencesService";
 import type { DiningStyleOption } from "@/features/preferences/types";
+import type { MatchVariety } from "@/features/pickSessions/types";
 import { usePickDraft } from "@/features/pickSessions/PickDraftContext";
 import { getSessionDietaryPreview } from "@/features/pickSessions/pickSessionsService";
 import { usePlus } from "@/features/plus/PlusContext";
@@ -85,6 +88,9 @@ export default function PickFiltersScreen() {
   const { isPlus } = usePlus();
 
   const [diningStyles, setDiningStyles] = useState<DiningStyleOption[]>([]);
+  const [matchVariety, setMatchVariety] = useState<MatchVariety>(
+    draft.matchVariety,
+  );
   const [diningStyleEnabled, setDiningStyleEnabled] = useState(
     isPlus && draft.diningStyleIds.length > 0,
   );
@@ -173,13 +179,28 @@ export default function PickFiltersScreen() {
       openUpgrade("dining-style");
       return;
     }
+
     setSelectedDiningStyleIds((current) => {
       const next = new Set(current);
       const selected = choice.ids.some((id) => next.has(id));
+
       for (const id of choice.ids) {
         if (selected) next.delete(id);
         else next.add(id);
       }
+
+      const allActiveStyleIds = diningStyles.map((style) => style.id);
+
+      const everyDiningStyleSelected =
+        allActiveStyleIds.length > 0
+        && allActiveStyleIds.every((id) => next.has(id));
+
+      // Selecting every individual style is the same as "All".
+      // Empty is the canonical representation for all dining styles.
+      if (everyDiningStyleSelected) {
+        return new Set<number>();
+      }
+
       return next;
     });
   }
@@ -215,13 +236,26 @@ export default function PickFiltersScreen() {
   }
 
   function handleSave() {
+    const selectedIds =
+      isPlus && diningStyleEnabled
+        ? [...selectedDiningStyleIds]
+        : [];
+
+    const allActiveStyleIds = diningStyles.map((style) => style.id);
+
+    const everyDiningStyleSelected =
+      allActiveStyleIds.length > 0
+      && allActiveStyleIds.every((id) => selectedIds.includes(id));
+
     const effectiveDiningStyleIds =
-      isPlus && diningStyleEnabled ? [...selectedDiningStyleIds] : [];
+      everyDiningStyleSelected ? [] : selectedIds;
+
     const selectedChoices = choices.filter((choice) =>
       effectiveDiningStyleIds.some((id) => choice.ids.includes(id)),
     );
 
     updateSessionFilters({
+      matchVariety,
       diningStyleIds: effectiveDiningStyleIds,
       diningStyleNames: selectedChoices.map((choice) => choice.label),
       priceFilterEnabled: isPlus && priceFilterEnabled,
@@ -278,6 +312,79 @@ export default function PickFiltersScreen() {
         </Text>
 
         <View style={styles.filterList}>
+          <View style={styles.varietyCard}>
+            <View style={styles.varietyHeader}>
+              <View style={styles.toggleIcon}>
+                <Shuffle size={21} color={themeColor("#F3344A", "color")} />
+              </View>
+
+              <View style={styles.toggleContent}>
+                <Text style={styles.toggleTitle}>Match Variety</Text>
+                <Text style={styles.toggleDescription}>
+                  Choose how Pick Sum’N arranges strong restaurant matches.
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => setMatchVariety("balanced")}
+              style={[
+                styles.varietyOption,
+                matchVariety === "balanced" && styles.varietyOptionSelected,
+              ]}
+            >
+              <View style={styles.varietyOptionIcon}>
+                <Shuffle
+                  size={19}
+                  color={themeColor(
+                    matchVariety === "balanced" ? "#F3344A" : "#69707C",
+                    "color",
+                  )}
+                />
+              </View>
+
+              <View style={styles.varietyOptionContent}>
+                <Text style={styles.varietyOptionTitle}>Balanced Mix</Text>
+                <Text style={styles.varietyOptionText}>
+                  Keep the strongest matches near the top while mixing in other cuisines your group also likes.
+                </Text>
+              </View>
+
+              {matchVariety === "balanced" && (
+                <Check size={18} color={themeColor("#F3344A", "color")} strokeWidth={3} />
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={() => setMatchVariety("best")}
+              style={[
+                styles.varietyOption,
+                matchVariety === "best" && styles.varietyOptionSelected,
+              ]}
+            >
+              <View style={styles.varietyOptionIcon}>
+                <ListOrdered
+                  size={19}
+                  color={themeColor(
+                    matchVariety === "best" ? "#F3344A" : "#69707C",
+                    "color",
+                  )}
+                />
+              </View>
+
+              <View style={styles.varietyOptionContent}>
+                <Text style={styles.varietyOptionTitle}>Best Matches</Text>
+                <Text style={styles.varietyOptionText}>
+                  Show restaurants strictly in the order produced by the match score and dietary priority.
+                </Text>
+              </View>
+
+              {matchVariety === "best" && (
+                <Check size={18} color={themeColor("#F3344A", "color")} strokeWidth={3} />
+              )}
+            </Pressable>
+          </View>
+
           <View style={[styles.toggleCard, !isPlus && styles.lockedCard]}>
             <View style={styles.toggleIcon}>
               <UtensilsCrossed size={21} color={themeColor("#F3344A", "color")} />
@@ -528,6 +635,14 @@ const styles = createThemedStyleSheet({
   sectionTitle: { marginTop: 27, fontSize: 21, fontWeight: "900", color: "#07111F" },
   sectionDescription: { marginTop: 4, fontSize: 13, lineHeight: 18, color: "#69707C" },
   filterList: { gap: 10, marginTop: 15 },
+  varietyCard: { padding: 15, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 18, backgroundColor: "#FFFFFF" },
+  varietyHeader: { flexDirection: "row", alignItems: "center", marginBottom: 11 },
+  varietyOption: { flexDirection: "row", alignItems: "center", minHeight: 72, marginTop: 8, padding: 12, borderWidth: 1.5, borderColor: "#E3E6EA", borderRadius: 16, backgroundColor: "#FAFBFC" },
+  varietyOptionSelected: { borderColor: "#F5A0AA", backgroundColor: "#FFF4F5" },
+  varietyOptionIcon: { width: 38, height: 38, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#FFFFFF" },
+  varietyOptionContent: { flex: 1, marginHorizontal: 10 },
+  varietyOptionTitle: { fontSize: 14, fontWeight: "900", color: "#07111F" },
+  varietyOptionText: { marginTop: 3, fontSize: 11, lineHeight: 16, color: "#69707C" },
   toggleCard: { flexDirection: "row", alignItems: "center", padding: 15, borderWidth: 1, borderColor: "#ECEDEF", borderRadius: 18, backgroundColor: "#FFFFFF" },
   lockedCard: { borderColor: "#E8D3A7", backgroundColor: "#FFFDF7" },
   toggleIcon: { width: 43, height: 43, alignItems: "center", justifyContent: "center", borderRadius: 14, backgroundColor: "#FFF0F2" },

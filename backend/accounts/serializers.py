@@ -215,6 +215,54 @@ class UserAppSettingsSerializer(serializers.ModelSerializer):
         )
 
 
+class PasswordResetRequestSerializer(
+    serializers.Serializer
+):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(
+    serializers.Serializer
+):
+    uid = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+    )
+    token = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        validators=[validate_password],
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+    )
+
+    def validate(self, attrs):
+        if (
+            attrs["new_password"]
+            != attrs[
+                "new_password_confirm"
+            ]
+        ):
+            raise serializers.ValidationError(
+                {
+                    "new_password_confirm": (
+                        "The new passwords "
+                        "do not match."
+                    )
+                }
+            )
+
+        return attrs
+
+
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(
         write_only=True,

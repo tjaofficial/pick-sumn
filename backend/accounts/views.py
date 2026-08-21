@@ -2,6 +2,11 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import update_last_login
+from django.contrib.auth.tokens import default_token_generator
+from django.conf import settings
+from django.core.mail import send_mail
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -39,6 +44,8 @@ from .social_auth import (
 from .serializers import (
     BlockedUserSerializer,
     ChangePasswordSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     FeedbackSubmissionSerializer,
     FriendListItemSerializer,
     FriendRequestSerializer,
@@ -874,6 +881,314 @@ class UnblockUserView(APIView):
         )
 
 
+
+def _password_reset_url(
+    *,
+    user,
+) -> str:
+    uid = urlsafe_base64_encode(
+        force_bytes(
+            user.pk
+        )
+    )
+
+    token = (
+        default_token_generator
+        .make_token(
+            user
+        )
+    )
+
+    base_url = str(
+        getattr(
+            settings,
+            "PASSWORD_RESET_URL",
+            "https://picksumn.com/reset-password",
+        )
+        or "https://picksumn.com/reset-password"
+    ).rstrip("/")
+
+    return (
+        f"{base_url}"
+        f"?uid={uid}"
+        f"&token={token}"
+    )
+
+
+def _social_provider_labels(
+    user,
+) -> list[str]:
+    providers = list(
+        SocialIdentity.objects.filter(
+            user=user,
+        ).values_list(
+            "provider",
+            flat=True,
+        )
+    )
+
+    labels = {
+        "apple": "Apple",
+        "google": "Google",
+        "facebook": "Facebook",
+    }
+
+    return [
+        labels.get(
+            provider,
+            provider.title(),
+        )
+        for provider in providers
+    ]
+
+
+def _send_password_reset_email(
+    *,
+    user,
+) -> None:
+    if user.has_usable_password():
+        reset_url = (
+            _password_reset_url(
+                user=user
+            )
+        )
+
+        subject = (
+            "Reset your Pick Sum'N password"
+        )
+
+        message = (
+            "We received a request to reset "
+            "your Pick Sum'N password.\n\n"
+            "Open this link to choose a new password:\n"
+            f"{reset_url}\n\n"
+            "If you did not request this, you can "
+            "ignore this email."
+        )
+    else:
+        providers = (
+            _social_provider_labels(
+                user
+            )
+        )
+
+        provider_text = (
+            ", ".join(providers)
+            if providers
+            else "your social sign-in provider"
+        )
+
+        subject = (
+            "Your Pick Sum'N sign-in method"
+        )
+
+        message = (
+            "A password reset was requested for "
+            "this Pick Sum'N account, but this "
+            "account does not currently use a "
+            "Pick Sum'N password.\n\n"
+            "Sign in using "
+            f"{provider_text} instead.\n\n"
+            "If you did not request this, you can "
+            "ignore this email."
+        )
+
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=(
+            settings.DEFAULT_FROM_EMAIL
+        ),
+        recipient_list=[
+            user.email
+        ],
+        fail_silently=False,
+    )
+
+
+class PasswordResetRequestView(
+    APIView
+):
+    authentication_classes = ()
+    permission_classes = (
+        permissions.AllowAny,
+    )
+
+    def post(self, request):
+        serializer = (
+            PasswordResetRequestSerializer(
+                data=request.data,
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        email = (
+            serializer.validated_data[
+                "email"
+            ]
+        )
+
+        user = (
+            User.objects.filter(
+                email__iexact=email,
+                is_active=True,
+            )
+            .first()
+        )
+
+        # Always return the same public response. This prevents
+        # account enumeration through the password-reset endpoint.
+        if user is not None:
+            try:
+                _send_password_reset_email(
+                    user=user
+                )
+            except Exception:
+                logger.exception(
+                    (
+                        "Password reset email "
+                        "delivery failed for user %s."
+                    ),
+                    user.pk,
+                )
+
+        return Response(
+            {
+                "detail": (
+                    "If an eligible Pick Sum'N "
+                    "account exists for that email, "
+                    "we sent sign-in instructions."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(
+    APIView
+):
+    authentication_classes = ()
+    permission_classes = (
+        permissions.AllowAny,
+    )
+
+    def post(self, request):
+        serializer = (
+            PasswordResetConfirmSerializer(
+                data=request.data,
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        uid = (
+            serializer.validated_data[
+                "uid"
+            ]
+        )
+
+        token = (
+            serializer.validated_data[
+                "token"
+            ]
+        )
+
+        try:
+            user_id = (
+                urlsafe_base64_decode(
+                    uid
+                ).decode()
+            )
+        except Exception:
+            user_id = None
+
+        user = (
+            User.objects.filter(
+                pk=user_id,
+                is_active=True,
+            )
+            .first()
+            if user_id
+            else None
+        )
+
+        if (
+            user is None
+            or not user.has_usable_password()
+            or not default_token_generator
+                .check_token(
+                    user,
+                    token,
+                )
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "This password reset link "
+                        "is invalid or has expired."
+                    )
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        user.set_password(
+            serializer.validated_data[
+                "new_password"
+            ]
+        )
+
+        user.save(
+            update_fields=(
+                "password",
+            )
+        )
+
+        # Invalidate all outstanding refresh tokens for this user
+        # when possible. Existing short-lived access tokens still
+        # expire naturally according to SIMPLE_JWT.
+        try:
+            from rest_framework_simplejwt.token_blacklist.models import (
+                BlacklistedToken,
+                OutstandingToken,
+            )
+
+            for outstanding in (
+                OutstandingToken.objects.filter(
+                    user=user
+                )
+            ):
+                BlacklistedToken.objects.get_or_create(
+                    token=outstanding
+                )
+        except Exception:
+            logger.exception(
+                (
+                    "Could not blacklist all "
+                    "outstanding tokens after "
+                    "password reset for user %s."
+                ),
+                user.pk,
+            )
+
+        return Response(
+            {
+                "detail": (
+                    "Your password has been reset. "
+                    "You can sign in with your new password."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+
 class ChangePasswordView(APIView):
     permission_classes = (
         permissions.IsAuthenticated,
@@ -1303,35 +1618,14 @@ class AppleSubscriptionSyncView(
             sync_existing_apple_subscription(
                 user=request.user,
             )
+            request.user.refresh_from_db()
         except AppleSubscriptionError as exc:
-            # Never grant Plus on a failed verification.
-            #
-            # If Apple's latest transaction is expired/revoked,
-            # immediately move the user back to Free. If Apple is
-            # merely unreachable, the generic exception below keeps
-            # the locally stored entitlement until its saved expiry.
-            detail = str(exc)
-
-            if (
-                "expired" in detail.lower()
-                or "revoked" in detail.lower()
-            ):
-                request.user.subscription_tier = (
-                    "free"
-                )
-                request.user.subscription_status = (
-                    "expired"
-                )
-                request.user.save(
-                    update_fields=(
-                        "subscription_tier",
-                        "subscription_status",
-                    )
-                )
-
+            # A verified Apple status response updates the entitlement
+            # inside sync_existing_apple_subscription(). Configuration
+            # or API failures do not guess at subscription state here.
             return Response(
                 {
-                    "detail": detail,
+                    "detail": str(exc),
                     "entitlements":
                         get_user_entitlements(
                             request.user

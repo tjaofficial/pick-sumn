@@ -9,6 +9,7 @@ import {
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -19,6 +20,7 @@ import {
   ArrowLeft,
   Check,
   Crown,
+  ExternalLink,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -267,8 +269,6 @@ export default function PlusPaymentScreen() {
     annualProduct?.displayPrice
     || "$39.99";
 
-  const hasStoreTrial = true;
-
   const storeReady =
     Platform.OS === "ios"
     && connected
@@ -339,6 +339,49 @@ export default function PlusPaymentScreen() {
             "The App Store purchase "
             + "could not be started."
           ),
+        ),
+      );
+    }
+  }
+
+
+  async function manageSubscription() {
+    if (Platform.OS !== "ios") {
+      Alert.alert(
+        "Subscription management",
+        (
+          "Google Play subscription management "
+          + "will be added with Android billing."
+        ),
+      );
+      return;
+    }
+
+    try {
+      const url =
+        "https://apps.apple.com/account/subscriptions";
+
+      const supported =
+        await Linking.canOpenURL(
+          url,
+        );
+
+      if (!supported) {
+        throw new Error(
+          "Subscription settings are unavailable.",
+        );
+      }
+
+      await Linking.openURL(
+        url,
+      );
+    } catch {
+      Alert.alert(
+        "Unable to open subscriptions",
+        (
+          "Open the App Store, tap your profile, "
+          + "then choose Subscriptions to manage "
+          + "Pick Sum’N Plus."
         ),
       );
     }
@@ -535,29 +578,49 @@ export default function PlusPaymentScreen() {
         </View>
 
         {isPlus && (
-          <View
-            style={styles.activeCard}
-          >
-            <ShieldCheck
-              size={23}
-              color={themeColor("#168B4F", "color")}
-            />
+          <>
+            <View
+              style={styles.activeCard}
+            >
+              <ShieldCheck
+                size={23}
+                color={themeColor("#168B4F", "color")}
+              />
 
-            <View style={{ flex: 1 }}>
-              <Text
-                style={styles.activeTitle}
-              >
-                Plus is active
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={styles.activeTitle}
+                >
+                  Plus is active
+                </Text>
 
-              <Text
-                style={styles.activeText}
-              >
-                Your premium features are
-                already unlocked.
-              </Text>
+                <Text
+                  style={styles.activeText}
+                >
+                  Your premium features are
+                  already unlocked.
+                </Text>
+              </View>
             </View>
-          </View>
+
+            <Pressable
+              onPress={() =>
+                void manageSubscription()
+              }
+              style={styles.manageButton}
+            >
+              <ExternalLink
+                size={18}
+                color={themeColor("#07111F", "color")}
+              />
+
+              <Text
+                style={styles.manageButtonText}
+              >
+                Manage Subscription
+              </Text>
+            </Pressable>
+          </>
         )}
 
         <View
@@ -589,9 +652,7 @@ export default function PlusPaymentScreen() {
               <Text
                 style={styles.trialText}
               >
-                {hasStoreTrial
-                  ? "3 days free"
-                  : "Intro offer for eligible subscribers"}
+                3-day introductory offer for eligible new subscribers
               </Text>
             </View>
 
@@ -625,9 +686,10 @@ export default function PlusPaymentScreen() {
           <Text
             style={styles.planDescription}
           >
-            Eligible new subscribers receive
-            a 3-day free trial. Apple shows
-            the final offer before purchase.
+            Eligible new subscribers may receive
+            a 3-day free introductory trial.
+            Apple confirms your eligibility,
+            exact price, and offer before purchase.
           </Text>
 
           <Pressable
@@ -671,9 +733,7 @@ export default function PlusPaymentScreen() {
                 styles.purchaseText
               }
             >
-              {hasStoreTrial
-                ? "Start 3-Day Free Trial"
-                : `Subscribe — ${monthlyPrice}/month`}
+              {`Continue — ${monthlyPrice}/month`}
             </Text>
           </Pressable>
         </View>
@@ -899,7 +959,8 @@ export default function PlusPaymentScreen() {
           Payment is charged to your Apple ID.
           Monthly subscriptions renew at the
           App Store price shown above after any
-          eligible introductory trial. Annual
+          introductory offer Apple confirms you
+          are eligible to receive. Annual
           subscriptions renew yearly. You can
           cancel in your App Store subscription
           settings. Apple confirms the exact
@@ -1007,6 +1068,25 @@ const styles =
       fontSize: 11,
       lineHeight: 16,
       color: "#3B7656",
+    },
+
+    manageButton: {
+      minHeight: 50,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      marginTop: 10,
+      borderWidth: 1,
+      borderColor: "#D9DDE3",
+      borderRadius: 16,
+      backgroundColor: "#FFFFFF",
+    },
+
+    manageButtonText: {
+      fontSize: 13,
+      fontWeight: "900",
+      color: "#07111F",
     },
 
     planCard: {

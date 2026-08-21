@@ -209,6 +209,9 @@ export default function PickScreen() {
     }
 
     const values: string[] = [
+      draft.matchVariety === "balanced"
+        ? "Balanced mix"
+        : "Best matches",
       draft.diningStyleNames.length > 0
         ? draft.diningStyleNames.join(", ")
         : "All dining styles",
@@ -230,6 +233,7 @@ export default function PickScreen() {
 
     return values.join(" · ");
   }, [
+    draft.matchVariety,
     draft.diningStyleNames,
     draft.priceFilterEnabled,
     draft.priceMin,
@@ -260,6 +264,7 @@ export default function PickScreen() {
         group_id: draft.groupId || null,
         participant_ids: draft.participantIds,
         decision_mode: decisionMode,
+        match_variety: draft.matchVariety,
         location_label: draft.locationLabel.trim(),
         latitude: roundCoordinate(draft.latitude),
         longitude: roundCoordinate(draft.longitude),

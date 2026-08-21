@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone as dt_timezone
 
 from appstoreserverlibrary.models.Environment import Environment
+from appstoreserverlibrary.models.AutoRenewStatus import AutoRenewStatus
 from appstoreserverlibrary.signed_data_verifier import VerificationException
 from django.db import transaction as db_transaction
 
@@ -361,6 +362,43 @@ def _set_expired_state(
     )
 
 
+
+def _auto_renew_is_off(
+    renewal_info,
+) -> bool:
+    if renewal_info is None:
+        return False
+
+    value = getattr(
+        renewal_info,
+        "autoRenewStatus",
+        None,
+    )
+
+    raw_value = getattr(
+        renewal_info,
+        "rawAutoRenewStatus",
+        None,
+    )
+
+    candidate = (
+        getattr(
+            value,
+            "value",
+            value,
+        )
+        if value is not None
+        else raw_value
+    )
+
+    try:
+        return int(candidate) == int(
+            AutoRenewStatus.OFF
+        )
+    except (TypeError, ValueError):
+        return False
+
+
 @db_transaction.atomic
 def process_apple_server_notification(
     signed_payload: str,
@@ -679,10 +717,18 @@ def process_apple_server_notification(
     }
 
     if notification_type in active_events:
-        _set_active_state(
-            user=user,
-            expiration=expiration,
-        )
+        if _auto_renew_is_off(
+            renewal_info
+        ):
+            _set_canceled_state(
+                user=user,
+                expiration=expiration,
+            )
+        else:
+            _set_active_state(
+                user=user,
+                expiration=expiration,
+            )
 
     elif (
         notification_type

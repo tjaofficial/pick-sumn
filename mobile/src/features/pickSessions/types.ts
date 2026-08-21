@@ -9,6 +9,11 @@ export type PickSessionStatus =
   | "expired";
 
 
+export type MatchVariety =
+  | "balanced"
+  | "best";
+
+
 export type DecisionMode =
   | "ranked"
   | "pick_for_us"
@@ -63,6 +68,7 @@ export type PickSession = {
   status_display: string;
   decision_mode: DecisionMode;
   decision_mode_display: string;
+  match_variety: MatchVariety;
   participant_count: number;
   is_host: boolean;
   is_current: boolean;
@@ -108,6 +114,7 @@ export type CreatePickSessionInput = {
   group_id?: string | null;
   participant_ids?: number[];
   decision_mode?: DecisionMode;
+  match_variety?: MatchVariety;
   location_label?: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -286,6 +293,7 @@ export type PickSessionMatchSummary = {
   status: PickSessionStatus;
   status_display: string;
   decision_mode: DecisionMode;
+  match_variety: MatchVariety;
   location_label: string;
   search_radius_miles: number;
   gluten_free_filter_enabled: boolean;

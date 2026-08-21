@@ -16,6 +16,12 @@ from appstoreserverlibrary.api_client import (
 from appstoreserverlibrary.models.Environment import (
     Environment,
 )
+from appstoreserverlibrary.models.Status import (
+    Status,
+)
+from appstoreserverlibrary.models.AutoRenewStatus import (
+    AutoRenewStatus,
+)
 from appstoreserverlibrary.signed_data_verifier import (
     SignedDataVerifier,
     VerificationException,
@@ -72,6 +78,7 @@ class VerifiedAppleSubscription:
     environment: str
     expires_at: datetime
     app_account_token: str
+    status: str = SubscriptionStatus.ACTIVE
 
 
 def get_apple_app_account_token(user) -> str:
@@ -640,7 +647,591 @@ def _apply_verified_subscription(
     )
 
     user.subscription_status = (
-        SubscriptionStatus.ACTIVE
+        verified.status
+    )
+
+    user.subscription_provider = (
+        SubscriptionProvider.APPLE
+    )
+
+    user.subscription_product_id = (
+        verified.product_id
+    )
+
+    user.subscription_expires_at = (
+        verified.expires_at
+    )
+
+    user.subscription_transaction_id = (
+        verified.transaction_id
+    )
+
+    user.subscription_original_transaction_id = (
+        verified
+        .original_transaction_id
+    )
+
+    user.subscription_environment = (
+        verified.environment
+    )
+
+    user.save(
+        update_fields=(
+            "subscription_tier",
+            "subscription_status",
+            "subscription_provider",
+            "subscription_product_id",
+            "subscription_expires_at",
+            "subscription_transaction_id",
+            "subscription_original_transaction_id",
+            "subscription_environment",
+        )
+    )
+
+    return user
+
+
+
+def _environment_text(
+    environment: Environment,
+) -> str:
+    return (
+        "sandbox"
+        if environment == Environment.SANDBOX
+        else "production"
+    )
+
+
+def _ms_to_datetime(
+    value,
+) -> datetime | None:
+    try:
+        milliseconds = int(value or 0)
+    except (TypeError, ValueError):
+        return None
+
+    if milliseconds <= 0:
+        return None
+
+    return datetime.fromtimestamp(
+        milliseconds / 1000.0,
+        tz=dt_timezone.utc,
+    )
+
+
+def _enum_int(
+    value,
+    raw_value=None,
+) -> int | None:
+    candidate = value
+
+    if candidate is None:
+        candidate = raw_value
+
+    if candidate is None:
+        return None
+
+    enum_value = getattr(
+        candidate,
+        "value",
+        candidate,
+    )
+
+    try:
+        return int(enum_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _decode_status_item(
+    *,
+    item,
+    environment: Environment,
+) -> dict[str, Any] | None:
+    signed_transaction = getattr(
+        item,
+        "signedTransactionInfo",
+        None,
+    )
+
+    if not signed_transaction:
+        return None
+
+    verifier = _verifier(
+        environment
+    )
+
+    try:
+        transaction = (
+            verifier
+            .verify_and_decode_signed_transaction(
+                signed_transaction
+            )
+        )
+    except VerificationException as exc:
+        raise AppleSubscriptionError(
+            (
+                "Apple returned subscription status "
+                "transaction data that could not be verified."
+            )
+        ) from exc
+
+    product_id = str(
+        getattr(
+            transaction,
+            "productId",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if product_id not in APPLE_PLUS_PRODUCT_IDS:
+        return None
+
+    renewal = None
+    signed_renewal = getattr(
+        item,
+        "signedRenewalInfo",
+        None,
+    )
+
+    if signed_renewal:
+        try:
+            renewal = (
+                verifier
+                .verify_and_decode_renewal_info(
+                    signed_renewal
+                )
+            )
+        except VerificationException as exc:
+            raise AppleSubscriptionError(
+                (
+                    "Apple returned subscription renewal "
+                    "data that could not be verified."
+                )
+            ) from exc
+
+    return {
+        "item": item,
+        "transaction": transaction,
+        "renewal": renewal,
+        "status": _enum_int(
+            getattr(
+                item,
+                "status",
+                None,
+            ),
+            getattr(
+                item,
+                "rawStatus",
+                None,
+            ),
+        ),
+        "expires_at": _ms_to_datetime(
+            getattr(
+                transaction,
+                "expiresDate",
+                None,
+            )
+        ),
+        "grace_expires_at": _ms_to_datetime(
+            getattr(
+                renewal,
+                "gracePeriodExpiresDate",
+                None,
+            )
+            if renewal is not None
+            else None
+        ),
+    }
+
+
+def _get_current_subscription_status(
+    *,
+    original_transaction_id: str,
+    environment: Environment,
+) -> dict[str, Any]:
+    """
+    Ask Apple's subscription-status endpoint for the customer's current state.
+
+    Unlike transaction history, this endpoint distinguishes Active, Expired,
+    Billing Retry, Billing Grace Period, and Revoked, and includes signed
+    renewal information such as autoRenewStatus.
+    """
+
+    try:
+        response = (
+            _client(
+                environment
+            )
+            .get_all_subscription_statuses(
+                original_transaction_id
+            )
+        )
+    except APIException as exc:
+        raise AppleSubscriptionError(
+            "Apple subscription status could not be loaded."
+        ) from exc
+
+    candidates: list[dict[str, Any]] = []
+
+    for group in (
+        getattr(
+            response,
+            "data",
+            None,
+        )
+        or []
+    ):
+        for item in (
+            getattr(
+                group,
+                "lastTransactions",
+                None,
+            )
+            or []
+        ):
+            decoded = _decode_status_item(
+                item=item,
+                environment=environment,
+            )
+
+            if decoded is not None:
+                candidates.append(
+                    decoded
+                )
+
+    if not candidates:
+        raise AppleSubscriptionError(
+            "No Pick Sum'N Plus subscription status was found."
+        )
+
+    def candidate_key(
+        candidate: dict[str, Any],
+    ):
+        # Prefer a state that can currently carry entitlement, then the
+        # furthest valid paid/grace expiration.
+        status_value = candidate.get(
+            "status"
+        )
+
+        status_priority = {
+            int(Status.ACTIVE): 5,
+            int(Status.BILLING_GRACE_PERIOD): 4,
+            int(Status.BILLING_RETRY): 3,
+            int(Status.EXPIRED): 2,
+            int(Status.REVOKED): 1,
+        }.get(
+            int(status_value or 0),
+            0,
+        )
+
+        expiration = max(
+            [
+                value
+                for value in (
+                    candidate.get(
+                        "expires_at"
+                    ),
+                    candidate.get(
+                        "grace_expires_at"
+                    ),
+                )
+                if value is not None
+            ],
+            default=datetime.min.replace(
+                tzinfo=dt_timezone.utc
+            ),
+        )
+
+        return (
+            status_priority,
+            expiration,
+        )
+
+    return max(
+        candidates,
+        key=candidate_key,
+    )
+
+
+def _verified_from_current_status(
+    *,
+    user,
+    current: dict[str, Any],
+    environment: Environment,
+) -> VerifiedAppleSubscription:
+    transaction = current[
+        "transaction"
+    ]
+
+    renewal = current.get(
+        "renewal"
+    )
+
+    payload = (
+        _transaction_object_to_payload(
+            transaction
+        )
+    )
+
+    product_id = str(
+        payload.get(
+            "productId",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if product_id not in APPLE_PLUS_PRODUCT_IDS:
+        raise AppleSubscriptionError(
+            "This App Store product is not Pick Sum'N Plus."
+        )
+
+    bundle_id = str(
+        payload.get(
+            "bundleId",
+            "",
+        )
+        or ""
+    ).strip()
+
+    configured_bundle_id = (
+        os.environ.get(
+            "APPLE_IAP_BUNDLE_ID",
+            APPLE_BUNDLE_ID,
+        ).strip()
+        or APPLE_BUNDLE_ID
+    )
+
+    if bundle_id != configured_bundle_id:
+        raise AppleSubscriptionError(
+            "This transaction belongs to a different app."
+        )
+
+    transaction_id = str(
+        payload.get(
+            "transactionId",
+            "",
+        )
+        or ""
+    ).strip()
+
+    original_transaction_id = str(
+        payload.get(
+            "originalTransactionId",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if (
+        not transaction_id
+        or not original_transaction_id
+    ):
+        raise AppleSubscriptionError(
+            "Apple returned incomplete subscription status."
+        )
+
+    expected_token = (
+        get_apple_app_account_token(
+            user
+        )
+    )
+
+    account_token = str(
+        payload.get(
+            "appAccountToken",
+            "",
+        )
+        or getattr(
+            renewal,
+            "appAccountToken",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if (
+        not account_token
+        or account_token.lower()
+        != expected_token.lower()
+    ):
+        raise AppleSubscriptionError(
+            (
+                "This subscription belongs to a "
+                "different Pick Sum'N account."
+            )
+        )
+
+    _protect_subscription_ownership(
+        user=user,
+        original_transaction_id=(
+            original_transaction_id
+        ),
+    )
+
+    now = datetime.now(
+        tz=dt_timezone.utc
+    )
+
+    transaction_expiration = (
+        current.get(
+            "expires_at"
+        )
+    )
+
+    grace_expiration = (
+        current.get(
+            "grace_expires_at"
+        )
+    )
+
+    status_value = int(
+        current.get(
+            "status"
+        )
+        or 0
+    )
+
+    auto_renew_value = _enum_int(
+        getattr(
+            renewal,
+            "autoRenewStatus",
+            None,
+        )
+        if renewal is not None
+        else None,
+        getattr(
+            renewal,
+            "rawAutoRenewStatus",
+            None,
+        )
+        if renewal is not None
+        else None,
+    )
+
+    if status_value == int(
+        Status.ACTIVE
+    ):
+        if (
+            transaction_expiration is None
+            or transaction_expiration <= now
+        ):
+            lifecycle_status = (
+                SubscriptionStatus.EXPIRED
+            )
+        elif (
+            auto_renew_value
+            == int(
+                AutoRenewStatus.OFF
+            )
+        ):
+            lifecycle_status = (
+                SubscriptionStatus.CANCELED
+            )
+        else:
+            lifecycle_status = (
+                SubscriptionStatus.ACTIVE
+            )
+
+        effective_expiration = (
+            transaction_expiration
+        )
+
+    elif status_value == int(
+        Status.BILLING_GRACE_PERIOD
+    ):
+        effective_expiration = max(
+            [
+                value
+                for value in (
+                    transaction_expiration,
+                    grace_expiration,
+                )
+                if value is not None
+            ],
+            default=None,
+        )
+
+        lifecycle_status = (
+            SubscriptionStatus.GRACE_PERIOD
+            if (
+                effective_expiration is not None
+                and effective_expiration > now
+            )
+            else SubscriptionStatus.EXPIRED
+        )
+
+    else:
+        # Billing Retry without grace, Expired, and Revoked do not carry
+        # paid entitlement. Apple may continue retrying billing, but access
+        # is only retained when Apple explicitly reports a grace period.
+        lifecycle_status = (
+            SubscriptionStatus.EXPIRED
+        )
+        effective_expiration = (
+            transaction_expiration
+            or grace_expiration
+            or now
+        )
+
+    return VerifiedAppleSubscription(
+        transaction_id=transaction_id,
+        original_transaction_id=(
+            original_transaction_id
+        ),
+        product_id=product_id,
+        environment=_environment_text(
+            environment
+        ),
+        expires_at=(
+            effective_expiration
+            or now
+        ),
+        app_account_token=(
+            account_token
+        ),
+        status=lifecycle_status,
+    )
+
+
+def _apply_current_subscription_state(
+    *,
+    user,
+    verified: VerifiedAppleSubscription,
+):
+    _protect_subscription_ownership(
+        user=user,
+        original_transaction_id=(
+            verified
+            .original_transaction_id
+        ),
+    )
+
+    has_paid_access = (
+        verified.status
+        in (
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.CANCELED,
+            SubscriptionStatus.GRACE_PERIOD,
+        )
+        and verified.expires_at
+        > datetime.now(
+            tz=dt_timezone.utc
+        )
+    )
+
+    user.subscription_tier = (
+        SubscriptionTier.PLUS
+        if has_paid_access
+        else SubscriptionTier.FREE
+    )
+
+    user.subscription_status = (
+        verified.status
+        if has_paid_access
+        else SubscriptionStatus.EXPIRED
     )
 
     user.subscription_provider = (
@@ -774,27 +1365,24 @@ def sync_existing_apple_subscription(
         else Environment.PRODUCTION
     )
 
-    try:
-        latest_payload = (
-            _get_latest_transaction_history(
-                original_transaction_id=(
-                    original_transaction_id
-                ),
-                environment=environment,
-            )
+    current = (
+        _get_current_subscription_status(
+            original_transaction_id=(
+                original_transaction_id
+            ),
+            environment=environment,
         )
+    )
 
-        latest_verified = (
-            _validate_payload(
-                user=user,
-                payload=latest_payload,
-                environment=environment,
-            )
+    verified = (
+        _verified_from_current_status(
+            user=user,
+            current=current,
+            environment=environment,
         )
-    except AppleSubscriptionError:
-        raise
+    )
 
-    return _apply_verified_subscription(
+    return _apply_current_subscription_state(
         user=user,
-        verified=latest_verified,
+        verified=verified,
     )

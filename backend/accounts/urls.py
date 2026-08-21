@@ -9,6 +9,8 @@ from .views import (
     BlockedUserListView,
     BlockUserView,
     ChangePasswordView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
     CurrentAppSettingsView,
     CurrentEntitlementsView,
     CurrentUserView,
@@ -79,6 +81,16 @@ urlpatterns = [
         "settings/",
         CurrentAppSettingsView.as_view(),
         name="app-settings",
+    ),
+    path(
+        "forgot-password/",
+        PasswordResetRequestView.as_view(),
+        name="forgot-password",
+    ),
+    path(
+        "reset-password/",
+        PasswordResetConfirmView.as_view(),
+        name="reset-password",
     ),
     path(
         "change-password/",

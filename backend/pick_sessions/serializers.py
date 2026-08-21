@@ -9,6 +9,7 @@ from preferences.models import Cuisine, DiningStyle
 
 from .models import (
     DecisionMode,
+    MatchVariety,
     ParticipantStatus,
     PickSession,
     PickSessionNotification,
@@ -88,6 +89,7 @@ class PickSessionListSerializer(
             "status_display",
             "decision_mode",
             "decision_mode_display",
+            "match_variety",
             "participant_count",
             "is_host",
             "is_current",
@@ -207,6 +209,11 @@ class PickSessionCreateSerializer(serializers.Serializer):
     decision_mode = serializers.ChoiceField(
         choices=DecisionMode.choices,
         default=DecisionMode.RANKED,
+    )
+
+    match_variety = serializers.ChoiceField(
+        choices=MatchVariety.choices,
+        default=MatchVariety.BALANCED,
     )
 
     latitude = serializers.DecimalField(
@@ -592,6 +599,32 @@ class PickSessionCreateSerializer(serializers.Serializer):
                     )
                 }
             )
+
+        # Selecting every active dining style is functionally
+        # identical to selecting "All". Normalize it to no style
+        # filter so matching stays broad and we do not trigger an
+        # unnecessary dining-style Google search.
+        if dining_styles:
+            all_active_style_ids = set(
+                DiningStyle.objects.filter(
+                    is_active=True,
+                ).values_list(
+                    "id",
+                    flat=True,
+                )
+            )
+
+            selected_style_ids = {
+                style.id
+                for style in dining_styles
+            }
+
+            if (
+                all_active_style_ids
+                and selected_style_ids
+                == all_active_style_ids
+            ):
+                dining_styles = []
 
         attrs["dining_style_filters"] = (
             dining_styles

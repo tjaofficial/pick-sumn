@@ -127,6 +127,14 @@ export default function LoginScreen() {
             style={styles.input}
           />
 
+          <Link href="/(auth)/forgot-password" asChild>
+            <Pressable style={styles.forgotPasswordButton}>
+              <Text style={styles.forgotPasswordText}>
+                Forgot password?
+              </Text>
+            </Pressable>
+          </Link>
+
           {error && (
             <Text style={styles.error}>{error}</Text>
           )}
@@ -255,6 +263,16 @@ const styles = createThemedStyleSheet({
     backgroundColor: "#FFFFFF",
     fontSize: 16,
     color: "#07111F",
+  },
+  forgotPasswordButton: {
+    alignSelf: "flex-end",
+    marginTop: -5,
+    paddingVertical: 3,
+  },
+  forgotPasswordText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#F3344A",
   },
   error: {
     color: "#C62828",

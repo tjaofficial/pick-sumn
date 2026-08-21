@@ -91,3 +91,36 @@ export async function getSignInMethods(): Promise<
     "/api/auth/sign-in-methods/",
   );
 }
+
+export async function requestPasswordReset(
+  email: string,
+): Promise<{ detail: string }> {
+  return apiRequest<{ detail: string }>(
+    "/api/auth/forgot-password/",
+    {
+      method: "POST",
+      requiresAuth: false,
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+      }),
+    },
+  );
+}
+
+export async function confirmPasswordReset(
+  input: {
+    uid: string;
+    token: string;
+    new_password: string;
+    new_password_confirm: string;
+  },
+): Promise<{ detail: string }> {
+  return apiRequest<{ detail: string }>(
+    "/api/auth/reset-password/",
+    {
+      method: "POST",
+      requiresAuth: false,
+      body: JSON.stringify(input),
+    },
+  );
+}
