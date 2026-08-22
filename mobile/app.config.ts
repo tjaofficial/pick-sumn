@@ -17,11 +17,11 @@ export default ({
 
   const facebookAppId =
     process.env
-      .EXPO_PUBLIC_FACEBOOK_APP_ID;
+      .FACEBOOK_APP_ID;
 
   const facebookClientToken =
     process.env
-      .EXPO_PUBLIC_FACEBOOK_CLIENT_TOKEN;
+      .FACEBOOK_CLIENT_TOKEN;
 
   const plugins:
     NonNullable<ExpoConfig["plugins"]> = [
@@ -159,9 +159,6 @@ export default ({
       permissions: [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-      ],
-      blockedPermissions: [
-        "com.google.android.gms.permission.AD_ID",
       ],
       adaptiveIcon: {
         backgroundColor: "#E6F4FE",
